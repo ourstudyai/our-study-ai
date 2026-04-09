@@ -4,12 +4,12 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDlGaMqMMtMH5cfQ28XVuF3fABKkws5-H4",
-  authDomain: "ourstudyai-cd5ee.firebaseapp.com",
-  projectId: "ourstudyai-cd5ee",
-  storageBucket: "ourstudyai-cd5ee.firebasestorage.app",
-  messagingSenderId: "325989009755",
-  appId: "1:325989009755:web:145a1c36d501337057327e",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 // Initialize Firebase (prevent re-initialization in dev hot reload)
