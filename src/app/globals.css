@@ -1,0 +1,315 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   OUR STUDY AI — Global Styles
+   Premium seminary aesthetic: deep, scholarly, reverent
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&display=swap');
+
+@layer base {
+  :root {
+    --color-bg-primary: #0f0f1a;
+    --color-bg-secondary: #1a1a2e;
+    --color-bg-card: #1e1e32;
+    --color-bg-elevated: #252542;
+    --color-border: rgba(255, 255, 255, 0.06);
+    --color-border-hover: rgba(255, 255, 255, 0.12);
+    --color-text-primary: #f0f0f5;
+    --color-text-secondary: #9999b3;
+    --color-text-muted: #666680;
+    --color-accent: #7c6cf0;
+    --color-accent-hover: #6b5ce0;
+    --color-gold: #c9a84c;
+    --color-gold-dim: rgba(201, 168, 76, 0.15);
+    --color-seminary-burgundy: #722f37;
+    --sidebar-width: 280px;
+    --navbar-height: 64px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(124, 108, 240, 0.3) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(124, 108, 240, 0.3);
+    border-radius: 3px;
+  }
+
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /* Glass card effect */
+  .glass-card {
+    @apply rounded-xl border;
+    background: rgba(30, 30, 50, 0.6);
+    border-color: var(--color-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .glass-card:hover {
+    border-color: var(--color-border-hover);
+  }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.02) 0%,
+      rgba(255, 255, 255, 0.06) 50%,
+      rgba(255, 255, 255, 0.02) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Glow effect */
+  .glow-accent {
+    box-shadow: 0 0 20px rgba(124, 108, 240, 0.15),
+                0 0 60px rgba(124, 108, 240, 0.05);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 20px rgba(201, 168, 76, 0.15),
+                0 0 60px rgba(201, 168, 76, 0.05);
+  }
+
+  /* Premium button */
+  .btn-primary {
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-300;
+    background: linear-gradient(135deg, #7c6cf0, #5c4cd0);
+    color: white;
+    box-shadow: 0 4px 15px rgba(124, 108, 240, 0.3);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 25px rgba(124, 108, 240, 0.4);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-300 border;
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--color-border-hover);
+    color: var(--color-text-primary);
+  }
+
+  .btn-ghost {
+    @apply px-3 py-2 rounded-lg font-medium transition-all duration-200;
+    color: var(--color-text-secondary);
+  }
+
+  .btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text-primary);
+  }
+
+  /* Input styling */
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border transition-all duration-300 outline-none;
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+  }
+
+  .input-field:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(124, 108, 240, 0.15);
+  }
+
+  .input-field::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  /* Chat message sections */
+  .chat-section-heading {
+    @apply text-sm font-semibold uppercase tracking-wider mt-4 mb-2 pb-1 border-b;
+    border-color: var(--color-border);
+  }
+
+  .chat-section-plain { color: #60d394; }
+  .chat-section-precise { color: #7c6cf0; }
+  .chat-section-write { color: #ffd166; }
+  .chat-section-watch { color: #ef476f; }
+
+  /* Readiness badges */
+  .badge-readiness {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold;
+  }
+
+  .badge-red {
+    @apply badge-readiness;
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .badge-amber {
+    @apply badge-readiness;
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+  }
+
+  .badge-blue {
+    @apply badge-readiness;
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+  }
+
+  /* Sidebar styling */
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer;
+    color: var(--color-text-secondary);
+  }
+
+  .sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--color-text-primary);
+  }
+
+  .sidebar-item.active {
+    background: rgba(124, 108, 240, 0.1);
+    color: var(--color-accent);
+    border-left: 3px solid var(--color-accent);
+  }
+
+  /* Streaming cursor animation */
+  .streaming-cursor::after {
+    content: '▊';
+    animation: blink 1s step-end infinite;
+    color: var(--color-accent);
+    margin-left: 2px;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* Toolbar button */
+  .toolbar-btn {
+    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200;
+    color: var(--color-text-muted);
+    background: transparent;
+  }
+
+  .toolbar-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text-secondary);
+  }
+
+  .toolbar-btn.active-helpful {
+    background: rgba(96, 211, 148, 0.1);
+    color: #60d394;
+  }
+
+  .toolbar-btn.active-not-helpful {
+    background: rgba(239, 71, 111, 0.1);
+    color: #ef476f;
+  }
+
+  /* Modal overlay */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+  }
+
+  .modal-content {
+    @apply glass-card p-6 mx-4 w-full;
+    max-width: 520px;
+    animation: slideUp 0.3s ease-out;
+  }
+
+  /* Pulse dot for streaming indicator */
+  .pulse-dot {
+    @apply w-2 h-2 rounded-full;
+    background: var(--color-accent);
+    animation: pulseSoft 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulseSoft {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+}
+
+/* Mobile responsive helpers */
+@media (max-width: 680px) {
+  :root {
+    --sidebar-width: 100%;
+    --navbar-height: 56px;
+  }
+}
+
+/* Markdown rendering in chat */
+.chat-markdown h2 {
+  @apply text-base font-bold mt-5 mb-2;
+}
+
+.chat-markdown h3 {
+  @apply text-sm font-bold mt-4 mb-1.5;
+}
+
+.chat-markdown p {
+  @apply mb-3 leading-relaxed;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  @apply mb-3 pl-5;
+}
+
+.chat-markdown li {
+  @apply mb-1.5 leading-relaxed;
+}
+
+.chat-markdown strong {
+  @apply font-semibold;
+  color: var(--color-text-primary);
+}
+
+.chat-markdown code {
+  @apply px-1.5 py-0.5 rounded text-sm;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-gold);
+}
+
+.chat-markdown blockquote {
+  @apply pl-4 my-3 italic;
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-secondary);
+}

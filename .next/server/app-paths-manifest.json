@@ -1,0 +1,13 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/admin/page": "app/admin/page.js",
+  "/api/auth/session/route": "app/api/auth/session/route.js",
+  "/api/admin/flags/route": "app/api/admin/flags/route.js",
+  "/api/flags/route": "app/api/flags/route.js",
+  "/login/page": "app/login/page.js",
+  "/onboarding/page": "app/onboarding/page.js",
+  "/page": "app/page.js",
+  "/api/chat/route": "app/api/chat/route.js",
+  "/dashboard/course/[courseId]/page": "app/dashboard/course/[courseId]/page.js",
+  "/dashboard/page": "app/dashboard/page.js"
+}
