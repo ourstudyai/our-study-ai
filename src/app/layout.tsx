@@ -4,9 +4,9 @@ import { AuthProvider } from '@/components/auth/AuthProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Our Study AI — Seminary Study Platform',
+  title: 'Our Study AI',
   description:
-    'AI-powered academic study platform for Catholic seminary students. Grounded in course materials, with structured responses and mastery tracking.',
+    'AI-powered academic study platform for Bigard seminary students. Grounded in course materials, with structured responses and mastery tracking.',
   keywords: ['seminary', 'theology', 'philosophy', 'AI tutor', 'Catholic education'],
 };
 
