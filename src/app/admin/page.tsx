@@ -247,70 +247,88 @@ function UploadModal({ course, onClose, onUploaded }: {
   onClose: () => void;
   onUploaded: () => void;
 }) {
-  const [progresses, setProgresses] = useState<Record<string, number>>({});
-  const [statuses, setStatuses] = useState<Record<string, "idle" | "uploading" | "done" | "error">>({});
-  const [selectedFiles, setSelectedFiles] = useState<Record<string, File>>({});
+  const [fileQueues, setFileQueues] = useState<Record<string, File[]>>({});
+  const [fileStatuses, setFileStatuses] = useState<Record<string, Record<string, "idle" | "uploading" | "done" | "error">>>({});
+  const [fileProgresses, setFileProgresses] = useState<Record<string, Record<string, number>>>({});
 
-  const handleFileSelect = (file: File, category: UploadCategory) => {
-    setSelectedFiles((p) => ({ ...p, [category]: file }));
-    setStatuses((p) => ({ ...p, [category]: "idle" }));
+  const handleFileSelect = (files: FileList, category: UploadCategory) => {
+    const arr = Array.from(files);
+    setFileQueues((p) => ({ ...p, [category]: [...(p[category] || []), ...arr] }));
   };
 
-  const handleDeselect = (category: UploadCategory) => {
-    setSelectedFiles((p) => {
-      const next = { ...p };
-      delete next[category];
-      return next;
-    });
-    setStatuses((p) => ({ ...p, [category]: "idle" }));
-    setProgresses((p) => ({ ...p, [category]: 0 }));
+  const handleDeselect = (category: UploadCategory, fileName: string) => {
+    setFileQueues((p) => ({
+      ...p,
+      [category]: (p[category] || []).filter((f) => f.name !== fileName),
+    }));
   };
 
-  const handleUpload = async (category: UploadCategory) => {
-    const file = selectedFiles[category];
-    if (!file) return;
-
+  const uploadFile = async (file: File, category: UploadCategory) => {
     const path = `materials/${course.department}/year${course.year}/sem${course.semester}/${course.id}/${category}/${file.name}`;
     const storageRef = ref(storage, path);
     const task = uploadBytesResumable(storageRef, file);
 
-    setStatuses((p) => ({ ...p, [category]: "uploading" }));
+    setFileStatuses((p) => ({
+      ...p,
+      [category]: { ...(p[category] || {}), [file.name]: "uploading" },
+    }));
 
-    task.on(
-      "state_changed",
-      (snap) => {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        setProgresses((p) => ({ ...p, [category]: pct }));
-      },
-      () => setStatuses((p) => ({ ...p, [category]: "error" })),
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        await updateDoc(doc(db, "courses", course.id), {
-          hasMaterials: true,
-          [`materials.${category}`]: url,
-        });
-        setStatuses((p) => ({ ...p, [category]: "done" }));
-        setSelectedFiles((p) => {
-          const next = { ...p };
-          delete next[category];
-          return next;
-        });
-        onUploaded();
-      }
-    );
-  };
-
-  const handleBatchUpload = () => {
-    (Object.keys(selectedFiles) as UploadCategory[]).forEach((cat) => {
-      if (statuses[cat] !== "uploading" && statuses[cat] !== "done") {
-        handleUpload(cat);
-      }
+    return new Promise<void>((resolve) => {
+      task.on(
+        "state_changed",
+        (snap) => {
+          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+          setFileProgresses((p) => ({
+            ...p,
+            [category]: { ...(p[category] || {}), [file.name]: pct },
+          }));
+        },
+        () => {
+          setFileStatuses((p) => ({
+            ...p,
+            [category]: { ...(p[category] || {}), [file.name]: "error" },
+          }));
+          resolve();
+        },
+        async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          await updateDoc(doc(db, "courses", course.id), {
+            hasMaterials: true,
+            [`materials.${category}.${file.name}`]: url,
+          });
+          setFileStatuses((p) => ({
+            ...p,
+            [category]: { ...(p[category] || {}), [file.name]: "done" },
+          }));
+          onUploaded();
+          resolve();
+        }
+      );
     });
   };
 
-  const pendingCount = Object.keys(selectedFiles).filter(
-    (k) => statuses[k] !== "done" && statuses[k] !== "uploading"
-  ).length;
+  const handleUploadCategory = async (category: UploadCategory) => {
+    const files = fileQueues[category] || [];
+    for (const file of files) {
+      const status = fileStatuses[category]?.[file.name];
+      if (status !== "done" && status !== "uploading") {
+        await uploadFile(file, category);
+      }
+    }
+  };
+
+  const handleBatchUploadAll = () => {
+    (Object.keys(fileQueues) as UploadCategory[]).forEach((cat) => {
+      handleUploadCategory(cat);
+    });
+  };
+
+  const totalPending = Object.entries(fileQueues).reduce((acc, [cat, files]) => {
+    return acc + files.filter((f) => {
+      const status = fileStatuses[cat]?.[f.name];
+      return status !== "done" && status !== "uploading";
+    }).length;
+  }, 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
@@ -328,19 +346,18 @@ function UploadModal({ course, onClose, onUploaded }: {
           <button onClick={onClose} className="text-[var(--color-text-secondary)] hover:text-white text-xl font-bold">✕</button>
         </div>
 
-        {pendingCount > 1 && (
+        {totalPending > 1 && (
           <button
-            onClick={handleBatchUpload}
+            onClick={handleBatchUploadAll}
             className="w-full mb-4 py-2 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold text-sm hover:opacity-90 transition-opacity"
           >
-            Upload All {pendingCount} Selected Files
+            Upload All {totalPending} Pending Files
           </button>
         )}
 
         <div className="space-y-4">
           {CATEGORIES.map(({ key, label, icon }) => {
-            const status = statuses[key] || "idle";
-            const file = selectedFiles[key];
+            const files = fileQueues[key] || [];
 
             return (
               <div key={key} className="border border-[var(--color-border)] rounded-xl p-4">
@@ -348,65 +365,67 @@ function UploadModal({ course, onClose, onUploaded }: {
                   <span className="font-medium text-sm text-[var(--color-text-primary)]">
                     {icon} {label}
                   </span>
-                  {status === "done" && <span className="text-green-400 text-xs font-bold">✓ Uploaded</span>}
-                  {status === "error" && <span className="text-red-400 text-xs font-bold">✗ Failed — try again</span>}
-                </div>
-
-                {status === "uploading" && (
-                  <div>
-                    <div className="w-full bg-[var(--color-border)] rounded-full h-2 mb-1">
-                      <div
-                        className="bg-[var(--color-gold)] h-2 rounded-full transition-all"
-                        style={{ width: `${progresses[key] || 0}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-[var(--color-text-secondary)]">{progresses[key] || 0}%</p>
-                  </div>
-                )}
-
-                {status === "done" && (
-                  <p className="text-xs text-green-400">File saved to library ✓</p>
-                )}
-
-                {status !== "uploading" && status !== "done" && file && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-[var(--color-gold)] bg-[var(--color-bg-tertiary)] px-2 py-1 rounded-lg max-w-[200px] truncate">
-                      {file.name}
-                    </span>
+                  {files.length > 0 && (
                     <button
-                      onClick={() => handleDeselect(key)}
-                      className="text-xs text-red-400 hover:text-red-300 px-2 py-1 border border-red-400/30 rounded-lg"
-                    >
-                      ✕ Remove
-                    </button>
-                    <button
-                      onClick={() => handleUpload(key)}
+                      onClick={() => handleUploadCategory(key)}
                       className="text-xs px-3 py-1 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90"
                     >
-                      Upload
+                      Upload {files.length > 1 ? `${files.length} files` : "file"}
                     </button>
+                  )}
+                </div>
+
+                {files.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {files.map((file) => {
+                      const status = fileStatuses[key]?.[file.name] || "idle";
+                      const progress = fileProgresses[key]?.[file.name] || 0;
+                      return (
+                        <div key={file.name} className="flex items-center gap-2 flex-wrap">
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400" :
+                              status === "error" ? "bg-red-400" :
+                                status === "uploading" ? "bg-yellow-400" : "bg-[var(--color-border)]"
+                            }`} />
+                          <span className="text-xs text-[var(--color-text-primary)] max-w-[180px] truncate">{file.name}</span>
+                          {status === "uploading" && (
+                            <div className="flex-1 bg-[var(--color-border)] rounded-full h-1.5 min-w-[60px]">
+                              <div
+                                className="bg-[var(--color-gold)] h-1.5 rounded-full transition-all"
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                          )}
+                          {status === "done" && <span className="text-green-400 text-xs">✓</span>}
+                          {status === "error" && <span className="text-red-400 text-xs">✗ retry</span>}
+                          {status === "idle" && (
+                            <button
+                              onClick={() => handleDeselect(key, file.name)}
+                              className="text-xs text-red-400 hover:text-red-300"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
-                {status !== "uploading" && status !== "done" && !file && (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleFileSelect(f, key);
-                      }}
-                    />
-                    <span className="text-xs px-3 py-1.5 border border-[var(--color-border)] rounded-lg hover:border-[var(--color-gold)] text-[var(--color-text-secondary)] hover:text-[var(--color-gold)] transition-colors cursor-pointer">
-                      Choose file
-                    </span>
-                    <span className="text-xs text-[var(--color-text-secondary)]">
-                      PDF, DOCX, DOC, JPG, PNG
-                    </span>
-                  </label>
-                )}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files) handleFileSelect(e.target.files, key);
+                    }}
+                  />
+                  <span className="text-xs px-3 py-1.5 border border-[var(--color-border)] rounded-lg hover:border-[var(--color-gold)] text-[var(--color-text-secondary)] hover:text-[var(--color-gold)] transition-colors">
+                    + Add files
+                  </span>
+                  <span className="text-xs text-[var(--color-text-secondary)]">PDF, DOCX, DOC, JPG, PNG</span>
+                </label>
               </div>
             );
           })}
