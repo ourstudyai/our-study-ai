@@ -1,137 +1,202 @@
-// Admin Page — Password-protected flag review panel
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Flag, FlagStatus } from '@/lib/types';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { db } from "@/lib/firebase/config";
+import { useAuth } from "@/components/auth/AuthProvider";
+
+interface Course {
+  id: string;
+  name: string;
+  code: string;
+  department: string;
+  year: number;
+  semester: number;
+  hasMaterials?: boolean;
+}
+
+interface GroupedCourses {
+  [department: string]: {
+    [year: number]: {
+      [semester: number]: Course[];
+    };
+  };
+}
 
 export default function AdminPage() {
-  const [password, setPassword] = useState('');
-  const [authenticated, setAuthenticated] = useState(false);
-  const [flags, setFlags] = useState<Flag[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { firebaseUser, userProfile } = useAuth();
+  const router = useRouter();
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [grouped, setGrouped] = useState<GroupedCourses>({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
-  // Demo flags for testing
-  const DEMO_FLAGS: Flag[] = [
-    {
-      id: 'flag_1',
-      userId: 'user1',
-      userEmail: 'student@seminary.edu',
-      courseId: 'theo-101',
-      courseName: 'Introduction to Sacred Scripture',
-      mode: 'plain_explainer',
-      question: 'What is the difference between exegesis and eisegesis?',
-      aiResponse: 'Exegesis is the process of reading into the text...',
-      studentDescription: 'The AI mixed up exegesis and eisegesis. Exegesis draws meaning OUT of the text, eisegesis reads INTO the text.',
-      status: 'open',
-      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'flag_2',
-      userId: 'user2',
-      userEmail: 'student2@seminary.edu',
-      courseId: 'phil-103',
-      courseName: 'Ancient Greek Philosophy',
-      mode: 'exam_preparation',
-      question: 'Explain Aristotle\'s four causes',
-      aiResponse: 'The four causes are: material, formal, efficient, and final...',
-      studentDescription: 'The formal cause explanation was confused with the efficient cause.',
-      status: 'open',
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    },
-  ];
-
-  const handleLogin = () => {
-    // In production, verify against ADMIN_PASSWORD env var via API
-    if (password === 'admin123' || password) {
-      setAuthenticated(true);
-      setFlags(DEMO_FLAGS);
+  // Auth guard
+  useEffect(() => {
+    if (!firebaseUser) {
+      router.push("/");
+      return;
     }
+    if (userProfile && userProfile.role !== "admin") {
+      router.push("/");
+    }
+  }, [firebaseUser, userProfile, router]);
+
+  // Fetch courses
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        const q = query(collection(db, "courses"), orderBy("department"));
+        const snapshot = await getDocs(q);
+        const data: Course[] = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Course[];
+        setCourses(data);
+        groupCourses(data);
+      } catch (err) {
+        console.error("Error fetching courses:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (firebaseUser) fetchCourses();
+  }, [firebaseUser]);
+
+  const groupCourses = (data: Course[]) => {
+    const result: GroupedCourses = {};
+    data.forEach((course) => {
+      const dept = course.department || "Unknown";
+      const year = course.year || 1;
+      const sem = course.semester || 1;
+      if (!result[dept]) result[dept] = {};
+      if (!result[dept][year]) result[dept][year] = {};
+      if (!result[dept][year][sem]) result[dept][year][sem] = [];
+      result[dept][year][sem].push(course);
+    });
+    setGrouped(result);
   };
 
-  const handleResolve = async (flagId: string, adminNote: string, goldenCorrection: string) => {
-    try {
-      await fetch('/api/admin/flags', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ flagId, adminNote, goldenCorrection, adminPassword: password }),
-      });
-
-      setFlags((prev) =>
-        prev.map((f) =>
-          f.id === flagId
-            ? { ...f, status: 'resolved' as FlagStatus, adminNote, goldenCorrection, resolvedAt: new Date().toISOString() }
-            : f
-        )
-      );
-    } catch (err) {
-      console.error('Resolve error:', err);
-    }
+  const toggleKey = (key: string) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
   };
 
-  if (!authenticated) {
+  const filteredCourses = search.trim()
+    ? courses.filter(
+      (c) =>
+        c.name?.toLowerCase().includes(search.toLowerCase()) ||
+        c.code?.toLowerCase().includes(search.toLowerCase())
+    )
+    : null;
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--navy)' }}>
-        <div className="card p-8 w-full max-w-md animate-fade-in">
-          <h1 className="text-2xl font-bold font-display mb-2">Admin Access</h1>
-          <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-            Enter the admin password to review flagged responses.
-          </p>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-            placeholder="Admin password"
-            className="input-field mb-4"
-            id="admin-password"
-          />
-          <button onClick={handleLogin} className="btn-primary w-full" id="admin-login-button">
-            Access Admin Panel
-          </button>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-primary)]">
+        <p className="text-[var(--color-gold)] text-lg">Loading admin panel...</p>
       </div>
     );
   }
 
-  const openFlags = flags.filter((f) => f.status === 'open');
-  const resolvedFlags = flags.filter((f) => f.status === 'resolved');
-
   return (
-    <div className="min-h-screen px-4 py-8" style={{ background: 'var(--navy)' }}>
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold font-display">Flag Review Panel</h1>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              {openFlags.length} open · {resolvedFlags.length} resolved
-            </p>
-          </div>
-          <button onClick={() => setAuthenticated(false)} className="btn-secondary text-sm">
-            Lock Panel
-          </button>
-        </div>
+    <div className="min-h-screen bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] p-6">
+      {/* Header */}
+      <div className="max-w-6xl mx-auto">
+        <h1 className="text-3xl font-bold text-[var(--color-gold)] mb-1" style={{ fontFamily: "Playfair Display, serif" }}>
+          Admin Panel
+        </h1>
+        <p className="text-sm text-[var(--color-text-secondary)] mb-6">
+          Bigard Memorial Institute — Course Materials Management
+        </p>
 
-        {/* Open Flags */}
-        {openFlags.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold mb-4" style={{ color: '#ef476f' }}>
-              🚩 Open Flags
-            </h2>
-            {openFlags.map((flag) => (
-              <FlagCard key={flag.id} flag={flag} onResolve={handleResolve} />
+        {/* Search */}
+        <input
+          type="text"
+          placeholder="Search courses by name or code..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full max-w-md px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-gold)] mb-8"
+        />
+
+        {/* Search Results */}
+        {filteredCourses ? (
+          <div className="space-y-2">
+            <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+              {filteredCourses.length} result(s) for &quot;{search}&quot;
+            </p>
+            {filteredCourses.map((course) => (
+              <CourseRow key={course.id} course={course} />
             ))}
           </div>
-        )}
+        ) : (
+          /* Grouped View */
+          <div className="space-y-6">
+            {Object.keys(grouped).sort().map((dept) => (
+              <div key={dept} className="border border-[var(--color-border)] rounded-xl overflow-hidden">
+                {/* Department Header */}
+                <button
+                  onClick={() => toggleKey(dept)}
+                  className="w-full flex items-center justify-between px-5 py-4 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                >
+                  <span className="text-lg font-semibold text-[var(--color-gold)] capitalize">
+                    {dept} Department
+                  </span>
+                  <span className="text-[var(--color-text-secondary)]">
+                    {expandedKeys.has(dept) ? "▲" : "▼"}
+                  </span>
+                </button>
 
-        {/* Resolved Flags */}
-        {resolvedFlags.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-muted)' }}>
-              ✅ Resolved
-            </h2>
-            {resolvedFlags.map((flag) => (
-              <FlagCard key={flag.id} flag={flag} onResolve={handleResolve} />
+                {expandedKeys.has(dept) && (
+                  <div className="p-4 space-y-4">
+                    {Object.keys(grouped[dept]).sort().map((year) => (
+                      <div key={year}>
+                        {/* Year Header */}
+                        <button
+                          onClick={() => toggleKey(`${dept}-${year}`)}
+                          className="w-full flex items-center justify-between px-4 py-2 bg-[var(--color-bg-tertiary)] rounded-lg mb-2"
+                        >
+                          <span className="font-medium text-[var(--color-text-primary)]">
+                            Year {year}
+                          </span>
+                          <span className="text-[var(--color-text-secondary)] text-sm">
+                            {expandedKeys.has(`${dept}-${year}`) ? "▲" : "▼"}
+                          </span>
+                        </button>
+
+                        {expandedKeys.has(`${dept}-${year}`) && (
+                          <div className="pl-4 space-y-3">
+                            {Object.keys(grouped[dept][Number(year)]).sort().map((sem) => (
+                              <div key={sem}>
+                                {/* Semester Header */}
+                                <button
+                                  onClick={() => toggleKey(`${dept}-${year}-${sem}`)}
+                                  className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-[var(--color-text-secondary)] border-b border-[var(--color-border)] mb-2"
+                                >
+                                  <span>Semester {sem}</span>
+                                  <span>{expandedKeys.has(`${dept}-${year}-${sem}`) ? "▲" : "▼"}</span>
+                                </button>
+
+                                {expandedKeys.has(`${dept}-${year}-${sem}`) && (
+                                  <div className="space-y-2 pl-2">
+                                    {grouped[dept][Number(year)][Number(sem)].map((course) => (
+                                      <CourseRow key={course.id} course={course} />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -140,110 +205,24 @@ export default function AdminPage() {
   );
 }
 
-function FlagCard({
-  flag,
-  onResolve,
-}: {
-  flag: Flag;
-  onResolve: (id: string, note: string, correction: string) => void;
-}) {
-  const [adminNote, setAdminNote] = useState(flag.adminNote || '');
-  const [goldenCorrection, setGoldenCorrection] = useState(flag.goldenCorrection || '');
-  const isOpen = flag.status === 'open';
-
+function CourseRow({ course }: { course: Course }) {
   return (
-    <div
-      className="card p-5 mb-4"
-      style={{
-        borderLeft: `4px solid ${isOpen ? '#ef476f' : 'rgba(96, 211, 148, 0.4)'}`,
-        opacity: isOpen ? 1 : 0.7,
-      }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold px-2 py-0.5 rounded ${isOpen ? 'badge-red' : 'badge-blue'}`}>
-            {isOpen ? 'OPEN' : 'RESOLVED'}
-          </span>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            #{flag.id} · {new Date(flag.createdAt).toLocaleString()}
-          </span>
-        </div>
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          {flag.courseName} · {flag.mode}
-        </span>
-      </div>
-
-      {/* Content */}
-      <div className="grid gap-3 mb-4">
+    <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg-secondary)] rounded-lg border border-[var(--color-border)] hover:border-[var(--color-gold)] transition-colors">
+      <div className="flex items-center gap-3">
+        {/* Green/Red indicator */}
+        <span
+          className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${course.hasMaterials ? "bg-green-500" : "bg-red-500"
+            }`}
+          title={course.hasMaterials ? "Has materials" : "No materials yet"}
+        />
         <div>
-          <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Question</p>
-          <p className="text-sm">{flag.question}</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>AI Response (excerpt)</p>
-          <p className="text-sm italic" style={{ color: 'var(--text-secondary)' }}>{flag.aiResponse}</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium mb-1" style={{ color: '#ef476f' }}>Student&apos;s Issue</p>
-          <p className="text-sm">{flag.studentDescription}</p>
+          <p className="font-medium text-[var(--color-text-primary)]">{course.name}</p>
+          <p className="text-xs text-[var(--color-text-secondary)]">{course.code}</p>
         </div>
       </div>
-
-      {/* Resolution form */}
-      {isOpen ? (
-        <div className="border-t pt-4" style={{ borderColor: 'var(--border)' }}>
-          <div className="mb-3">
-            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-muted)' }}>
-              Admin Note (what was corrected)
-            </label>
-            <textarea
-              value={adminNote}
-              onChange={(e) => setAdminNote(e.target.value)}
-              className="input-field resize-none text-sm"
-              rows={2}
-              placeholder="Explain what document was corrected and how..."
-            />
-          </div>
-          <div className="mb-3">
-            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-gold)' }}>
-              ✨ Golden Correction (AI will prioritize this in future responses)
-            </label>
-            <textarea
-              value={goldenCorrection}
-              onChange={(e) => setGoldenCorrection(e.target.value)}
-              className="input-field resize-none text-sm"
-              rows={3}
-              placeholder="Write the correct information that the AI should use going forward..."
-            />
-          </div>
-          <button
-            onClick={() => onResolve(flag.id, adminNote, goldenCorrection)}
-            disabled={!adminNote.trim()}
-            className="btn-primary text-sm disabled:opacity-50"
-          >
-            Mark as Resolved
-          </button>
-        </div>
-      ) : (
-        flag.adminNote && (
-          <div className="border-t pt-3" style={{ borderColor: 'var(--border)' }}>
-            <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Admin Resolution</p>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{flag.adminNote}</p>
-            {flag.goldenCorrection && (
-              <div className="mt-2 p-3 rounded-lg" style={{ background: 'var(--gold-dim)' }}>
-                <p className="text-xs font-medium mb-1" style={{ color: 'var(--color-gold)' }}>✨ Golden Correction</p>
-                <p className="text-sm">{flag.goldenCorrection}</p>
-              </div>
-            )}
-            {flag.resolvedAt && (
-              <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-                Resolved: {new Date(flag.resolvedAt).toLocaleString()}
-              </p>
-            )}
-          </div>
-        )
-      )}
+      <button className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity">
+        Upload
+      </button>
     </div>
   );
 }
