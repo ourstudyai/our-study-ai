@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getCourse } from '@/lib/firestore/courses';
+import { getCourseById } from '@/lib/firestore/courses';
 import TopicsPanel from '@/components/course/TopicsPanel';
 import PastQuestionsPanel from '@/components/course/PastQuestionsPanel';
 import AOCPanel from '@/components/course/AOCPanel';
@@ -13,7 +13,7 @@ type TabType = 'topics' | 'past-questions' | 'aoc' | 'memory';
 
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
-  const { user } = useAuth();
+  const { firebaseUser } = useAuth();
   const router = useRouter();
   const [course, setCourse] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<TabType>('topics');
@@ -21,11 +21,11 @@ export default function CoursePage() {
 
   useEffect(() => {
     if (!firebaseUser || !courseId) return;
-    getCourse(courseId).then((data) => {
+    getCourseById(courseId).then((data) => {
       setCourse(data);
       setLoading(false);
     });
-  }, [user, courseId]);
+  }, [firebaseUser, courseId]);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
@@ -67,18 +67,4 @@ export default function CoursePage() {
               color: activeTab === tab.id ? 'var(--navy)' : 'var(--text-secondary)',
               border: '1px solid var(--border)',
             }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div>
-        {activeTab === 'topics' && <TopicsPanel courseId={courseId} />}
-        {activeTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} />}
-        {activeTab === 'aoc' && <AOCPanel courseId={courseId} />}
-        {activeTab === 'memory' && <StudyMemoryPanel courseId={courseId} />}
-      </div>
-    </div>
-  );
-}
+          ></button>
