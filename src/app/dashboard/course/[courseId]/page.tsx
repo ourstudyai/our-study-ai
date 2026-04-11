@@ -20,12 +20,12 @@ export default function CoursePage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!user || !courseId) return;
+        if (!firebaseUser || !courseId) return;
         getCourseById(courseId).then((data) => {
             setCourse(data);
             setLoading(false);
         });
-    }, [user, courseId]);
+    }, [firebaseUser, courseId]);
 
     if (loading) return (
         <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
