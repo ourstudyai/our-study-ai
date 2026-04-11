@@ -1,70 +1,44 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getCourseById } from '@/lib/firestore/courses';
-import TopicsPanel from '@/components/course/TopicsPanel';
-import PastQuestionsPanel from '@/components/course/PastQuestionsPanel';
-import AOCPanel from '@/components/course/AOCPanel';
-import StudyMemoryPanel from '@/components/course/StudyMemoryPanel';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 
-type TabType = 'topics' | 'past-questions' | 'aoc' | 'memory';
-
-export default function CoursePage() {
-  const { courseId } = useParams<{ courseId: string }>();
-  const { firebaseUser } = useAuth();
+export default function DashboardPage() {
+  const { firebaseUser, userProfile } = useAuth();
   const router = useRouter();
-  const [course, setCourse] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('topics');
-  const [loading, setLoading] = useState(true);
+  const [courses, setCourses] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!firebaseUser || !courseId) return;
-    getCourseById(courseId).then((data) => {
-      setCourse(data);
-      setLoading(false);
-    });
-  }, [firebaseUser, courseId]);
-
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
-      <p style={{ color: 'var(--gold)' }}>Loading course...</p>
-    </div>
-  );
-
-  if (!course) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
-      <p style={{ color: 'var(--text-muted)' }}>Course not found.</p>
-    </div>
-  );
-
-  const tabs: { id: TabType; label: string }[] = [
-    { id: 'topics', label: 'Topics' },
-    { id: 'past-questions', label: 'Past Questions' },
-    { id: 'aoc', label: 'AOC' },
-    { id: 'memory', label: 'Study Memory' },
-  ];
+    if (!firebaseUser) return;
+    const fetchCourses = async () => {
+      const q = query(collection(db, 'courses'), where('userId', '==', firebaseUser.uid));
+      const snap = await getDocs(q);
+      setCourses(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    };
+    fetchCourses();
+  }, [firebaseUser]);
 
   return (
-    <div className="min-h-screen p-6" style={{ background: 'var(--navy)', color: 'var(--text-primary)' }}>
-      <button onClick={() => router.back()} style={{ color: 'var(--gold)' }} className="mb-4 text-sm hover:underline">
-        ← Back
-      </button>
-      <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }}>
-        {course.name}
+    <div className="p-6" style={{ color: 'var(--text-primary)' }}>
+      <h1 className="text-3xl font-bold mb-6" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }}>
+        Welcome back{userProfile?.displayName ? `, ${userProfile.displayName}` : ''}
       </h1>
-      <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>{course.description}</p>
-
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className="px-4 py-2 rounded text-sm font-medium transition-all"
-            style={{
-              background: activeTab === tab.id ? 'var(--gold)' : 'var(--navy-card)',
-              color: activeTab === tab.id ? 'var(--navy)' : 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-            }}
-          ></button>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {courses.map((course) => (
+          <div
+            key={course.id}
+            onClick={() => router.push(`/dashboard/course/${course.id}`)}
+            className="p-4 rounded-xl cursor-pointer hover:scale-105 transition-transform"
+            style={{ background: 'var(--navy-card)', border: '1px solid var(--border)' }}
+          >
+            <h2 className="font-semibold mb-1" style={{ color: 'var(--gold)' }}>{course.name}</h2>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{course.code}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
