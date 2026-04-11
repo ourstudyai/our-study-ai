@@ -71,7 +71,7 @@ export default function OnboardingPage() {
 
   if (loading || !firebaseUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg-primary)' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
         <div className="pulse-dot" />
       </div>
     );
@@ -79,7 +79,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4"
-      style={{ background: 'var(--color-bg-primary)' }}>
+      style={{ background: 'var(--navy)' }}>
 
       {/* Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -96,7 +96,7 @@ export default function OnboardingPage() {
           <h1 className="text-2xl font-bold font-display mb-2">
             {step === 'department' ? 'Select Your Department' : 'Select Your Year'}
           </h1>
-          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             {step === 'department'
               ? 'Choose the department you are enrolled in'
               : `${departments.find((d) => d.id === selectedDept)?.name} Department`}
@@ -105,9 +105,9 @@ export default function OnboardingPage() {
           {/* Step indicator */}
           <div className="flex items-center justify-center gap-2 mt-4">
             <div className="w-8 h-1 rounded-full"
-              style={{ background: 'var(--color-accent)' }} />
+              style={{ background: 'var(--gold)' }} />
             <div className="w-8 h-1 rounded-full"
-              style={{ background: step === 'year' ? 'var(--color-accent)' : 'var(--color-border)' }} />
+              style={{ background: step === 'year' ? 'var(--gold)' : 'var(--border)' }} />
           </div>
         </div>
 
@@ -117,7 +117,7 @@ export default function OnboardingPage() {
               <button
                 key={dept.id}
                 onClick={() => handleDeptSelect(dept.id)}
-                className="glass-card p-6 text-left transition-all duration-300 hover:scale-[1.02] group"
+                className="card p-6 text-left transition-all duration-300 hover:scale-[1.02] group"
                 id={`dept-${dept.id}`}
               >
                 <div className="text-4xl mb-4">{dept.icon}</div>
@@ -125,7 +125,7 @@ export default function OnboardingPage() {
                   style={{ color: dept.color }}>
                   {dept.name}
                 </h3>
-                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   {dept.description}
                 </p>
               </button>
@@ -148,20 +148,20 @@ export default function OnboardingPage() {
                   key={yr.value}
                   onClick={() => handleYearSelect(yr.value)}
                   disabled={isSubmitting}
-                  className="glass-card p-6 text-center transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="card p-6 text-center transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
                   id={`year-${yr.value}`}
                 >
                   <div className="text-3xl font-bold font-display mb-1"
-                    style={{ color: selectedYear === yr.value ? 'var(--color-accent)' : 'var(--color-text-primary)' }}>
+                    style={{ color: selectedYear === yr.value ? 'var(--gold)' : 'var(--text-primary)' }}>
                     {yr.value}
                   </div>
-                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     {yr.subtitle}
                   </p>
                   {isSubmitting && selectedYear === yr.value && (
                     <div className="mt-3 flex justify-center">
                       <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
-                        style={{ borderColor: 'var(--color-accent)', borderTopColor: 'transparent' }} />
+                        style={{ borderColor: 'var(--gold)', borderTopColor: 'transparent' }} />
                     </div>
                   )}
                 </button>

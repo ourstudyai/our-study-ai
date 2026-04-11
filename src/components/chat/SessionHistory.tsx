@@ -20,10 +20,10 @@ export default function SessionHistory({ sessions, onSelectSession, onClose }: S
 
       {/* Panel */}
       <div className="relative w-full max-w-sm h-full overflow-y-auto"
-        style={{ background: 'var(--color-bg-secondary)', borderLeft: '1px solid var(--color-border)' }}>
-        
+        style={{ background: 'var(--navy-mid)', borderLeft: '1px solid var(--border)' }}>
+
         <div className="p-4 border-b flex items-center justify-between"
-          style={{ borderColor: 'var(--color-border)' }}>
+          style={{ borderColor: 'var(--border)' }}>
           <h3 className="font-semibold text-sm">Session History</h3>
           <button onClick={onClose} className="btn-ghost text-sm">✕</button>
         </div>
@@ -32,7 +32,7 @@ export default function SessionHistory({ sessions, onSelectSession, onClose }: S
           {sessions.length === 0 ? (
             <div className="text-center py-8">
               <div className="text-3xl mb-2">📚</div>
-              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 No sessions yet. Start a conversation!
               </p>
             </div>
@@ -40,7 +40,7 @@ export default function SessionHistory({ sessions, onSelectSession, onClose }: S
             Object.entries(grouped).map(([dateLabel, dateSessions]) => (
               <div key={dateLabel} className="mb-4">
                 <p className="text-xs font-medium mb-2 px-2"
-                  style={{ color: 'var(--color-text-muted)' }}>
+                  style={{ color: 'var(--text-muted)' }}>
                   📅 {dateLabel}
                 </p>
                 {dateSessions.map((session) => (
@@ -56,7 +56,7 @@ export default function SessionHistory({ sessions, onSelectSession, onClose }: S
                       </span>
                     </div>
                     <p className="text-xs truncate pl-6"
-                      style={{ color: 'var(--color-text-muted)' }}>
+                      style={{ color: 'var(--text-muted)' }}>
                       {STUDY_MODE_LABELS[session.mode]} · {session.messageCount || 0} messages
                     </p>
                   </button>

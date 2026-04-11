@@ -22,7 +22,7 @@ export default function RootPage() {
   }, [firebaseUser, userProfile, loading, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg-primary)' }}>
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
       <div className="flex flex-col items-center gap-4">
         <div className="relative">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-seminary-gold to-seminary-burgundy flex items-center justify-center">
@@ -32,7 +32,7 @@ export default function RootPage() {
         </div>
         <div className="flex items-center gap-2">
           <div className="pulse-dot" />
-          <span className="text-sm text-[var(--color-text-muted)]">Loading...</span>
+          <span className="text-sm text-[var(--text-muted)]">Loading...</span>
         </div>
       </div>
     </div>

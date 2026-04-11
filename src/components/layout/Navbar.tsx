@@ -23,8 +23,8 @@ export default function Navbar() {
         className="flex items-center justify-between px-4 border-b flex-shrink-0"
         style={{
           height: 'var(--navbar-height)',
-          background: 'var(--color-bg-secondary)',
-          borderColor: 'var(--color-border)',
+          background: 'var(--navy-mid)',
+          borderColor: 'var(--border)',
         }}
       >
         {/* Left — Mobile hamburger + Logo */}

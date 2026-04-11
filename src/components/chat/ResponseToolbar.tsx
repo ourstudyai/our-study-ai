@@ -46,7 +46,7 @@ export default function ResponseToolbar({
         .replace(/\*(.*?)\*/g, '$1')
         .replace(/`(.*?)`/g, '$1')
         .replace(/📖|📐|✍️|⚠️|💡/g, '');
-      
+
       await navigator.clipboard.writeText(cleanText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -92,8 +92,8 @@ export default function ResponseToolbar({
   return (
     <>
       <div className="flex items-center gap-1 mt-3 pt-2 border-t flex-wrap"
-        style={{ borderColor: 'var(--color-border)' }}>
-        
+        style={{ borderColor: 'var(--border)' }}>
+
         {/* Helpful */}
         <button
           onClick={() => handleFeedback('helpful')}
@@ -113,7 +113,7 @@ export default function ResponseToolbar({
         </button>
 
         {/* Divider */}
-        <div className="w-px h-4 mx-1" style={{ background: 'var(--color-border)' }} />
+        <div className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
 
         {/* Copy */}
         <button
@@ -160,7 +160,7 @@ export default function ResponseToolbar({
         <div className="modal-overlay" onClick={() => setShowFlagModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-1">🚩 Flag This Response</h3>
-            <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
               Describe what&apos;s incorrect, incomplete, or misleading.
             </p>
 

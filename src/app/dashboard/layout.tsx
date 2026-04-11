@@ -26,14 +26,14 @@ export default function DashboardLayout({
 
   if (loading || !firebaseUser || !userProfile?.onboardingComplete) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg-primary)' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
         <div className="pulse-dot" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex" style={{ background: 'var(--color-bg-primary)' }}>
+    <div className="min-h-screen flex" style={{ background: 'var(--navy)' }}>
       {/* Sidebar — Hidden on mobile, visible on desktop */}
       <Sidebar />
 
