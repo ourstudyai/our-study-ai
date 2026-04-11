@@ -45,7 +45,7 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg-primary)' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
         <div className="pulse-dot" />
       </div>
     );
@@ -53,8 +53,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 relative overflow-hidden"
-      style={{ background: 'var(--color-bg-primary)' }}>
-      
+      style={{ background: 'var(--navy)' }}>
+
       {/* Background decorative elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 -left-32 w-96 h-96 rounded-full opacity-10"
@@ -78,10 +78,10 @@ export default function LoginPage() {
             </div>
           </div>
           <h1 className="text-3xl font-bold font-display tracking-tight mb-2"
-            style={{ color: 'var(--color-text-primary)' }}>
+            style={{ color: 'var(--text-primary)' }}>
             Our Study AI
           </h1>
-          <p className="text-base" style={{ color: 'var(--color-text-secondary)' }}>
+          <p className="text-base" style={{ color: 'var(--text-secondary)' }}>
             Seminary Academic Study Platform
           </p>
           <div className="mt-3 flex items-center justify-center gap-2">
@@ -95,11 +95,11 @@ export default function LoginPage() {
         </div>
 
         {/* Sign-in Card */}
-        <div className="glass-card p-8 glow-accent">
-          <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+        <div className="card p-8 shadow-gold">
+          <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
             Welcome Back
           </h2>
-          <p className="text-sm mb-8" style={{ color: 'var(--color-text-muted)' }}>
+          <p className="text-sm mb-8" style={{ color: 'var(--text-muted)' }}>
             Sign in with your seminary Google account to continue
           </p>
 
@@ -116,15 +116,15 @@ export default function LoginPage() {
             className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-medium transition-all duration-300 border disabled:opacity-50 disabled:cursor-not-allowed group"
             style={{
               background: 'rgba(255, 255, 255, 0.04)',
-              borderColor: 'var(--color-border)',
+              borderColor: 'var(--border)',
             }}
             id="google-sign-in-button"
           >
             {isLoading ? (
               <>
                 <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
-                  style={{ borderColor: 'var(--color-accent)', borderTopColor: 'transparent' }} />
-                <span style={{ color: 'var(--color-text-secondary)' }}>Signing in...</span>
+                  style={{ borderColor: 'var(--gold)', borderTopColor: 'transparent' }} />
+                <span style={{ color: 'var(--text-secondary)' }}>Signing in...</span>
               </>
             ) : (
               <>
@@ -136,14 +136,14 @@ export default function LoginPage() {
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                 </svg>
                 <span className="group-hover:text-white transition-colors"
-                  style={{ color: 'var(--color-text-primary)' }}>
+                  style={{ color: 'var(--text-primary)' }}>
                   Continue with Google
                 </span>
               </>
             )}
           </button>
 
-          <p className="mt-6 text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          <p className="mt-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
             Your study data is private and secure.
             <br />
             AI does not train on your conversations.
@@ -151,7 +151,7 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-xs mt-8" style={{ color: 'var(--color-text-muted)' }}>
+        <p className="text-center text-xs mt-8" style={{ color: 'var(--text-muted)' }}>
           © {new Date().getFullYear()} Our Study AI · A Catholic seminary learning tool
         </p>
       </div>

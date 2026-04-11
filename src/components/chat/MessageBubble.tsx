@@ -36,29 +36,27 @@ export default function MessageBubble({
   return (
     <div className={`mb-4 flex ${isUser ? 'justify-end' : 'justify-start'} animate-slide-up`}>
       <div
-        className={`max-w-[88%] md:max-w-[75%] rounded-2xl px-4 py-3 ${
-          isUser
-            ? 'rounded-br-md'
-            : 'rounded-bl-md'
-        }`}
+        className={`max-w-[88%] md:max-w-[75%] rounded-2xl px-4 py-3 ${isUser
+          ? 'rounded-br-md'
+          : 'rounded-bl-md'
+          }`}
         style={{
           background: isUser
             ? 'linear-gradient(135deg, rgba(124, 108, 240, 0.2), rgba(124, 108, 240, 0.1))'
             : isError
-            ? 'rgba(239, 71, 111, 0.08)'
-            : 'rgba(255, 255, 255, 0.03)',
-          border: `1px solid ${
-            isUser
-              ? 'rgba(124, 108, 240, 0.2)'
-              : isError
+              ? 'rgba(239, 71, 111, 0.08)'
+              : 'rgba(255, 255, 255, 0.03)',
+          border: `1px solid ${isUser
+            ? 'rgba(124, 108, 240, 0.2)'
+            : isError
               ? 'rgba(239, 71, 111, 0.2)'
-              : 'var(--color-border)'
-          }`,
+              : 'var(--border)'
+            }`,
         }}
       >
         {/* Message content */}
         <div className={`text-sm leading-relaxed chat-markdown ${isStreaming ? 'streaming-cursor' : ''}`}
-          style={{ color: isError ? '#ef476f' : 'var(--color-text-primary)' }}>
+          style={{ color: isError ? '#ef476f' : 'var(--text-primary)' }}>
           <FormattedContent content={message.content} isStreaming={isStreaming} />
         </div>
 
@@ -88,7 +86,7 @@ function FormattedContent({ content, isStreaming }: { content: string; isStreami
     return (
       <div className="flex items-center gap-2">
         <div className="pulse-dot" />
-        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Thinking...</span>
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Thinking...</span>
       </div>
     );
   }
@@ -128,7 +126,7 @@ function FormattedContent({ content, isStreaming }: { content: string; isStreami
               if (line.startsWith('### ')) {
                 return (
                   <h3 key={j} className="text-sm font-bold mt-3 mb-1.5"
-                    style={{ color: sectionClass ? undefined : 'var(--color-text-primary)' }}>
+                    style={{ color: sectionClass ? undefined : 'var(--text-primary)' }}>
                     {line.replace('### ', '')}
                   </h3>
                 );
@@ -153,7 +151,7 @@ function FormattedContent({ content, isStreaming }: { content: string; isStreami
               if (line.startsWith('> ')) {
                 return (
                   <blockquote key={j} className="pl-4 my-2 italic border-l-2"
-                    style={{ borderColor: 'var(--color-accent)', color: 'var(--color-text-secondary)' }}>
+                    style={{ borderColor: 'var(--gold)', color: 'var(--text-secondary)' }}>
                     <InlineFormat text={line.replace('> ', '')} />
                   </blockquote>
                 );

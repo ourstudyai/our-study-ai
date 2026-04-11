@@ -63,7 +63,7 @@ export default function ChatInterface({
                 {mode === 'readiness_assessment' && '🎯'}
               </div>
               <h3 className="text-lg font-semibold mb-2">{courseName}</h3>
-              <p className="text-sm mb-6" style={{ color: 'var(--color-text-muted)' }}>
+              <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
                 {mode === 'plain_explainer' && 'Ask about any concept or paste a confusing passage. I\'ll explain it in plain language.'}
                 {mode === 'practice_questions' && 'Ask me to generate quiz questions on any topic from this course.'}
                 {mode === 'exam_preparation' && 'Ask an exam-style question and I\'ll write a complete formal answer, or submit your draft for review.'}
@@ -77,7 +77,7 @@ export default function ChatInterface({
                 <button
                   onClick={() => handleSend('Introduce me to this course')}
                   className="px-4 py-2 rounded-xl text-xs transition-all duration-200"
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
                 >
                   📖 Introduce me to this course
                 </button>
@@ -85,7 +85,7 @@ export default function ChatInterface({
                   <button
                     onClick={() => handleSend('Give me 3 practice questions on the main topics')}
                     className="px-4 py-2 rounded-xl text-xs transition-all duration-200"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
                   >
                     ❓ 3 practice questions
                   </button>
@@ -94,7 +94,7 @@ export default function ChatInterface({
                   <button
                     onClick={() => handleSend('Start the readiness assessment')}
                     className="px-4 py-2 rounded-xl text-xs transition-all duration-200"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
                   >
                     🎯 Start assessment
                   </button>

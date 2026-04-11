@@ -25,18 +25,17 @@ export default function ModeSelector({ activeMode, onModeChange }: ModeSelectorP
         <button
           key={mode}
           onClick={() => onModeChange(mode)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-200 flex-shrink-0 ${
-            activeMode === mode ? '' : ''
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-200 flex-shrink-0 ${activeMode === mode ? '' : ''
+            }`}
           style={{
-            background: activeMode === mode 
-              ? 'rgba(124, 108, 240, 0.15)' 
+            background: activeMode === mode
+              ? 'rgba(124, 108, 240, 0.15)'
               : 'transparent',
-            color: activeMode === mode 
-              ? 'var(--color-accent)' 
-              : 'var(--color-text-muted)',
-            border: activeMode === mode 
-              ? '1px solid rgba(124, 108, 240, 0.3)' 
+            color: activeMode === mode
+              ? 'var(--gold)'
+              : 'var(--text-muted)',
+            border: activeMode === mode
+              ? '1px solid rgba(124, 108, 240, 0.3)'
               : '1px solid transparent',
           }}
           id={`mode-${mode}`}
