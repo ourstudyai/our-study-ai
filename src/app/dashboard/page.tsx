@@ -20,7 +20,7 @@ export default function CoursePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !courseId) return;
+    if (!firebaseUser || !courseId) return;
     getCourse(courseId).then((data) => {
       setCourse(data);
       setLoading(false);
