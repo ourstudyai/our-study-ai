@@ -13,7 +13,7 @@ type TabType = 'topics' | 'past-questions' | 'aoc' | 'memory';
 
 export default function CoursePage() {
     const { courseId } = useParams<{ courseId: string }>();
-    const { user } = useAuth();
+    const { firebaseUser } = useAuth();
     const router = useRouter();
     const [course, setCourse] = useState<any>(null);
     const [activeTab, setActiveTab] = useState<TabType>('topics');
