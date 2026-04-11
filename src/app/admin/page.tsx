@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import {
+  collection, getDocs, query, orderBy,
+  doc, updateDoc, getDoc
+} from "firebase/firestore";
+import { ref, uploadBytesResumable, getDownloadURL, listAll, getMetadata } from "firebase/storage";
 import { db, storage } from "@/lib/firebase/config";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -14,7 +17,8 @@ interface Course {
   department: string;
   year: number;
   semester: number;
-  hasMaterials?: boolean;
+  readiness?: "empty" | "partial" | "verified";
+  materials?: Record<string, Record<string, string>>;
 }
 
 interface GroupedCourses {
@@ -25,7 +29,7 @@ interface GroupedCourses {
   };
 }
 
-type UploadCategory = "syllabus" | "aoc" | "past_questions" | "lecture_notes";
+type UploadCategory = "lecture_notes" | "syllabus" | "aoc" | "past_questions";
 
 const CATEGORIES: { key: UploadCategory; label: string; icon: string }[] = [
   { key: "lecture_notes", label: "Lecture Notes", icon: "📖" },
@@ -33,6 +37,25 @@ const CATEGORIES: { key: UploadCategory; label: string; icon: string }[] = [
   { key: "aoc", label: "Areas of Concentration", icon: "🎯" },
   { key: "past_questions", label: "Past Questions", icon: "📝" },
 ];
+
+interface ExistingFile {
+  name: string;
+  url: string;
+  size?: number;
+  uploadedAt?: string;
+}
+
+function ReadinessDot({ status }: { status?: string }) {
+  if (status === "verified") return (
+    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-green-500" title="Verified — ready for students" />
+  );
+  if (status === "partial") return (
+    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-yellow-400" title="Partially filled — not yet verified" />
+  );
+  return (
+    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-red-500" title="No materials uploaded" />
+  );
+}
 
 export default function AdminPage() {
   const { firebaseUser, userProfile, loading: authLoading } = useAuth();
@@ -89,17 +112,15 @@ export default function AdminPage() {
     });
   };
 
-  const markCourseGreen = (courseId: string) => {
-    setCourses((prev) =>
-      prev.map((c) => (c.id === courseId ? { ...c, hasMaterials: true } : c))
-    );
+  const updateCourseReadiness = (courseId: string, readiness: "empty" | "partial" | "verified") => {
+    setCourses((prev) => prev.map((c) => c.id === courseId ? { ...c, readiness } : c));
     setGrouped((prev) => {
       const next = { ...prev };
       for (const dept of Object.keys(next)) {
         for (const year of Object.keys(next[dept])) {
           for (const sem of Object.keys(next[dept][Number(year)])) {
             next[dept][Number(year)][Number(sem)] = next[dept][Number(year)][Number(sem)].map((c) =>
-              c.id === courseId ? { ...c, hasMaterials: true } : c
+              c.id === courseId ? { ...c, readiness } : c
             );
           }
         }
@@ -130,9 +151,14 @@ export default function AdminPage() {
         <h1 className="text-3xl font-bold text-[var(--color-gold)] mb-1" style={{ fontFamily: "Playfair Display, serif" }}>
           Admin Panel
         </h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mb-6">
+        <p className="text-sm text-[var(--color-text-secondary)] mb-2">
           Bigard Memorial Institute — Course Materials Management
         </p>
+        <div className="flex items-center gap-4 mb-6 text-xs text-[var(--color-text-secondary)]">
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Empty</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Partial</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Verified</span>
+        </div>
 
         <input
           type="text"
@@ -212,7 +238,7 @@ export default function AdminPage() {
         <UploadModal
           course={selectedCourse}
           onClose={() => setSelectedCourse(null)}
-          onUploaded={() => markCourseGreen(selectedCourse.id)}
+          onReadinessChange={(readiness) => updateCourseReadiness(selectedCourse.id, readiness)}
         />
       )}
     </div>
@@ -223,10 +249,7 @@ function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void 
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg-secondary)] rounded-lg border border-[var(--color-border)] hover:border-[var(--color-gold)] transition-colors">
       <div className="flex items-center gap-3">
-        <span
-          className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${course.hasMaterials ? "bg-green-500" : "bg-red-500"}`}
-          title={course.hasMaterials ? "Has materials" : "No materials yet"}
-        />
+        <ReadinessDot status={course.readiness} />
         <div>
           <p className="font-medium text-[var(--color-text-primary)]">{course.name}</p>
           <p className="text-xs text-[var(--color-text-secondary)]">{course.code}</p>
@@ -236,20 +259,67 @@ function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void 
         onClick={onUpload}
         className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity"
       >
-        Upload
+        Manage
       </button>
     </div>
   );
 }
 
-function UploadModal({ course, onClose, onUploaded }: {
+function UploadModal({ course, onClose, onReadinessChange }: {
   course: Course;
   onClose: () => void;
-  onUploaded: () => void;
+  onReadinessChange: (readiness: "empty" | "partial" | "verified") => void;
 }) {
   const [fileQueues, setFileQueues] = useState<Record<string, File[]>>({});
   const [fileStatuses, setFileStatuses] = useState<Record<string, Record<string, "idle" | "uploading" | "done" | "error">>>({});
   const [fileProgresses, setFileProgresses] = useState<Record<string, Record<string, number>>>({});
+  const [existingFiles, setExistingFiles] = useState<Record<string, ExistingFile[]>>({});
+  const [loadingExisting, setLoadingExisting] = useState(true);
+  const [readiness, setReadiness] = useState<"empty" | "partial" | "verified">(course.readiness || "empty");
+  const [savingReadiness, setSavingReadiness] = useState(false);
+
+  // Load existing files from Firebase Storage
+  useEffect(() => {
+    const loadExisting = async () => {
+      try {
+        const result: Record<string, ExistingFile[]> = {};
+        for (const { key } of CATEGORIES) {
+          const path = `materials/${course.department}/year${course.year}/sem${course.semester}/${course.id}/${key}`;
+          try {
+            const listRef = ref(storage, path);
+            const res = await listAll(listRef);
+            const files: ExistingFile[] = await Promise.all(
+              res.items.map(async (itemRef) => {
+                const url = await getDownloadURL(itemRef);
+                let size: number | undefined;
+                let uploadedAt: string | undefined;
+                try {
+                  const meta = await getMetadata(itemRef);
+                  size = meta.size;
+                  uploadedAt = meta.timeCreated;
+                } catch { }
+                return { name: itemRef.name, url, size, uploadedAt };
+              })
+            );
+            result[key] = files;
+          } catch {
+            result[key] = [];
+          }
+        }
+        setExistingFiles(result);
+
+        // Auto-compute readiness from Firestore
+        const courseDoc = await getDoc(doc(db, "courses", course.id));
+        const data = courseDoc.data();
+        if (data?.readiness) setReadiness(data.readiness);
+      } catch (err) {
+        console.error("Error loading existing files:", err);
+      } finally {
+        setLoadingExisting(false);
+      }
+    };
+    loadExisting();
+  }, [course]);
 
   const handleFileSelect = (files: FileList, category: UploadCategory) => {
     const arr = Array.from(files);
@@ -293,14 +363,22 @@ function UploadModal({ course, onClose, onUploaded }: {
         async () => {
           const url = await getDownloadURL(task.snapshot.ref);
           await updateDoc(doc(db, "courses", course.id), {
-            hasMaterials: true,
             [`materials.${category}.${file.name}`]: url,
           });
+          // Auto-set to partial if was empty
+          if (readiness === "empty") {
+            await updateDoc(doc(db, "courses", course.id), { readiness: "partial" });
+            setReadiness("partial");
+            onReadinessChange("partial");
+          }
           setFileStatuses((p) => ({
             ...p,
             [category]: { ...(p[category] || {}), [file.name]: "done" },
           }));
-          onUploaded();
+          setExistingFiles((p) => ({
+            ...p,
+            [category]: [...(p[category] || []), { name: file.name, url }],
+          }));
           resolve();
         }
       );
@@ -323,6 +401,19 @@ function UploadModal({ course, onClose, onUploaded }: {
     });
   };
 
+  const handleSetReadiness = async (newReadiness: "empty" | "partial" | "verified") => {
+    setSavingReadiness(true);
+    try {
+      await updateDoc(doc(db, "courses", course.id), { readiness: newReadiness });
+      setReadiness(newReadiness);
+      onReadinessChange(newReadiness);
+    } catch (err) {
+      console.error("Error updating readiness:", err);
+    } finally {
+      setSavingReadiness(false);
+    }
+  };
+
   const totalPending = Object.entries(fileQueues).reduce((acc, [cat, files]) => {
     return acc + files.filter((f) => {
       const status = fileStatuses[cat]?.[f.name];
@@ -330,11 +421,19 @@ function UploadModal({ course, onClose, onUploaded }: {
     }).length;
   }, 0);
 
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return "";
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
 
-        <div className="flex items-center justify-between mb-5">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold text-[var(--color-gold)]" style={{ fontFamily: "Playfair Display, serif" }}>
               {course.name}
@@ -346,6 +445,27 @@ function UploadModal({ course, onClose, onUploaded }: {
           <button onClick={onClose} className="text-[var(--color-text-secondary)] hover:text-white text-xl font-bold">✕</button>
         </div>
 
+        {/* Readiness control */}
+        <div className="flex items-center gap-2 mb-5 p-3 rounded-xl bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
+          <span className="text-xs text-[var(--color-text-secondary)] mr-1">Status:</span>
+          {(["empty", "partial", "verified"] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => handleSetReadiness(r)}
+              disabled={savingReadiness}
+              className={`text-xs px-3 py-1 rounded-lg font-semibold transition-all ${readiness === r
+                ? r === "verified" ? "bg-green-500 text-white" :
+                  r === "partial" ? "bg-yellow-400 text-black" :
+                    "bg-red-500 text-white"
+                : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:border-[var(--color-gold)] border border-[var(--color-border)]"
+                }`}
+            >
+              {r === "empty" ? "🔴 Empty" : r === "partial" ? "🟡 Partial" : "🟢 Verified"}
+            </button>
+          ))}
+        </div>
+
+        {/* Batch upload */}
         {totalPending > 1 && (
           <button
             onClick={handleBatchUploadAll}
@@ -355,81 +475,96 @@ function UploadModal({ course, onClose, onUploaded }: {
           </button>
         )}
 
-        <div className="space-y-4">
-          {CATEGORIES.map(({ key, label, icon }) => {
-            const files = fileQueues[key] || [];
+        {loadingExisting ? (
+          <p className="text-xs text-[var(--color-text-secondary)] text-center py-4">Loading existing files...</p>
+        ) : (
+          <div className="space-y-4">
+            {CATEGORIES.map(({ key, label, icon }) => {
+              const files = fileQueues[key] || [];
+              const existing = existingFiles[key] || [];
 
-            return (
-              <div key={key} className="border border-[var(--color-border)] rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-medium text-sm text-[var(--color-text-primary)]">
-                    {icon} {label}
-                  </span>
-                  {files.length > 0 && (
-                    <button
-                      onClick={() => handleUploadCategory(key)}
-                      className="text-xs px-3 py-1 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90"
-                    >
-                      Upload {files.length > 1 ? `${files.length} files` : "file"}
-                    </button>
+              return (
+                <div key={key} className="border border-[var(--color-border)] rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-medium text-sm text-[var(--color-text-primary)]">
+                      {icon} {label}
+                      {existing.length > 0 && (
+                        <span className="ml-2 text-xs text-green-400">({existing.length} uploaded)</span>
+                      )}
+                    </span>
+                    {files.length > 0 && (
+                      <button
+                        onClick={() => handleUploadCategory(key)}
+                        className="text-xs px-3 py-1 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90"
+                      >
+                        Upload {files.length > 1 ? `${files.length} files` : "file"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Existing files */}
+                  {existing.length > 0 && (
+                    <div className="mb-3 space-y-1">
+                      {existing.map((f) => (
+                        <div key={f.name} className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-tertiary)] px-2 py-1.5 rounded-lg">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+                          <a href={f.url} target="_blank" rel="noopener noreferrer" className="truncate max-w-[200px] hover:text-[var(--color-gold)] transition-colors">
+                            {f.name}
+                          </a>
+                          {f.size && <span className="ml-auto flex-shrink-0">{formatSize(f.size)}</span>}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </div>
 
-                {files.length > 0 && (
-                  <div className="space-y-2 mb-3">
-                    {files.map((file) => {
-                      const status = fileStatuses[key]?.[file.name] || "idle";
-                      const progress = fileProgresses[key]?.[file.name] || 0;
-                      return (
-                        <div key={file.name} className="flex items-center gap-2 flex-wrap">
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400" :
+                  {/* New files queued */}
+                  {files.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      {files.map((file) => {
+                        const status = fileStatuses[key]?.[file.name] || "idle";
+                        const progress = fileProgresses[key]?.[file.name] || 0;
+                        return (
+                          <div key={file.name} className="flex items-center gap-2 flex-wrap">
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400" :
                               status === "error" ? "bg-red-400" :
                                 status === "uploading" ? "bg-yellow-400" : "bg-[var(--color-border)]"
-                            }`} />
-                          <span className="text-xs text-[var(--color-text-primary)] max-w-[180px] truncate">{file.name}</span>
-                          {status === "uploading" && (
-                            <div className="flex-1 bg-[var(--color-border)] rounded-full h-1.5 min-w-[60px]">
-                              <div
-                                className="bg-[var(--color-gold)] h-1.5 rounded-full transition-all"
-                                style={{ width: `${progress}%` }}
-                              />
-                            </div>
-                          )}
-                          {status === "done" && <span className="text-green-400 text-xs">✓</span>}
-                          {status === "error" && <span className="text-red-400 text-xs">✗ retry</span>}
-                          {status === "idle" && (
-                            <button
-                              onClick={() => handleDeselect(key, file.name)}
-                              className="text-xs text-red-400 hover:text-red-300"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                              }`} />
+                            <span className="text-xs text-[var(--color-text-primary)] max-w-[180px] truncate">{file.name}</span>
+                            {status === "uploading" && (
+                              <div className="flex-1 bg-[var(--color-border)] rounded-full h-1.5 min-w-[60px]">
+                                <div className="bg-[var(--color-gold)] h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                              </div>
+                            )}
+                            {status === "done" && <span className="text-green-400 text-xs">✓</span>}
+                            {status === "error" && <span className="text-red-400 text-xs">✗ retry</span>}
+                            {status === "idle" && (
+                              <button onClick={() => handleDeselect(key, file.name)} className="text-xs text-red-400 hover:text-red-300">✕</button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files) handleFileSelect(e.target.files, key);
-                    }}
-                  />
-                  <span className="text-xs px-3 py-1.5 border border-[var(--color-border)] rounded-lg hover:border-[var(--color-gold)] text-[var(--color-text-secondary)] hover:text-[var(--color-gold)] transition-colors">
-                    + Add files
-                  </span>
-                  <span className="text-xs text-[var(--color-text-secondary)]">PDF, DOCX, DOC, JPG, PNG</span>
-                </label>
-              </div>
-            );
-          })}
-        </div>
+                  {/* Add files */}
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => { if (e.target.files) handleFileSelect(e.target.files, key); }}
+                    />
+                    <span className="text-xs px-3 py-1.5 border border-[var(--color-border)] rounded-lg hover:border-[var(--color-gold)] text-[var(--color-text-secondary)] hover:text-[var(--color-gold)] transition-colors">
+                      + Add files
+                    </span>
+                    <span className="text-xs text-[var(--color-text-secondary)]">PDF, DOCX, DOC, JPG, PNG</span>
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
