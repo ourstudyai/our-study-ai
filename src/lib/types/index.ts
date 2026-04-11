@@ -4,7 +4,7 @@
 
 // --- User & Auth ---
 export type Department = 'philosophy' | 'theology';
-export type UserRole = 'student' | 'admin';
+export type UserRole = 'student' | 'admin' | 'chief_admin' | 'class_rep';
 export type ReadinessStatus = 'strong' | 'developing' | 'needs_work' | 'area_for_growth';
 
 export interface UserProfile {
@@ -13,8 +13,8 @@ export interface UserProfile {
   displayName: string;
   photoURL?: string;
   department?: Department;
-  year?: number; // 1-4
-  currentSemester?: number; // 1-2
+  year?: number;
+  currentSemester?: number;
   expiryDate?: string;
   isActive: boolean;
   role: UserRole;
@@ -32,9 +32,11 @@ export interface Course {
   year: number;
   semester: number;
   description: string;
+  readiness?: 'empty' | 'partial' | 'verified';
+  materials?: Record<string, Record<string, string>>;
   cornerstoneLibraryId?: string;
   courseLibraryId?: string;
-  readinessPercentage?: number; // computed per-student
+  readinessPercentage?: number;
   createdAt: string;
 }
 
@@ -75,7 +77,7 @@ export interface ChatSession {
   courseId: string;
   courseName: string;
   mode: StudyMode;
-  title: string; // Auto-generated from first message
+  title: string;
   startedAt: string;
   lastMessageAt: string;
   sessionSummary?: string;
@@ -95,11 +97,11 @@ export interface ChatMessage {
 
 // --- Semester Context ---
 export interface SemesterContext {
-  id: string; // `${userId}_${courseId}_${semester}`
+  id: string;
   userId: string;
   courseId: string;
   semester: number;
-  globalSummary: string; // max 200 words
+  globalSummary: string;
   learningGaps: string[];
   conceptsCovered: string[];
   lastUpdated: string;
@@ -108,7 +110,7 @@ export interface SemesterContext {
 
 // --- Mastery Tracking ---
 export interface MasteryRecord {
-  id: string; // `${userId}_${courseId}_${conceptId}`
+  id: string;
   userId: string;
   courseId: string;
   conceptId: string;
@@ -132,8 +134,8 @@ export interface Flag {
   courseId: string;
   courseName: string;
   mode: StudyMode;
-  question: string; // max 500 chars
-  aiResponse: string; // max 500 chars
+  question: string;
+  aiResponse: string;
   studentDescription: string;
   status: FlagStatus;
   adminNote?: string;
@@ -146,7 +148,7 @@ export interface Flag {
 export interface AOC {
   id: string;
   courseId: string;
-  year: number; // exam year
+  year: number;
   semester: number;
   topics: string[];
   isCurrentYear: boolean;
@@ -161,12 +163,12 @@ export interface PastQuestion {
   semester: number;
   questionText: string;
   topic: string;
-  reoccurrenceCount: number; // how many years this appeared
+  reoccurrenceCount: number;
   uploadedAt: string;
 }
 
 export interface TopicFrequency {
-  id: string; // `${courseId}_${topicHash}`
+  id: string;
   topicText: string;
   courseId: string;
   yearsAppeared: number[];
@@ -176,7 +178,7 @@ export interface TopicFrequency {
 
 // --- Document Libraries ---
 export type LibraryType = 'cornerstone' | 'course';
-export type DocumentStatus = 'processing' | 'flagged' | 'ready';
+export type DocumentStatus = 'processing' | 'flagged' | 'ready' | 'quarantine';
 
 export interface DocumentLibrary {
   id: string;
@@ -195,6 +197,36 @@ export interface StudyDocument {
   status: DocumentStatus;
   flags: string[];
   uploadedAt: string;
+  uploadedBy?: string;
+  approvedBy?: string;
+  aiQualityScore?: number;
+  aiConfidence?: number;
+  aiSummary?: string;
+}
+
+// --- Contributions (crowdsourced uploads) ---
+export type ContributionStatus = 'pending' | 'approved' | 'rejected' | 'quarantine';
+
+export interface Contribution {
+  id: string;
+  uploadedBy: string;
+  uploaderEmail: string;
+  uploaderRole: UserRole;
+  courseId: string;
+  courseName: string;
+  category: string;
+  filename: string;
+  storagePath: string;
+  status: ContributionStatus;
+  aiDetectedCourse?: string;
+  aiDetectedCategory?: string;
+  aiQualityScore?: number;
+  aiConfidence?: number;
+  aiSummary?: string;
+  adminNote?: string;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
 }
 
 // --- Bookmarks ---
@@ -213,11 +245,24 @@ export type NotificationType = 'welcome' | 'expiry_warning' | 'broadcast';
 
 export interface Notification {
   id: string;
-  targetUserId?: string; // null for broadcast
+  targetUserId?: string;
   type: NotificationType;
   message: string;
   read: boolean;
   createdAt: string;
+}
+
+// --- Material Flags (student requests) ---
+export interface MaterialFlag {
+  id: string;
+  userId: string;
+  userEmail: string;
+  courseId: string;
+  courseName: string;
+  description: string;
+  status: 'open' | 'resolved';
+  createdAt: string;
+  resolvedAt?: string;
 }
 
 // --- API Types ---
