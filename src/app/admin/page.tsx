@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
-import { db } from "@/lib/firebase/config";
+import { collection, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { db, storage } from "@/lib/firebase/config";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 interface Course {
@@ -24,6 +25,17 @@ interface GroupedCourses {
   };
 }
 
+type UploadCategory = "syllabus" | "aoc" | "past_questions" | "lecture_notes";
+
+const CATEGORIES: { key: UploadCategory; label: string; icon: string }[] = [
+  { key: "syllabus", label: "Syllabus", icon: "📋" },
+  { key: "aoc", label: "Areas of Concentration", icon: "🎯" },
+  { key: "past_questions", label: "Past Questions", icon: "📝" },
+  { key: "lecture_notes", label: "Lecture Notes", icon: "📖" },
+];
+
+const ACCEPTED = ".pdf,.doc,.docx,.jpg,.jpeg,.png";
+
 export default function AdminPage() {
   const { firebaseUser, userProfile, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -32,29 +44,20 @@ export default function AdminPage() {
   const [coursesLoading, setCoursesLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
 
-  // Auth guard
   useEffect(() => {
     if (authLoading) return;
-    if (!firebaseUser) {
-      router.push("/");
-      return;
-    }
-    if (userProfile && userProfile.role !== "admin") {
-      router.push("/");
-    }
+    if (!firebaseUser) { router.push("/"); return; }
+    if (userProfile && userProfile.role !== "admin") router.push("/");
   }, [firebaseUser, userProfile, authLoading, router]);
 
-  // Fetch courses
   useEffect(() => {
     const fetchCourses = async () => {
       try {
         const q = query(collection(db, "courses"), orderBy("department"));
         const snapshot = await getDocs(q);
-        const data: Course[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Course[];
+        const data: Course[] = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Course[];
         setCourses(data);
         groupCourses(data);
       } catch (err) {
@@ -84,6 +87,25 @@ export default function AdminPage() {
     setExpandedKeys((prev) => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const markCourseGreen = (courseId: string) => {
+    setCourses((prev) =>
+      prev.map((c) => (c.id === courseId ? { ...c, hasMaterials: true } : c))
+    );
+    setGrouped((prev) => {
+      const next = { ...prev };
+      for (const dept of Object.keys(next)) {
+        for (const year of Object.keys(next[dept])) {
+          for (const sem of Object.keys(next[dept][Number(year)])) {
+            next[dept][Number(year)][Number(sem)] = next[dept][Number(year)][Number(sem)].map((c) =>
+              c.id === courseId ? { ...c, hasMaterials: true } : c
+            );
+          }
+        }
+      }
       return next;
     });
   };
@@ -128,7 +150,7 @@ export default function AdminPage() {
               {filteredCourses.length} result(s) for &quot;{search}&quot;
             </p>
             {filteredCourses.map((course) => (
-              <CourseRow key={course.id} course={course} />
+              <CourseRow key={course.id} course={course} onUpload={() => setSelectedCourse(course)} />
             ))}
           </div>
         ) : (
@@ -139,12 +161,8 @@ export default function AdminPage() {
                   onClick={() => toggleKey(dept)}
                   className="w-full flex items-center justify-between px-5 py-4 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
                 >
-                  <span className="text-lg font-semibold text-[var(--color-gold)] capitalize">
-                    {dept} Department
-                  </span>
-                  <span className="text-[var(--color-text-secondary)]">
-                    {expandedKeys.has(dept) ? "▲" : "▼"}
-                  </span>
+                  <span className="text-lg font-semibold text-[var(--color-gold)] capitalize">{dept} Department</span>
+                  <span className="text-[var(--color-text-secondary)]">{expandedKeys.has(dept) ? "▲" : "▼"}</span>
                 </button>
 
                 {expandedKeys.has(dept) && (
@@ -155,12 +173,8 @@ export default function AdminPage() {
                           onClick={() => toggleKey(`${dept}-${year}`)}
                           className="w-full flex items-center justify-between px-4 py-2 bg-[var(--color-bg-tertiary)] rounded-lg mb-2"
                         >
-                          <span className="font-medium text-[var(--color-text-primary)]">
-                            Year {year}
-                          </span>
-                          <span className="text-[var(--color-text-secondary)] text-sm">
-                            {expandedKeys.has(`${dept}-${year}`) ? "▲" : "▼"}
-                          </span>
+                          <span className="font-medium text-[var(--color-text-primary)]">Year {year}</span>
+                          <span className="text-[var(--color-text-secondary)] text-sm">{expandedKeys.has(`${dept}-${year}`) ? "▲" : "▼"}</span>
                         </button>
 
                         {expandedKeys.has(`${dept}-${year}`) && (
@@ -178,7 +192,7 @@ export default function AdminPage() {
                                 {expandedKeys.has(`${dept}-${year}-${sem}`) && (
                                   <div className="space-y-2 pl-2">
                                     {grouped[dept][Number(year)][Number(sem)].map((course) => (
-                                      <CourseRow key={course.id} course={course} />
+                                      <CourseRow key={course.id} course={course} onUpload={() => setSelectedCourse(course)} />
                                     ))}
                                   </div>
                                 )}
@@ -195,17 +209,24 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      {selectedCourse && (
+        <UploadModal
+          course={selectedCourse}
+          onClose={() => setSelectedCourse(null)}
+          onUploaded={() => markCourseGreen(selectedCourse.id)}
+        />
+      )}
     </div>
   );
 }
 
-function CourseRow({ course }: { course: Course }) {
+function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg-secondary)] rounded-lg border border-[var(--color-border)] hover:border-[var(--color-gold)] transition-colors">
       <div className="flex items-center gap-3">
         <span
-          className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${course.hasMaterials ? "bg-green-500" : "bg-red-500"
-            }`}
+          className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${course.hasMaterials ? "bg-green-500" : "bg-red-500"}`}
           title={course.hasMaterials ? "Has materials" : "No materials yet"}
         />
         <div>
@@ -213,9 +234,100 @@ function CourseRow({ course }: { course: Course }) {
           <p className="text-xs text-[var(--color-text-secondary)]">{course.code}</p>
         </div>
       </div>
-      <button className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity">
+      <button
+        onClick={onUpload}
+        className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity"
+      >
         Upload
       </button>
+    </div>
+  );
+}
+
+function UploadModal({ course, onClose, onUploaded }: {
+  course: Course;
+  onClose: () => void;
+  onUploaded: () => void;
+}) {
+  const [progresses, setProgresses] = useState<Record<string, number>>({});
+  const [statuses, setStatuses] = useState<Record<string, "idle" | "uploading" | "done" | "error">>({});
+
+  const handleFile = async (file: File, category: UploadCategory) => {
+    const path = `materials/${course.department}/year${course.year}/sem${course.semester}/${course.id}/${category}/${file.name}`;
+    const storageRef = ref(storage, path);
+    const task = uploadBytesResumable(storageRef, file);
+
+    setStatuses((p) => ({ ...p, [category]: "uploading" }));
+
+    task.on(
+      "state_changed",
+      (snap) => {
+        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        setProgresses((p) => ({ ...p, [category]: pct }));
+      },
+      () => setStatuses((p) => ({ ...p, [category]: "error" })),
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        await updateDoc(doc(db, "courses", course.id), {
+          hasMaterials: true,
+          [`materials.${category}`]: url,
+        });
+        setStatuses((p) => ({ ...p, [category]: "done" }));
+        onUploaded();
+      }
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+      <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-xl font-bold text-[var(--color-gold)]" style={{ fontFamily: "Playfair Display, serif" }}>
+              {course.name}
+            </h2>
+            <p className="text-xs text-[var(--color-text-secondary)]">{course.code} · Year {course.year} · Sem {course.semester}</p>
+          </div>
+          <button onClick={onClose} className="text-[var(--color-text-secondary)] hover:text-white text-xl font-bold">✕</button>
+        </div>
+
+        <div className="space-y-4">
+          {CATEGORIES.map(({ key, label, icon }) => (
+            <div key={key} className="border border-[var(--color-border)] rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-sm text-[var(--color-text-primary)]">{icon} {label}</span>
+                {statuses[key] === "done" && <span className="text-green-400 text-xs font-bold">✓ Uploaded</span>}
+                {statuses[key] === "error" && <span className="text-red-400 text-xs font-bold">✗ Failed</span>}
+              </div>
+
+              {statuses[key] === "uploading" ? (
+                <div className="w-full bg-[var(--color-border)] rounded-full h-2">
+                  <div
+                    className="bg-[var(--color-gold)] h-2 rounded-full transition-all"
+                    style={{ width: `${progresses[key] || 0}%` }}
+                  />
+                </div>
+              ) : statuses[key] === "done" ? null : (
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-gold)] transition-colors">
+                  <input
+                    type="file"
+                    accept={ACCEPTED}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFile(file, key);
+                    }}
+                  />
+                  <span className="px-3 py-1.5 border border-[var(--color-border)] rounded-lg hover:border-[var(--color-gold)]">
+                    Choose file
+                  </span>
+                  <span>PDF, DOCX, DOC, JPG, PNG</span>
+                </label>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
