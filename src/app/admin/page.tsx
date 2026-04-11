@@ -25,16 +25,17 @@ interface GroupedCourses {
 }
 
 export default function AdminPage() {
-  const { firebaseUser, userProfile } = useAuth();
+  const { firebaseUser, userProfile, loading: authLoading } = useAuth();
   const router = useRouter();
   const [courses, setCourses] = useState<Course[]>([]);
   const [grouped, setGrouped] = useState<GroupedCourses>({});
-  const [loading, setLoading] = useState(true);
+  const [coursesLoading, setCoursesLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
   // Auth guard
   useEffect(() => {
+    if (authLoading) return;
     if (!firebaseUser) {
       router.push("/");
       return;
@@ -42,7 +43,7 @@ export default function AdminPage() {
     if (userProfile && userProfile.role !== "admin") {
       router.push("/");
     }
-  }, [firebaseUser, userProfile, router]);
+  }, [firebaseUser, userProfile, authLoading, router]);
 
   // Fetch courses
   useEffect(() => {
@@ -59,7 +60,7 @@ export default function AdminPage() {
       } catch (err) {
         console.error("Error fetching courses:", err);
       } finally {
-        setLoading(false);
+        setCoursesLoading(false);
       }
     };
     if (firebaseUser) fetchCourses();
@@ -95,7 +96,7 @@ export default function AdminPage() {
     )
     : null;
 
-  if (loading) {
+  if (authLoading || coursesLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-primary)]">
         <p className="text-[var(--color-gold)] text-lg">Loading admin panel...</p>
@@ -105,7 +106,6 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] p-6">
-      {/* Header */}
       <div className="max-w-6xl mx-auto">
         <h1 className="text-3xl font-bold text-[var(--color-gold)] mb-1" style={{ fontFamily: "Playfair Display, serif" }}>
           Admin Panel
@@ -114,7 +114,6 @@ export default function AdminPage() {
           Bigard Memorial Institute — Course Materials Management
         </p>
 
-        {/* Search */}
         <input
           type="text"
           placeholder="Search courses by name or code..."
@@ -123,7 +122,6 @@ export default function AdminPage() {
           className="w-full max-w-md px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-gold)] mb-8"
         />
 
-        {/* Search Results */}
         {filteredCourses ? (
           <div className="space-y-2">
             <p className="text-sm text-[var(--color-text-secondary)] mb-3">
@@ -134,11 +132,9 @@ export default function AdminPage() {
             ))}
           </div>
         ) : (
-          /* Grouped View */
           <div className="space-y-6">
             {Object.keys(grouped).sort().map((dept) => (
               <div key={dept} className="border border-[var(--color-border)] rounded-xl overflow-hidden">
-                {/* Department Header */}
                 <button
                   onClick={() => toggleKey(dept)}
                   className="w-full flex items-center justify-between px-5 py-4 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
@@ -155,7 +151,6 @@ export default function AdminPage() {
                   <div className="p-4 space-y-4">
                     {Object.keys(grouped[dept]).sort().map((year) => (
                       <div key={year}>
-                        {/* Year Header */}
                         <button
                           onClick={() => toggleKey(`${dept}-${year}`)}
                           className="w-full flex items-center justify-between px-4 py-2 bg-[var(--color-bg-tertiary)] rounded-lg mb-2"
@@ -172,7 +167,6 @@ export default function AdminPage() {
                           <div className="pl-4 space-y-3">
                             {Object.keys(grouped[dept][Number(year)]).sort().map((sem) => (
                               <div key={sem}>
-                                {/* Semester Header */}
                                 <button
                                   onClick={() => toggleKey(`${dept}-${year}-${sem}`)}
                                   className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-[var(--color-text-secondary)] border-b border-[var(--color-border)] mb-2"
@@ -209,7 +203,6 @@ function CourseRow({ course }: { course: Course }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg-secondary)] rounded-lg border border-[var(--color-border)] hover:border-[var(--color-gold)] transition-colors">
       <div className="flex items-center gap-3">
-        {/* Green/Red indicator */}
         <span
           className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${course.hasMaterials ? "bg-green-500" : "bg-red-500"
             }`}
