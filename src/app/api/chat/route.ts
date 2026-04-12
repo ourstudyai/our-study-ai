@@ -1,157 +1,110 @@
-// src/app/api/chat/route.ts
-// Streaming chat API using Groq llama-3.3-70b-versatile
-// Includes RAG — fetches relevant material chunks from Firestore before responding
+// src/app/api/process-upload/route.ts
+// API endpoint called after a file is uploaded to Firebase Storage
+// Extracts text, classifies the material, saves to Firestore
+// Called by admin upload panel after storage upload completes
 
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
-import { getSystemPrompt } from "@/lib/gemini/system-prompts";
-import { getChunksByCourse } from "@/lib/firestore/materials";
-import { StudyMode } from "@/lib/types";
+import { extractText } from "@/lib/processing/extractor";
+import { classifyMaterial, ClassificationResult } from "@/lib/processing/classifier";
+import { saveMaterial } from "@/lib/firestore/materials";
+import type { MaterialStatus } from "@/lib/firestore/materials";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Message = {
-  role: "user" | "assistant";
-  content: string;
-};
-
-// ─── POST /api/chat ───────────────────────────────────────────────────────────
+// ─── POST /api/process-upload ─────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
-    // ── 1. Parse request body ───────────────────────────────────────────────
-    const body = await req.json();
+    // ── 1. Parse request ────────────────────────────────────────────────────
+    const formData = await req.formData();
 
-    const {
-      messages,
-      studyMode,
-      courseId,
-      courseName,
-      courseDescription,
-    }: {
-      messages: Message[];
-      studyMode: StudyMode;
-      courseId?: string;
-      courseName?: string;
-      courseDescription?: string;
-    } = body;
+    const file = formData.get("file") as File | null;
+    const fileUrl = formData.get("fileUrl") as string | null;
+    const uploadedBy = formData.get("uploadedBy") as string | null;
+    const uploadedByRole = formData.get("uploadedByRole") as string | null;
 
-    if (!messages || !studyMode) {
+    if (!file || !fileUrl || !uploadedBy || !uploadedByRole) {
       return NextResponse.json(
-        { error: "Missing required fields: messages, studyMode" },
+        { error: "Missing required fields: file, fileUrl, uploadedBy, uploadedByRole" },
         { status: 400 }
       );
     }
 
-    // ── 2. Fetch RAG context from Firestore ─────────────────────────────────
-    let ragContext = "";
-    let ragStatus: "loaded" | "empty" | "error" = "empty";
+    const fileName = file.name;
+    const mimeType = file.type;
 
-    if (courseId) {
-      try {
-        const chunks = await getChunksByCourse(courseId, 6);
+    // ── 2. Convert file to buffer ───────────────────────────────────────────
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-        if (chunks.length > 0) {
-          ragStatus = "loaded";
-          ragContext =
-            "\n\n---\n" +
-            "STUDY MATERIALS FOR THIS COURSE (use these to enrich your answers. " +
-            "When you use information from these materials, naturally mention that " +
-            "it comes from the course materials uploaded by your institution):\n\n" +
-            chunks.map((c, i) => `[Material ${i + 1}]:\n${c.text}`).join("\n\n") +
-            "\n---\n";
-        } else {
-          ragStatus = "empty";
-        }
+    // ── 3. Extract text ─────────────────────────────────────────────────────
+    const extraction = await extractText(buffer, mimeType, fileName);
 
-      } catch (err) {
-        console.error("[chat] RAG fetch failed:", err);
-        ragStatus = "error";
-      }
+    // ── 4. Classify material ────────────────────────────────────────────────
+    const defaultClassification: ClassificationResult = {
+      category: "other",
+      suggestedCourseId: null,
+      suggestedCourseName: null,
+      confidence: "low",
+      reason: "Scanned file — OCR pending.",
+    };
+
+    let classification: ClassificationResult = defaultClassification;
+
+    if (extraction.method !== "ocr_pending" && extraction.text) {
+      classification = await classifyMaterial(extraction.text, fileName);
     }
 
-    // ── 3. Build RAG notice for AI ──────────────────────────────────────────
-    let ragNotice = "";
+    // ── 5. Determine status ─────────────────────────────────────────────────
+    // ocr_pending  → scanned file, needs Google Cloud OCR later
+    // quarantined  → text extracted but no course match found
+    // pending_review → text extracted + course suggested, needs admin confirmation
 
-    if (ragStatus === "empty") {
-      ragNotice =
-        "\n\nIMPORTANT: No study materials have been uploaded yet for this course. " +
-        "Let the student know naturally and early in your response that you are " +
-        "answering from general knowledge and training data only, not from any " +
-        "institution-specific materials. Encourage them to ask their admin to " +
-        "upload course materials to improve your responses.";
-    } else if (ragStatus === "error") {
-      ragNotice =
-        "\n\nIMPORTANT: You were unable to load the study materials for this course " +
-        "due to a technical issue. Let the student know naturally that you are " +
-        "answering from general knowledge only right now, and that they should " +
-        "try again shortly or inform their admin if the issue persists.";
+    let status: MaterialStatus = "pending_review";
+
+    if (extraction.method === "ocr_pending") {
+      status = "ocr_pending";
+    } else if (!classification.suggestedCourseId) {
+      status = "quarantined";
     }
 
-    // ── 4. Build system prompt ──────────────────────────────────────────────
-    // getSystemPrompt expects: (mode, courseName, courseDescription, semesterSummary?)
-    const baseSystemPrompt = getSystemPrompt(
-      studyMode,
-      courseName ?? "Unknown Course",
-      courseDescription ?? "",
-    );
-
-    const systemPrompt = baseSystemPrompt + ragNotice + ragContext;
-
-    // ── 5. Stream response from Groq ────────────────────────────────────────
-    const stream = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages,
-      ],
-      stream: true,
-      temperature: 0.7,
-      max_tokens: 2048,
+    // ── 6. Save to Firestore ────────────────────────────────────────────────
+    const materialId = await saveMaterial({
+      fileName,
+      fileUrl,
+      mimeType,
+      uploadedBy,
+      uploadedByRole,
+      extractedText: extraction.text,
+      wordCount: extraction.wordCount,
+      pageCount: extraction.pageCount,
+      isScanned: extraction.isScanned,
+      extractionMethod: extraction.method,
+      category: classification.category,
+      suggestedCourseId: classification.suggestedCourseId,
+      suggestedCourseName: classification.suggestedCourseName,
+      confirmedCourseId: null,
+      confirmedCourseName: null,
+      confidence: classification.confidence,
+      classifierReason: classification.reason,
+      status,
     });
 
-    // ── 6. Return SSE stream ────────────────────────────────────────────────
-    const encoder = new TextEncoder();
-
-    const readable = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const chunk of stream) {
-            const delta = chunk.choices[0]?.delta?.content ?? "";
-            if (delta) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`)
-              );
-            }
-          }
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        } catch (err) {
-          console.error("[chat] Stream error:", err);
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ error: "Stream interrupted" })}\n\n`
-            )
-          );
-        } finally {
-          controller.close();
-        }
-      },
-    });
-
-    return new NextResponse(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
+    // ── 7. Return result ────────────────────────────────────────────────────
+    return NextResponse.json({
+      success: true,
+      materialId,
+      status,
+      category: classification.category,
+      suggestedCourseId: classification.suggestedCourseId,
+      suggestedCourseName: classification.suggestedCourseName,
+      confidence: classification.confidence,
+      wordCount: extraction.wordCount,
+      extractionMethod: extraction.method,
     });
 
   } catch (err) {
-    console.error("[chat] Unexpected error:", err);
+    console.error("[process-upload] Unexpected error:", err);
     return NextResponse.json(
-      { error: "Internal server error." },
+      { error: "Internal server error during file processing." },
       { status: 500 }
     );
   }
