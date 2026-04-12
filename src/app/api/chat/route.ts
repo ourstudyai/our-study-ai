@@ -1,139 +1,137 @@
-import { NextRequest } from 'next/server';
-import { sanitizeForAI } from '../../../lib/gemini/privacy-wrapper';
-import { getSystemPrompt } from '../../../lib/gemini/system-prompts';
-import { ChatRequest, StudyMode } from '../../../lib/types';
+// src/app/api/chat/route.ts
+// Streaming chat API using Groq llama-3.3-70b-versatile
+// Includes RAG — fetches relevant material chunks from Firestore before responding
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+import { NextRequest, NextResponse } from "next/server";
+import Groq from "groq-sdk";
+import { getSystemPrompt } from "@/lib/gemini/system-prompts";
+import { applyPrivacyWrapper } from "@/lib/gemini/privacy-wrapper";
+import { getChunksByCourse } from "@/lib/firestore/materials";
 
-export async function POST(request: NextRequest) {
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+// ─── POST /api/chat ───────────────────────────────────────────────────────────
+
+export async function POST(req: NextRequest) {
   try {
-    const body: ChatRequest & {
-      conversationHistory?: Array<{ role: string; content: string }>;
-    } = await request.json();
+    // ── 1. Parse request body ───────────────────────────────────────────────
+    const body = await req.json();
 
-    const { sessionId, courseId, courseName, courseDescription, mode, message, conversationHistory = [] } = body;
+    const {
+      messages,
+      studyMode,
+      courseId,
+      courseName,
+      courseDescription,
+      userId,
+    }: {
+      messages: Message[];
+      studyMode: string;
+      courseId?: string;
+      courseName?: string;
+      courseDescription?: string;
+      userId?: string;
+    } = body;
 
-    if (!courseId || !mode || !message) {
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (!messages || !studyMode) {
+      return NextResponse.json(
+        { error: "Missing required fields: messages, studyMode" },
+        { status: 400 }
+      );
     }
 
-    const systemInstruction = getSystemPrompt(
-      mode as StudyMode,
-      courseName || 'Unknown Course',
-      courseDescription || ''
-    );
+    // ── 2. Apply privacy wrapper ────────────────────────────────────────────
+    const safeMessages = applyPrivacyWrapper(messages, userId ?? "anonymous");
 
-    const sanitized = sanitizeForAI({
-      systemInstruction,
-      userMessage: message,
-      conversationHistory,
-    });
+    // ── 3. Fetch RAG context from Firestore ─────────────────────────────────
+    let ragContext = "";
 
-    const messages = sanitized.conversationHistory.map((msg: any) => ({
-      role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-      content: msg.content,
-    }));
-
-    messages.push({ role: 'user', content: sanitized.userMessage });
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 1024,
-        messages: [
-          { role: 'system', content: sanitized.systemInstruction },
-          ...messages,
-        ],
-        stream: true,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Groq API error');
+    if (courseId) {
+      try {
+        const chunks = await getChunksByCourse(courseId, 6);
+        if (chunks.length > 0) {
+          ragContext =
+            "\n\n---\n" +
+            "STUDY MATERIALS FOR THIS COURSE (use these to enrich your answers):\n\n" +
+            chunks.map((c, i) => `[Material ${i + 1}]:\n${c.text}`).join("\n\n") +
+            "\n---\n";
+        }
+      } catch (err) {
+        // RAG failure should never block chat
+        console.error("[chat] RAG fetch failed:", err);
+      }
     }
 
-    const stream = new ReadableStream({
+    // ── 4. Build system prompt ──────────────────────────────────────────────
+    const baseSystemPrompt = getSystemPrompt(studyMode, {
+      courseName,
+      courseDescription,
+    });
+
+    const systemPrompt = ragContext
+      ? baseSystemPrompt + ragContext
+      : baseSystemPrompt;
+
+    // ── 5. Stream response from Groq ────────────────────────────────────────
+    const stream = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...safeMessages,
+      ],
+      stream: true,
+      temperature: 0.7,
+      max_tokens: 2048,
+    });
+
+    // ── 6. Return SSE stream ────────────────────────────────────────────────
+    const encoder = new TextEncoder();
+
+    const readable = new ReadableStream({
       async start(controller) {
-        const encoder = new TextEncoder();
-
-        const sessionData = JSON.stringify({
-          type: 'session',
-          sessionId: sessionId || `session_${Date.now()}`,
-        });
-        controller.enqueue(encoder.encode(`data: ${sessionData}\n\n`));
-
         try {
-          const reader = response.body!.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6).trim();
-                if (data === '[DONE]') continue;
-                try {
-                  const parsed = JSON.parse(data);
-                  const text = parsed.choices?.[0]?.delta?.content;
-                  if (text) {
-                    const chunkData = JSON.stringify({ type: 'text', content: text });
-                    controller.enqueue(encoder.encode(`data: ${chunkData}\n\n`));
-                  }
-                } catch { }
-              }
+          for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content ?? "";
+            if (delta) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`)
+              );
             }
           }
-
-          const doneData = JSON.stringify({
-            type: 'done',
-            messageId: `msg_${Date.now()}`,
-            userMessageId: `umsg_${Date.now()}`,
-          });
-          controller.enqueue(encoder.encode(`data: ${doneData}\n\n`));
-
-        } catch (streamError: any) {
-          console.error('Streaming error:', streamError);
-          const errorData = JSON.stringify({
-            type: 'error',
-            content: streamError.message || 'Streaming failed',
-          });
-          controller.enqueue(encoder.encode(`data: ${errorData}\n\n`));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        } catch (err) {
+          console.error("[chat] Stream error:", err);
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ error: "Stream interrupted" })}\n\n`
+            )
+          );
+        } finally {
+          controller.close();
         }
-
-        controller.close();
       },
     });
 
-    return new Response(stream, {
+    return new NextResponse(readable, {
       headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
 
-  } catch (error: any) {
-    console.error('Chat API error:', error);
-    return new Response(
-      JSON.stringify({ error: error.message || 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+  } catch (err) {
+    console.error("[chat] Unexpected error:", err);
+    return NextResponse.json(
+      { error: "Internal server error." },
+      { status: 500 }
     );
   }
 }
