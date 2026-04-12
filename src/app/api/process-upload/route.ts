@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { extractText } from "@/lib/processing/extractor";
-import { classifyMaterial } from "@/lib/processing/classifier";
+import { classifyMaterial, MaterialCategory } from "@/lib/processing/classifier";
 import { saveMaterial } from "@/lib/firestore/materials";
 import type { MaterialStatus } from "@/lib/firestore/materials";
 
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
         // ── 4. Classify material ────────────────────────────────────────────────
         let classification = {
-            category: "other" as const,
+            category: "other" as MaterialCategory,
             suggestedCourseId: null as string | null,
             suggestedCourseName: null as string | null,
             confidence: "low" as "high" | "medium" | "low",
