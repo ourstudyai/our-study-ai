@@ -1,90 +1,100 @@
 'use client';
-import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { useState, useEffect } from 'react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 
-export default function AOCPanel({ courseId }: { courseId: string }) {
-    const [response, setResponse] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [loaded, setLoaded] = useState(false);
+interface AOCItem {
+    id: string;
+    topic: string;
+    year: number;
+    semester: number;
+}
 
-    const load = async () => {
-        setLoading(true);
-        setResponse('');
+interface Props {
+    courseId: string;
+    onStudy: (text: string) => void;
+}
 
-        const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                message: 'List all the Areas of Concentration for this course. Show them clearly with any relevant details from the uploaded AOC materials.',
-                courseId,
-                mode: 'plain_explainer',
-            }),
-        });
+export default function AOCPanel({ courseId, onStudy }: Props) {
+    const [items, setItems] = useState<AOCItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set());
 
-        const reader = res.body?.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (reader) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const json = JSON.parse(line.slice(6));
-                        if (json.type === 'text' && json.content) {
-                            setResponse((prev) => prev + json.content);
-                        }
-                    } catch { }
+    useEffect(() => {
+        const fetch = async () => {
+            try {
+                const q = query(
+                    collection(db, 'aoc'),
+                    where('courseId', '==', courseId)
+                );
+                const snap = await getDocs(q);
+                const data = snap.docs.map(d => ({ id: d.id, ...d.data() })) as AOCItem[];
+                setItems(data);
+                // Auto-expand most recent year
+                if (data.length > 0) {
+                    const maxYear = Math.max(...data.map(i => i.year));
+                    setExpandedYears(new Set([maxYear]));
                 }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
             }
-        }
-        setLoading(false);
-        setLoaded(true);
+        };
+        fetch();
+    }, [courseId]);
+
+    const toggleYear = (year: number) => {
+        setExpandedYears(prev => {
+            const next = new Set(prev);
+            next.has(year) ? next.delete(year) : next.add(year);
+            return next;
+        });
     };
 
+    const byYear: Record<number, AOCItem[]> = {};
+    items.forEach(item => {
+        if (!byYear[item.year]) byYear[item.year] = [];
+        byYear[item.year].push(item);
+    });
+    const sortedYears = Object.keys(byYear).map(Number).sort((a, b) => b - a);
+
+    if (loading) return <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading AOC...</p>;
+
+    if (items.length === 0) return (
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            No Areas of Concentration uploaded yet for this course.
+        </p>
+    );
+
     return (
-        <div>
-            <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }}>
-                🎯 Areas of Concentration
-            </h3>
-            <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
-                Topics likely to appear in the exam based on uploaded AOC materials.
-            </p>
-
-            {!loaded && (
-                <button
-                    onClick={load}
-                    disabled={loading}
-                    className="w-full py-2 rounded-lg text-xs font-medium transition-all"
-                    style={{ background: 'var(--gold)', color: 'var(--navy)' }}
-                >
-                    {loading ? 'Loading AOC...' : 'Load Areas of Concentration'}
-                </button>
-            )}
-
-            {response && (
-                <div className="text-xs" style={{ color: 'var(--text-primary)', lineHeight: '1.7' }}>
-                    <ReactMarkdown
-                        components={{
-                            h1: ({ children }) => <h1 style={{ color: 'var(--gold)', fontWeight: 'bold', marginBottom: '0.4rem' }}>{children}</h1>,
-                            h2: ({ children }) => <h2 style={{ color: 'var(--gold)', fontWeight: 'bold', marginBottom: '0.3rem', marginTop: '0.8rem' }}>{children}</h2>,
-                            h3: ({ children }) => <h3 style={{ color: 'var(--gold)', fontWeight: 'bold', marginBottom: '0.2rem', marginTop: '0.6rem' }}>{children}</h3>,
-                            p: ({ children }) => <p style={{ marginBottom: '0.6rem' }}>{children}</p>,
-                            strong: ({ children }) => <strong style={{ color: 'var(--gold)', fontWeight: 'bold' }}>{children}</strong>,
-                            em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
-                            ul: ({ children }) => <ul style={{ paddingLeft: '1rem', marginBottom: '0.6rem', listStyleType: 'disc' }}>{children}</ul>,
-                            ol: ({ children }) => <ol style={{ paddingLeft: '1rem', marginBottom: '0.6rem', listStyleType: 'decimal' }}>{children}</ol>,
-                            li: ({ children }) => <li style={{ marginBottom: '0.2rem' }}>{children}</li>,
-                        }}
+        <div className="space-y-2">
+            {sortedYears.map(year => (
+                <div key={year}>
+                    <button
+                        onClick={() => toggleYear(year)}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold"
+                        style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--gold)' }}
                     >
-                        {response}
-                    </ReactMarkdown>
+                        <span>📅 AOC {year}</span>
+                        <span>{expandedYears.has(year) ? '▲' : '▼'}</span>
+                    </button>
+                    {expandedYears.has(year) && (
+                        <div className="mt-1 space-y-1 pl-2">
+                            {byYear[year].map(item => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => onStudy(`Explain this Area of Concentration from ${year}: "${item.topic}"`)}
+                                    className="w-full text-left p-2 rounded-lg text-xs transition-all hover:border-yellow-400"
+                                    style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                                >
+                                    🎯 {item.topic}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
-            )}
+            ))}
         </div>
     );
 }
