@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { signOut } from '@/lib/firebase/auth';
@@ -88,7 +88,10 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
                 <span className="w-2 h-2 rounded-full flex-shrink-0"
                   style={{ background: readinessDot(course.readiness) }} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate" style={{ color: isActive ? 'var(--gold-light)' : 'var(--text-primary)' }}>{course.name}</p>
+                  <p className="text-sm font-medium truncate"
+                    style={{ color: isActive ? 'var(--gold-light)' : 'var(--text-primary)' }}>
+                    {course.name}
+                  </p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{course.code}</p>
                 </div>
               </div>
@@ -109,7 +112,7 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
       {/* Footer */}
       <div className="p-4 border-t flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
               style={{ background: 'var(--gold-dim)', border: '1px solid var(--border-hover)' }}>
               <span className="text-sm font-bold" style={{ color: 'var(--gold-light)' }}>
@@ -121,7 +124,7 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
               <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{userProfile?.email}</p>
             </div>
           </div>
-          <button onClick={handleSignOut} className="btn-secondary text-xs flex-shrink-0">Sign Out</button>
+          <button onClick={handleSignOut} className="btn-secondary text-xs flex-shrink-0 ml-3">Sign Out</button>
         </div>
       </div>
     </div>
