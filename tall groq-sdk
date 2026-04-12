@@ -1,0 +1,10 @@
+[33mcdcbc5f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Update chat route: AI now communicates RAG status to student
+[33m87dc422[m Add RAG pipeline: extractor, classifier, materials, process-upload, updated chat
+[33m17181d7[m fix: center empty state, stack messages from bottom up
+[33m1411e05[m fix: move empty state closer to input box on desktop
+[33mb14a5c7[m fix: tighten top bar and input padding so chat box is fully visible on desktop
+[33m2fbb4eb[m fix: raise chat input, pass course name/description to AI
+[33m7eaaaf9[m fix: pass course name/description to AI, compact viewport-fitted layout
+[33m0238dd7[m fix: proper mobile course page — drawer for side panel, scrollable modes, full width chat
+[33m2d199b0[m fix: resolve MobileMenu children type error, clean BottomNav
+[33m19b45d8[m feat: proper mobile app experience — bottom nav, real courses in mobile menu, touch-friendly
