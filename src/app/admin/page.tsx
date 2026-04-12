@@ -70,9 +70,8 @@ export default function AdminPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!firebaseUser) { router.push("/"); return; }
-    if (userProfile && userProfile.role !== "admin") router.push("/");
+    if (userProfile && userProfile.role !== "admin" && userProfile.role !== "chief_admin") router.push("/");
   }, [firebaseUser, userProfile, authLoading, router]);
-
   useEffect(() => {
     const fetchCourses = async () => {
       try {
