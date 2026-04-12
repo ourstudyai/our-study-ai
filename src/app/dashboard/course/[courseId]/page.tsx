@@ -166,7 +166,7 @@ export default function CoursePage() {
 
             {/* TOP BAR */}
             <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 16px' }}>
                     <button onClick={() => router.back()} style={{ color: 'var(--gold)', fontSize: '0.85rem' }}>← Back</button>
                     <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 'bold', flex: 1, textAlign: 'center', margin: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {course.name}
@@ -174,14 +174,14 @@ export default function CoursePage() {
                     <button
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         className="hidden md:block"
-                        style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--text-secondary)', background: 'transparent', whiteSpace: 'nowrap' }}
+                        style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--text-secondary)', background: 'transparent', whiteSpace: 'nowrap' }}
                     >
                         {sidebarOpen ? '▶ Hide' : '◀ Show'}
                     </button>
                 </div>
 
                 {/* Modes */}
-                <div style={{ display: 'flex', gap: '6px', padding: '4px 12px 8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+                <div style={{ display: 'flex', gap: '5px', padding: '2px 12px 5px', overflowX: 'auto', scrollbarWidth: 'none' }}>
                     {MODES.map((mode) => (
                         <button
                             key={mode.id}
@@ -189,9 +189,9 @@ export default function CoursePage() {
                             title={mode.description}
                             style={{
                                 flexShrink: 0,
-                                padding: '5px 10px',
+                                padding: '3px 9px',
                                 borderRadius: '8px',
-                                fontSize: '0.72rem',
+                                fontSize: '0.7rem',
                                 fontWeight: 500,
                                 border: '1px solid var(--border)',
                                 background: activeMode === mode.id ? 'var(--gold)' : 'var(--navy-card)',
@@ -213,7 +213,7 @@ export default function CoursePage() {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
                     {/* Messages */}
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {chatHistory.length === 0 && !streamingMessage && (
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <div style={{ textAlign: 'center', maxWidth: '320px', padding: '0 16px' }}>
@@ -252,11 +252,11 @@ export default function CoursePage() {
                     </div>
 
                     {/* Input */}
-                    <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
-                        <div className="md:hidden" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
+                    <div style={{ flexShrink: 0, padding: '8px 16px', borderTop: '1px solid var(--border)' }}>
+                        <div className="md:hidden" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '5px' }}>
                             <button
                                 onClick={() => setDrawerOpen(true)}
-                                style={{ fontSize: '0.75rem', padding: '5px 10px', borderRadius: '8px', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--gold)', cursor: 'pointer' }}
+                                style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '8px', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--gold)', cursor: 'pointer' }}
                             >
                                 📚 Past Q · AOC · Memory
                             </button>
@@ -271,7 +271,7 @@ export default function CoursePage() {
                                 style={{
                                     flex: 1,
                                     borderRadius: '12px',
-                                    padding: '10px 12px',
+                                    padding: '8px 12px',
                                     fontSize: '0.875rem',
                                     resize: 'none',
                                     background: 'var(--navy-card)',
@@ -286,7 +286,7 @@ export default function CoursePage() {
                                 disabled={isStreaming || !input.trim()}
                                 style={{
                                     flexShrink: 0,
-                                    padding: '10px 16px',
+                                    padding: '8px 16px',
                                     borderRadius: '12px',
                                     fontWeight: 600,
                                     fontSize: '0.875rem',
@@ -316,7 +316,7 @@ export default function CoursePage() {
                                     onClick={() => setActiveSideTab(tab.id)}
                                     style={{
                                         flex: 1,
-                                        padding: '10px 4px',
+                                        padding: '8px 4px',
                                         fontSize: '0.72rem',
                                         fontWeight: 500,
                                         background: activeSideTab === tab.id ? 'var(--navy)' : 'transparent',
@@ -347,14 +347,14 @@ export default function CoursePage() {
                     onClick={(e) => { if (e.target === e.currentTarget) setDrawerOpen(false); }}
                 >
                     <div style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '16px 16px 0 0', maxHeight: '75vh', display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 {sideTabs.map((tab) => (
                                     <button
                                         key={tab.id}
                                         onClick={() => setActiveSideTab(tab.id)}
                                         style={{
-                                            padding: '5px 10px',
+                                            padding: '4px 10px',
                                             borderRadius: '8px',
                                             fontSize: '0.75rem',
                                             fontWeight: 500,
