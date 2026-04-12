@@ -30,7 +30,7 @@ export async function extractText(
     // ── PDF ──────────────────────────────────────────────────────────────────
     if (mimeType === "application/pdf") {
         try {
-            const pdfParse = (await import("pdf-parse")).default ?? (await import("pdf-parse"));
+            const pdfParse = require("pdf-parse");
             const result = await pdfParse(buffer);
 
             const text = result.text?.trim() ?? "";
@@ -131,3 +131,4 @@ function countWords(text: string): number {
     if (!text) return 0;
     return text.split(/\s+/).filter(Boolean).length;
 }
+

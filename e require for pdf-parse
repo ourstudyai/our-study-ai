@@ -1,0 +1,18 @@
+[1mdiff --git a/src/lib/processing/extractor.ts b/src/lib/processing/extractor.ts[m
+[1mindex d84bc95..eb27ee2 100644[m
+[1m--- a/src/lib/processing/extractor.ts[m
+[1m+++ b/src/lib/processing/extractor.ts[m
+[36m@@ -30,7 +30,7 @@[m [mexport async function extractText([m
+     // ── PDF ──────────────────────────────────────────────────────────────────[m
+     if (mimeType === "application/pdf") {[m
+         try {[m
+[31m-            const pdfParse = (await import("pdf-parse")).default ?? (await import("pdf-parse"));[m
+[32m+[m[32m            const pdfParse = require("pdf-parse");[m
+             const result = await pdfParse(buffer);[m
+ [m
+             const text = result.text?.trim() ?? "";[m
+[36m@@ -131,3 +131,4 @@[m [mfunction countWords(text: string): number {[m
+     if (!text) return 0;[m
+     return text.split(/\s+/).filter(Boolean).length;[m
+ }[m
+[41m+[m
