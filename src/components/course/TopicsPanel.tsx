@@ -1,5 +1,4 @@
 'use client';
-
 import { useState } from 'react';
 
 export default function TopicsPanel({ courseId }: { courseId: string }) {
@@ -11,17 +10,33 @@ export default function TopicsPanel({ courseId }: { courseId: string }) {
         if (!question.trim()) return;
         setLoading(true);
         setResponse('');
+
         const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: question, courseId, mode: 'topics' }),
         });
+
         const reader = res.body?.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
+
         while (reader) {
             const { done, value } = await reader.read();
             if (done) break;
-            setResponse((prev) => prev + decoder.decode(value));
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const json = JSON.parse(line.slice(6));
+                        if (json.type === 'text' && json.content) {
+                            setResponse((prev) => prev + json.content);
+                        }
+                    } catch { }
+                }
+            }
         }
         setLoading(false);
     };
