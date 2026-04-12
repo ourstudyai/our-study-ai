@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { getSystemPrompt } from "@/lib/gemini/system-prompts";
 import { getChunksByCourse } from "@/lib/firestore/materials";
+import { StudyMode } from "@/lib/types";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 
@@ -29,14 +30,12 @@ export async function POST(req: NextRequest) {
       courseId,
       courseName,
       courseDescription,
-      userId,
     }: {
       messages: Message[];
-      studyMode: string;
+      studyMode: StudyMode;
       courseId?: string;
       courseName?: string;
       courseDescription?: string;
-      userId?: string;
     } = body;
 
     if (!messages || !studyMode) {
@@ -92,10 +91,12 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. Build system prompt ──────────────────────────────────────────────
-    const baseSystemPrompt = getSystemPrompt(studyMode, {
-      courseName,
-      courseDescription,
-    });
+    // getSystemPrompt expects: (mode, courseName, courseDescription, semesterSummary?)
+    const baseSystemPrompt = getSystemPrompt(
+      studyMode,
+      courseName ?? "Unknown Course",
+      courseDescription ?? "",
+    );
 
     const systemPrompt = baseSystemPrompt + ragNotice + ragContext;
 
