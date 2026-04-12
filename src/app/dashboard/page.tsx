@@ -38,8 +38,8 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="p-6" style={{ color: 'var(--text-primary)' }}>
-      <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }}>
+    <div className="p-4 md:p-6 pb-24 md:pb-6" style={{ color: 'var(--text-primary)' }}>
+      <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }}>
         Welcome back{userProfile?.displayName ? `, ${userProfile.displayName}` : ''}
       </h1>
 
@@ -57,23 +57,27 @@ export default function DashboardPage() {
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Check that your department, year and semester are set correctly in your profile.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           {courses.map((course) => (
             <div
               key={course.id}
               onClick={() => router.push(`/dashboard/course/${course.id}`)}
-              className="p-4 rounded-xl cursor-pointer hover:scale-105 transition-transform"
+              className="p-4 rounded-xl cursor-pointer transition-all active:scale-95 md:hover:scale-105"
               style={{ background: 'var(--navy-card)', border: '1px solid var(--border)' }}
             >
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-start gap-3">
                 <span
-                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5"
                   style={{ background: readinessColor(course.readiness) }}
                   title={course.readiness || 'empty'}
                 />
-                <h2 className="font-semibold" style={{ color: 'var(--gold)' }}>{course.name}</h2>
+                <div className="min-w-0">
+                  <h2 className="font-semibold text-sm md:text-base leading-snug" style={{ color: 'var(--gold)' }}>
+                    {course.name}
+                  </h2>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{course.code}</p>
+                </div>
               </div>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{course.code}</p>
             </div>
           ))}
         </div>
