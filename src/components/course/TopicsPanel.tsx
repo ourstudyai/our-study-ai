@@ -2,7 +2,12 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
-export default function TopicsPanel({ courseId }: { courseId: string }) {
+interface TopicsPanelProps {
+    courseId: string;
+    mode: string;
+}
+
+export default function TopicsPanel({ courseId, mode }: TopicsPanelProps) {
     const [question, setQuestion] = useState('');
     const [response, setResponse] = useState('');
     const [loading, setLoading] = useState(false);
@@ -15,7 +20,7 @@ export default function TopicsPanel({ courseId }: { courseId: string }) {
         const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: question, courseId, mode: 'plain_explainer' }),
+            body: JSON.stringify({ message: question, courseId, mode }),
         });
 
         const reader = res.body?.getReader();
@@ -42,30 +47,20 @@ export default function TopicsPanel({ courseId }: { courseId: string }) {
         setLoading(false);
     };
 
-    return (
-        <div className="rounded-xl p-6" style={{ background: 'var(--navy-card)', border: '1px solid var(--border)' }}>
-            <h2 className="text-xl font-bold mb-4" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }}>Topics</h2>
-            <textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }}
-                placeholder="Ask about any topic in this course..."
-                rows={3}
-                className="w-full rounded p-3 text-sm mb-3 resize-none"
-                style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-            />
-            <button
-                onClick={ask}
-                disabled={loading}
-                className="px-6 py-2 rounded font-medium text-sm"
-                style={{ background: 'var(--gold)', color: 'var(--navy)' }}
-            >
-                {loading ? 'Thinking...' : 'Ask AI'}
-            </button>
+    const placeholders: Record<string, string> = {
+        plain_explainer: 'Ask about any concept or paste a confusing passage...',
+        practice_questions: 'Ask for practice questions, e.g. "Give me 5 questions on sacraments"',
+        exam_preparation: 'Ask an exam question or paste your draft answer for review...',
+        progress_check: 'Explain a topic in your own words and I will assess you...',
+        research: 'Ask any question for a deeply sourced answer...',
+        readiness_assessment: 'Type "Start assessment" to begin, or "STOP" to get your report...',
+    };
 
+    return (
+        <div className="flex flex-col h-full p-6">
             {response && (
-                <div className="mt-6 p-4 rounded text-sm"
-                    style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)', lineHeight: '1.8' }}>
+                <div className="flex-1 overflow-y-auto mb-4 p-5 rounded-xl text-sm"
+                    style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', lineHeight: '1.8' }}>
                     <ReactMarkdown
                         components={{
                             h1: ({ children }) => <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1.3rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{children}</h1>,
@@ -78,13 +73,33 @@ export default function TopicsPanel({ courseId }: { courseId: string }) {
                             ol: ({ children }) => <ol style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'decimal' }}>{children}</ol>,
                             li: ({ children }) => <li style={{ marginBottom: '0.3rem' }}>{children}</li>,
                             blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '1rem', margin: '0.8rem 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{children}</blockquote>,
-                            code: ({ children }) => <code style={{ background: 'rgba(255,255,255,0.05)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.85em' }}>{children}</code>,
                         }}
                     >
                         {response}
                     </ReactMarkdown>
                 </div>
             )}
+
+            {/* Input at bottom */}
+            <div className="mt-auto">
+                <textarea
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }}
+                    placeholder={placeholders[mode] || 'Ask anything about this course...'}
+                    rows={3}
+                    className="w-full rounded-xl p-3 text-sm mb-3 resize-none"
+                    style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                />
+                <button
+                    onClick={ask}
+                    disabled={loading}
+                    className="px-6 py-2 rounded-lg font-medium text-sm transition-opacity"
+                    style={{ background: 'var(--gold)', color: 'var(--navy)', opacity: loading ? 0.7 : 1 }}
+                >
+                    {loading ? 'Thinking...' : 'Ask AI'}
+                </button>
+            </div>
         </div>
     );
 }
