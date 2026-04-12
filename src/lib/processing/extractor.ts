@@ -30,7 +30,7 @@ export async function extractText(
     // ── PDF ──────────────────────────────────────────────────────────────────
     if (mimeType === "application/pdf") {
         try {
-            const pdfParse = (await import("pdf-parse"));
+            const pdfParse = (await import("pdf-parse")).default ?? (await import("pdf-parse"));
             const result = await pdfParse(buffer);
 
             const text = result.text?.trim() ?? "";
