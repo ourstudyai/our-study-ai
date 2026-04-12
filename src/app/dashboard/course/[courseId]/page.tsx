@@ -180,7 +180,7 @@ export default function CoursePage() {
                     </button>
                 </div>
 
-                {/* Modes - horizontal scroll */}
+                {/* Modes */}
                 <div style={{ display: 'flex', gap: '6px', padding: '4px 12px 8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
                     {MODES.map((mode) => (
                         <button
@@ -252,8 +252,7 @@ export default function CoursePage() {
                     </div>
 
                     {/* Input */}
-                    <div style={{ flexShrink: 0, padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
-                        {/* Mobile drawer trigger */}
+                    <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
                         <div className="md:hidden" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
                             <button
                                 onClick={() => setDrawerOpen(true)}
