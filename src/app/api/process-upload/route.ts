@@ -69,7 +69,6 @@ export async function POST(req: NextRequest) {
         if (extraction.method === "ocr_pending") {
             status = "ocr_pending";
         } else if (!classification.suggestedCourseId) {
-            // No Firestore match — but did classifier detect any course name signal?
             if (classification.detectedCourseName) {
                 status = "awaiting_course";
             } else {
