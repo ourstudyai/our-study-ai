@@ -215,15 +215,13 @@ export default function CoursePage() {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
                     {/* Messages */}
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '10px', justifyContent: isEmpty ? 'center' : 'flex-end' }}>
 
                         {isEmpty && (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', flex: 1, paddingBottom: '32px' }}>
-                                <div style={{ textAlign: 'center', maxWidth: '320px', padding: '0 16px' }}>
-                                    <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{MODES.find(m => m.id === activeMode)?.icon}</div>
-                                    <div style={{ color: 'var(--gold)', fontWeight: 600, marginBottom: '4px', fontSize: '0.9rem' }}>{MODES.find(m => m.id === activeMode)?.label}</div>
-                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{MODES.find(m => m.id === activeMode)?.description}</div>
-                                </div>
+                            <div style={{ textAlign: 'center', maxWidth: '320px', padding: '0 16px', margin: '0 auto' }}>
+                                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{MODES.find(m => m.id === activeMode)?.icon}</div>
+                                <div style={{ color: 'var(--gold)', fontWeight: 600, marginBottom: '4px', fontSize: '0.9rem' }}>{MODES.find(m => m.id === activeMode)?.label}</div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{MODES.find(m => m.id === activeMode)?.description}</div>
                             </div>
                         )}
 
