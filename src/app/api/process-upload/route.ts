@@ -1,15 +1,12 @@
 // src/app/api/process-upload/route.ts
 // API endpoint called after a file is uploaded to Firebase Storage
 // Extracts text, classifies the material, saves to Firestore
-// Called by admin upload panel after storage upload completes
 
 import { NextRequest, NextResponse } from "next/server";
 import { extractText } from "@/lib/processing/extractor";
 import { classifyMaterial, MaterialCategory } from "@/lib/processing/classifier";
 import { saveMaterial } from "@/lib/firestore/materials";
 import type { MaterialStatus } from "@/lib/firestore/materials";
-
-// ─── POST /api/process-upload ─────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
     try {
@@ -43,6 +40,7 @@ export async function POST(req: NextRequest) {
             category: "other" as MaterialCategory,
             suggestedCourseId: null as string | null,
             suggestedCourseName: null as string | null,
+            detectedCourseName: null as string | null,
             confidence: "low" as "high" | "medium" | "low",
             reason: "Scanned file — OCR pending.",
         };
@@ -52,16 +50,31 @@ export async function POST(req: NextRequest) {
         }
 
         // ── 5. Determine status ─────────────────────────────────────────────────
-        // ocr_pending  → scanned file, needs Google Cloud OCR later
-        // quarantined  → text extracted but no course match found
-        // pending_review → text extracted + course suggested, needs admin confirmation
+        //
+        // ocr_pending     → scanned file, needs Google Cloud OCR
+        //                   GOOGLE_CLOUD_OCR_SLOT: after OCR, re-run classifyMaterial
+        //                   then call resurrectMaterialsForCourse if course still missing
+        //
+        // awaiting_course → text extracted, classifier detected a course name signal
+        //                   (detectedCourseName is set) but no matching Firestore course
+        //                   exists yet. Will be resurrected when that course is created.
+        //
+        // quarantined     → text extracted but classifier found no course signal at all —
+        //                   no courseId, no detectedCourseName. Needs full manual assign.
+        //
+        // pending_review  → text extracted + Firestore course matched. Admin confirms.
 
         let status: MaterialStatus = "pending_review";
 
         if (extraction.method === "ocr_pending") {
             status = "ocr_pending";
         } else if (!classification.suggestedCourseId) {
-            status = "quarantined";
+            // No Firestore match — but did classifier detect any course name signal?
+            if (classification.detectedCourseName) {
+                status = "awaiting_course";
+            } else {
+                status = "quarantined";
+            }
         }
 
         // ── 6. Save to Firestore ────────────────────────────────────────────────
@@ -79,6 +92,7 @@ export async function POST(req: NextRequest) {
             category: classification.category,
             suggestedCourseId: classification.suggestedCourseId,
             suggestedCourseName: classification.suggestedCourseName,
+            detectedCourseName: classification.detectedCourseName,
             confirmedCourseId: null,
             confirmedCourseName: null,
             confidence: classification.confidence,
@@ -94,6 +108,7 @@ export async function POST(req: NextRequest) {
             category: classification.category,
             suggestedCourseId: classification.suggestedCourseId,
             suggestedCourseName: classification.suggestedCourseName,
+            detectedCourseName: classification.detectedCourseName,
             confidence: classification.confidence,
             wordCount: extraction.wordCount,
             extractionMethod: extraction.method,

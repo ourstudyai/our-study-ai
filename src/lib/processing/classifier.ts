@@ -18,6 +18,7 @@ export type ClassificationResult = {
     category: MaterialCategory;
     suggestedCourseId: string | null;
     suggestedCourseName: string | null;
+    detectedCourseName: string | null;  // best guess even if no Firestore match
     confidence: "high" | "medium" | "low";
     reason: string;
 };
@@ -57,6 +58,17 @@ const CATEGORY_SIGNALS: Record<MaterialCategory, string[]> = {
     other: [],
 };
 
+// ─── Theology / Philosophy course name signals ────────────────────────────────
+// Used to detect a likely course name even when no Firestore course matches yet.
+// Add more patterns here as new departments/years are added.
+
+const COURSE_NAME_PATTERNS: RegExp[] = [
+    // e.g. "Fundamental Moral Theology", "Introduction to Philosophy"
+    /\b(fundamental|introduction to|history of|theology of|philosophy of|principles of|ethics of|study of|elements of|survey of)\s+[a-z\s]{3,40}/gi,
+    // e.g. "Moral Theology", "Sacred Scripture", "Canon Law"
+    /\b(moral theology|sacred scripture|canon law|church history|dogmatic theology|pastoral theology|systematic theology|biblical theology|spiritual theology|christology|ecclesiology|eschatology|soteriology|pneumatology|trinitarian theology|patristics|homiletics|liturgy|sacraments|metaphysics|epistemology|logic|ethics|cosmology|anthropology|political philosophy|philosophy of mind|philosophy of religion|aesthetics|ontology)\b/gi,
+];
+
 // ─── Main Classifier ──────────────────────────────────────────────────────────
 
 export async function classifyMaterial(
@@ -70,13 +82,14 @@ export async function classifyMaterial(
     const category = detectCategory(lowerText);
 
     // 2. Try to match a course from Firestore
-    const { courseId, courseName, confidence, reason } =
-        await matchCourse(lowerText);
+    const { courseId, courseName, detectedCourseName, confidence, reason } =
+        await matchCourse(text, lowerText, fileName);
 
     return {
         category,
         suggestedCourseId: courseId,
         suggestedCourseName: courseName,
+        detectedCourseName,
         confidence,
         reason,
     };
@@ -101,25 +114,44 @@ function detectCategory(lowerText: string): MaterialCategory {
         }
     }
 
-    // Return the highest scoring category
     const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
     const top = sorted[0];
-
-    // If no signals matched at all, return "other"
     if (top[1] === 0) return "other";
     return top[0] as MaterialCategory;
 }
 
+// ─── Ghost Course Name Detection ──────────────────────────────────────────────
+// Tries to extract a likely course name from text even with no Firestore match.
+// Used to populate detectedCourseName for awaiting_course materials.
+
+function extractGhostCourseName(text: string, fileName: string): string | null {
+    const combined = text.slice(0, 2000) + " " + fileName; // check early text + filename
+
+    for (const pattern of COURSE_NAME_PATTERNS) {
+        pattern.lastIndex = 0; // reset regex state
+        const match = pattern.exec(combined);
+        if (match) {
+            // Capitalize and trim the match
+            return match[0].trim().replace(/\b\w/g, (c) => c.toUpperCase());
+        }
+    }
+    return null;
+}
+
 // ─── Course Matching ──────────────────────────────────────────────────────────
 
-async function matchCourse(lowerText: string): Promise<{
+async function matchCourse(
+    originalText: string,
+    lowerText: string,
+    fileName: string
+): Promise<{
     courseId: string | null;
     courseName: string | null;
+    detectedCourseName: string | null;
     confidence: "high" | "medium" | "low";
     reason: string;
 }> {
     try {
-        // Load all courses from Firestore
         const snapshot = await getDocs(collection(db, "courses"));
         const courses: CourseRecord[] = snapshot.docs.map((doc) => ({
             id: doc.id,
@@ -134,17 +166,9 @@ async function matchCourse(lowerText: string): Promise<{
             const courseName = (course.name ?? "").toLowerCase();
             const courseCode = (course.code ?? "").toLowerCase();
 
-            // Exact course code match is strongest signal
-            if (courseCode && lowerText.includes(courseCode)) {
-                score += 10;
-            }
+            if (courseCode && lowerText.includes(courseCode)) score += 10;
+            if (courseName && lowerText.includes(courseName)) score += 8;
 
-            // Full course name match
-            if (courseName && lowerText.includes(courseName)) {
-                score += 8;
-            }
-
-            // Partial word matches (each word in course name found in text)
             const words = courseName.split(/\s+/).filter((w) => w.length > 3);
             for (const word of words) {
                 if (lowerText.includes(word)) score += 1;
@@ -156,12 +180,18 @@ async function matchCourse(lowerText: string): Promise<{
             }
         }
 
+        // Always attempt ghost detection regardless of Firestore match
+        const detectedCourseName = extractGhostCourseName(originalText, fileName);
+
         if (!bestMatch || bestScore === 0) {
             return {
                 courseId: null,
                 courseName: null,
+                detectedCourseName,
                 confidence: "low",
-                reason: "No matching course found in text or filename.",
+                reason: detectedCourseName
+                    ? `No Firestore course matched. Detected possible course name: "${detectedCourseName}".`
+                    : "No matching course found in text or filename.",
             };
         }
 
@@ -171,6 +201,7 @@ async function matchCourse(lowerText: string): Promise<{
         return {
             courseId: bestMatch.id,
             courseName: bestMatch.name,
+            detectedCourseName: detectedCourseName ?? bestMatch.name,
             confidence,
             reason: `Matched "${bestMatch.name}" with score ${bestScore}.`,
         };
@@ -180,6 +211,7 @@ async function matchCourse(lowerText: string): Promise<{
         return {
             courseId: null,
             courseName: null,
+            detectedCourseName: null,
             confidence: "low",
             reason: "Error loading courses from Firestore.",
         };

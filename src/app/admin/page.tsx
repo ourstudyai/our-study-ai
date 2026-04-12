@@ -9,6 +9,15 @@ import {
 import { ref, uploadBytesResumable, getDownloadURL, listAll, getMetadata } from "firebase/storage";
 import { db, storage } from "@/lib/firebase/config";
 import { useAuth } from "@/components/auth/AuthProvider";
+import {
+  getMaterialsByStatus,
+  updateMaterialStatus,
+  saveChunks,
+  resurrectMaterialsForCourse,
+  Material,
+} from "@/lib/firestore/materials";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Course {
   id: string;
@@ -45,27 +54,44 @@ interface ExistingFile {
   uploadedAt?: string;
 }
 
+type ReviewTab = "pending_review" | "quarantined" | "awaiting_course" | "ocr_pending";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function ReadinessDot({ status }: { status?: string }) {
-  if (status === "verified") return (
-    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-green-500" title="Verified — ready for students" />
-  );
-  if (status === "partial") return (
-    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-yellow-400" title="Partially filled — not yet verified" />
-  );
-  return (
-    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-red-500" title="No materials uploaded" />
-  );
+  if (status === "verified") return <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-green-500" title="Verified" />;
+  if (status === "partial") return <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-yellow-400" title="Partial" />;
+  return <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-red-500" title="Empty" />;
 }
+
+function confidenceBadge(confidence: string) {
+  if (confidence === "high") return "bg-green-500/20 text-green-400 border-green-500/30";
+  if (confidence === "medium") return "bg-yellow-400/20 text-yellow-400 border-yellow-400/30";
+  return "bg-red-500/20 text-red-400 border-red-500/30";
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const { firebaseUser, userProfile, loading: authLoading } = useAuth();
   const router = useRouter();
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [grouped, setGrouped] = useState<GroupedCourses>({});
   const [coursesLoading, setCoursesLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+
+  const [activeReviewTab, setActiveReviewTab] = useState<ReviewTab>("pending_review");
+  const [reviewMaterials, setReviewMaterials] = useState<Material[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(true);
+  const [reviewCounts, setReviewCounts] = useState({
+    pending_review: 0,
+    quarantined: 0,
+    awaiting_course: 0,
+    ocr_pending: 0,
+  });
 
   useEffect(() => {
     if (authLoading) return;
@@ -89,6 +115,53 @@ export default function AdminPage() {
     };
     if (firebaseUser) fetchCourses();
   }, [firebaseUser]);
+
+  useEffect(() => {
+    const fetchCounts = async () => {
+      if (!firebaseUser) return;
+      try {
+        const [pending, quarantined, awaiting, ocr] = await Promise.all([
+          getMaterialsByStatus("pending_review"),
+          getMaterialsByStatus("quarantined"),
+          getMaterialsByStatus("awaiting_course"),
+          getMaterialsByStatus("ocr_pending"),
+        ]);
+        setReviewCounts({
+          pending_review: pending.length,
+          quarantined: quarantined.length,
+          awaiting_course: awaiting.length,
+          ocr_pending: ocr.length,
+        });
+      } catch (err) {
+        console.error("Error fetching review counts:", err);
+      }
+    };
+    fetchCounts();
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    const fetchMaterials = async () => {
+      if (!firebaseUser) return;
+      setReviewLoading(true);
+      try {
+        const data = await getMaterialsByStatus(activeReviewTab);
+        setReviewMaterials(data);
+      } catch (err) {
+        console.error("Error fetching materials:", err);
+      } finally {
+        setReviewLoading(false);
+      }
+    };
+    fetchMaterials();
+  }, [firebaseUser, activeReviewTab]);
+
+  const removeMaterialFromList = (materialId: string) => {
+    setReviewMaterials((prev) => prev.filter((m) => m.id !== materialId));
+    setReviewCounts((prev) => ({
+      ...prev,
+      [activeReviewTab]: Math.max(0, prev[activeReviewTab] - 1),
+    }));
+  };
 
   const groupCourses = (data: Course[]) => {
     const result: GroupedCourses = {};
@@ -130,10 +203,9 @@ export default function AdminPage() {
   };
 
   const filteredCourses = search.trim()
-    ? courses.filter(
-      (c) =>
-        c.name?.toLowerCase().includes(search.toLowerCase()) ||
-        c.code?.toLowerCase().includes(search.toLowerCase())
+    ? courses.filter((c) =>
+      c.name?.toLowerCase().includes(search.toLowerCase()) ||
+      c.code?.toLowerCase().includes(search.toLowerCase())
     )
     : null;
 
@@ -148,90 +220,189 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] p-6">
       <div className="max-w-6xl mx-auto">
+
         <h1 className="text-3xl font-bold text-[var(--color-gold)] mb-1" style={{ fontFamily: "Playfair Display, serif" }}>
           Admin Panel
         </h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mb-2">
+        <p className="text-sm text-[var(--color-text-secondary)] mb-8">
           Bigard Memorial Institute — Course Materials Management
         </p>
-        <div className="flex items-center gap-4 mb-6 text-xs text-[var(--color-text-secondary)]">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Empty</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Partial</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Verified</span>
-        </div>
 
-        <input
-          type="text"
-          placeholder="Search courses by name or code..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-md px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-gold)] mb-8"
-        />
+        {/* ── Materials Review ─────────────────────────────────────────────── */}
+        <section className="mb-12">
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4" style={{ fontFamily: "Playfair Display, serif" }}>
+            Materials Review
+          </h2>
 
-        {filteredCourses ? (
-          <div className="space-y-2">
-            <p className="text-sm text-[var(--color-text-secondary)] mb-3">
-              {filteredCourses.length} result(s) for &quot;{search}&quot;
-            </p>
-            {filteredCourses.map((course) => (
-              <CourseRow key={course.id} course={course} onUpload={() => setSelectedCourse(course)} />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {Object.keys(grouped).sort().map((dept) => (
-              <div key={dept} className="border border-[var(--color-border)] rounded-xl overflow-hidden">
+          <div className="flex gap-2 mb-6 flex-wrap">
+            {(
+              [
+                { key: "pending_review", label: "Pending Review", color: "yellow" },
+                { key: "quarantined", label: "Quarantined", color: "red" },
+                { key: "awaiting_course", label: "Awaiting Course", color: "purple" },
+                { key: "ocr_pending", label: "OCR Pending", color: "blue" },
+              ] as const
+            ).map(({ key, label, color }) => {
+              const count = reviewCounts[key];
+              const isActive = activeReviewTab === key;
+              const colorMap = {
+                yellow: isActive ? "border-yellow-400 text-yellow-400" : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-yellow-400/50",
+                red: isActive ? "border-red-400 text-red-400" : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-red-400/50",
+                purple: isActive ? "border-purple-400 text-purple-400" : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-purple-400/50",
+                blue: isActive ? "border-blue-400 text-blue-400" : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-blue-400/50",
+              };
+              const badgeMap = {
+                yellow: "bg-yellow-400/20 text-yellow-400",
+                red: "bg-red-400/20 text-red-400",
+                purple: "bg-purple-400/20 text-purple-400",
+                blue: "bg-blue-400/20 text-blue-400",
+              };
+
+              return (
                 <button
-                  onClick={() => toggleKey(dept)}
-                  className="w-full flex items-center justify-between px-5 py-4 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                  key={key}
+                  onClick={() => setActiveReviewTab(key)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors bg-[var(--color-bg-secondary)] ${colorMap[color]}`}
                 >
-                  <span className="text-lg font-semibold text-[var(--color-gold)] capitalize">{dept} Department</span>
-                  <span className="text-[var(--color-text-secondary)]">{expandedKeys.has(dept) ? "▲" : "▼"}</span>
+                  {label}
+                  {count > 0 && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${badgeMap[color]}`}>
+                      {count}
+                    </span>
+                  )}
                 </button>
-
-                {expandedKeys.has(dept) && (
-                  <div className="p-4 space-y-4">
-                    {Object.keys(grouped[dept]).sort().map((year) => (
-                      <div key={year}>
-                        <button
-                          onClick={() => toggleKey(`${dept}-${year}`)}
-                          className="w-full flex items-center justify-between px-4 py-2 bg-[var(--color-bg-tertiary)] rounded-lg mb-2"
-                        >
-                          <span className="font-medium text-[var(--color-text-primary)]">Year {year}</span>
-                          <span className="text-[var(--color-text-secondary)] text-sm">{expandedKeys.has(`${dept}-${year}`) ? "▲" : "▼"}</span>
-                        </button>
-
-                        {expandedKeys.has(`${dept}-${year}`) && (
-                          <div className="pl-4 space-y-3">
-                            {Object.keys(grouped[dept][Number(year)]).sort().map((sem) => (
-                              <div key={sem}>
-                                <button
-                                  onClick={() => toggleKey(`${dept}-${year}-${sem}`)}
-                                  className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-[var(--color-text-secondary)] border-b border-[var(--color-border)] mb-2"
-                                >
-                                  <span>Semester {sem}</span>
-                                  <span>{expandedKeys.has(`${dept}-${year}-${sem}`) ? "▲" : "▼"}</span>
-                                </button>
-
-                                {expandedKeys.has(`${dept}-${year}-${sem}`) && (
-                                  <div className="space-y-2 pl-2">
-                                    {grouped[dept][Number(year)][Number(sem)].map((course) => (
-                                      <CourseRow key={course.id} course={course} onUpload={() => setSelectedCourse(course)} />
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
-        )}
+
+          {reviewLoading ? (
+            <div className="flex items-center justify-center py-16 border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-secondary)]">
+              <p className="text-[var(--color-text-secondary)] text-sm">Loading materials...</p>
+            </div>
+          ) : reviewMaterials.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-secondary)]">
+              <p className="text-4xl mb-3">
+                {activeReviewTab === "pending_review" ? "🟡" :
+                  activeReviewTab === "quarantined" ? "🔴" :
+                    activeReviewTab === "awaiting_course" ? "🟣" : "🔵"}
+              </p>
+              <p className="text-[var(--color-text-secondary)] text-sm">
+                {activeReviewTab === "pending_review" && "No materials awaiting review."}
+                {activeReviewTab === "quarantined" && "No quarantined materials."}
+                {activeReviewTab === "awaiting_course" && "No materials waiting for a course to be created."}
+                {activeReviewTab === "ocr_pending" && "No scanned files waiting for OCR."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {activeReviewTab === "awaiting_course" && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-sm">
+                  🟣 These materials have a detected course name but that course does not exist in Firestore yet. They will resurrect automatically when the matching course is created. You can also manually assign them now.
+                </div>
+              )}
+              {activeReviewTab === "ocr_pending" && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm">
+                  🔵 These files are scanned images. Google Cloud OCR integration is not yet active. Once enabled, they will be re-processed and move to the appropriate tab automatically.
+                </div>
+              )}
+              {reviewMaterials.map((material) => (
+                <MaterialReviewCard
+                  key={material.id}
+                  material={material}
+                  courses={courses}
+                  tab={activeReviewTab}
+                  onDismiss={() => removeMaterialFromList(material.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Course Browser ───────────────────────────────────────────────── */}
+        <section>
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4" style={{ fontFamily: "Playfair Display, serif" }}>
+            Course Browser
+          </h2>
+
+          <div className="flex items-center gap-4 mb-4 text-xs text-[var(--color-text-secondary)]">
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Empty</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Partial</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Verified</span>
+          </div>
+
+          <input
+            type="text"
+            placeholder="Search courses by name or code..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full max-w-md px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-gold)] mb-6"
+          />
+
+          {filteredCourses ? (
+            <div className="space-y-2">
+              <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+                {filteredCourses.length} result(s) for &quot;{search}&quot;
+              </p>
+              {filteredCourses.map((course) => (
+                <CourseRow key={course.id} course={course} onUpload={() => setSelectedCourse(course)} />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {Object.keys(grouped).sort().map((dept) => (
+                <div key={dept} className="border border-[var(--color-border)] rounded-xl overflow-hidden">
+                  <button
+                    onClick={() => toggleKey(dept)}
+                    className="w-full flex items-center justify-between px-5 py-4 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                  >
+                    <span className="text-lg font-semibold text-[var(--color-gold)] capitalize">{dept} Department</span>
+                    <span className="text-[var(--color-text-secondary)]">{expandedKeys.has(dept) ? "▲" : "▼"}</span>
+                  </button>
+
+                  {expandedKeys.has(dept) && (
+                    <div className="p-4 space-y-4">
+                      {Object.keys(grouped[dept]).sort().map((year) => (
+                        <div key={year}>
+                          <button
+                            onClick={() => toggleKey(`${dept}-${year}`)}
+                            className="w-full flex items-center justify-between px-4 py-2 bg-[var(--color-bg-tertiary)] rounded-lg mb-2"
+                          >
+                            <span className="font-medium text-[var(--color-text-primary)]">Year {year}</span>
+                            <span className="text-[var(--color-text-secondary)] text-sm">{expandedKeys.has(`${dept}-${year}`) ? "▲" : "▼"}</span>
+                          </button>
+
+                          {expandedKeys.has(`${dept}-${year}`) && (
+                            <div className="pl-4 space-y-3">
+                              {Object.keys(grouped[dept][Number(year)]).sort().map((sem) => (
+                                <div key={sem}>
+                                  <button
+                                    onClick={() => toggleKey(`${dept}-${year}-${sem}`)}
+                                    className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-[var(--color-text-secondary)] border-b border-[var(--color-border)] mb-2"
+                                  >
+                                    <span>Semester {sem}</span>
+                                    <span>{expandedKeys.has(`${dept}-${year}-${sem}`) ? "▲" : "▼"}</span>
+                                  </button>
+
+                                  {expandedKeys.has(`${dept}-${year}-${sem}`) && (
+                                    <div className="space-y-2 pl-2">
+                                      {grouped[dept][Number(year)][Number(sem)].map((course) => (
+                                        <CourseRow key={course.id} course={course} onUpload={() => setSelectedCourse(course)} />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       {selectedCourse && (
@@ -246,6 +417,243 @@ export default function AdminPage() {
     </div>
   );
 }
+
+// ─── Material Review Card ─────────────────────────────────────────────────────
+
+function MaterialReviewCard({
+  material,
+  courses,
+  tab,
+  onDismiss,
+}: {
+  material: Material;
+  courses: Course[];
+  tab: ReviewTab;
+  onDismiss: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [selectedCourseId, setSelectedCourseId] = useState(material.suggestedCourseId ?? "");
+  const [selectedCategory, setSelectedCategory] = useState<string>(material.category ?? "other");
+  const [resurrectResult, setResurrectResult] = useState<{ resurrected: number; failed: number } | null>(null);
+
+  const isReadOnly = tab === "ocr_pending";
+  const isAwaitingCourse = tab === "awaiting_course";
+
+  const handleApprove = async () => {
+    const courseId = (isAwaitingCourse || tab === "quarantined") ? selectedCourseId : material.suggestedCourseId;
+    const category = (isAwaitingCourse || tab === "quarantined") ? selectedCategory : material.category;
+    const courseName = courses.find((c) => c.id === courseId)?.name ?? material.suggestedCourseName ?? "";
+
+    if (!courseId) {
+      setError("Please select a course before approving.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      await saveChunks(material.id, courseId, category as never, material.extractedText);
+      await updateMaterialStatus(material.id, "approved", courseId, courseName);
+      onDismiss();
+    } catch (err) {
+      console.error("Approve failed:", err);
+      setError("Failed to approve. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await updateMaterialStatus(material.id, "rejected");
+      onDismiss();
+    } catch (err) {
+      console.error("Reject failed:", err);
+      setError("Failed to reject. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Manual resurrection trigger — admin picks a course and fires resurrection
+  // for ALL awaiting_course materials that match it, not just this one
+  const handleResurrect = async () => {
+    if (!selectedCourseId) {
+      setError("Select a course to resurrect against.");
+      return;
+    }
+    const courseName = courses.find((c) => c.id === selectedCourseId)?.name ?? "";
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await resurrectMaterialsForCourse(selectedCourseId, courseName);
+      setResurrectResult(result);
+      if (result.resurrected > 0) onDismiss();
+    } catch (err) {
+      console.error("Resurrection failed:", err);
+      setError("Resurrection failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const previewText = material.extractedText?.slice(0, 300) ?? "No text extracted.";
+  const fullText = material.extractedText ?? "No text extracted.";
+
+  return (
+    <div className="border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-secondary)] p-5 space-y-4">
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-1">
+          <p className="font-semibold text-[var(--color-text-primary)] text-sm break-all">{material.fileName}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+              {material.category}
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${confidenceBadge(material.confidence)}`}>
+              {material.confidence} confidence
+            </span>
+            {material.wordCount > 0 && (
+              <span className="text-xs text-[var(--color-text-secondary)]">{material.wordCount.toLocaleString()} words</span>
+            )}
+          </div>
+        </div>
+
+        {!isReadOnly && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={handleReject}
+              disabled={loading}
+              className="text-xs px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+            >
+              Reject
+            </button>
+            {!isAwaitingCourse && (
+              <button
+                onClick={handleApprove}
+                disabled={loading}
+                className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {loading ? "Working..." : "Approve →"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Course info — varies by tab */}
+      {tab === "pending_review" && (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-[var(--color-text-secondary)]">Suggested course:</span>
+          <span className="text-[var(--color-text-primary)] font-medium">{material.suggestedCourseName ?? "—"}</span>
+        </div>
+      )}
+
+      {(tab === "quarantined" || tab === "awaiting_course") && (
+        <div className="space-y-3 p-3 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
+          {tab === "awaiting_course" && material.detectedCourseName && (
+            <div className="flex items-center gap-2 text-xs mb-1">
+              <span className="text-purple-400 font-medium">🔍 Detected course name:</span>
+              <span className="text-[var(--color-text-primary)] font-semibold">{material.detectedCourseName}</span>
+            </div>
+          )}
+          {tab === "quarantined" && (
+            <p className="text-xs text-red-400 font-medium">⚠️ No course signal detected. Assign manually:</p>
+          )}
+          {tab === "awaiting_course" && (
+            <p className="text-xs text-purple-400 font-medium">Assign to an existing course now, or wait for the course to be created:</p>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-xs text-[var(--color-text-secondary)]">Course</label>
+            <select
+              value={selectedCourseId}
+              onChange={(e) => setSelectedCourseId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-xs focus:outline-none focus:border-[var(--color-gold)]"
+            >
+              <option value="">— Select a course —</option>
+              {courses.map((c) => (
+                <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs text-[var(--color-text-secondary)]">Category</label>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-xs focus:outline-none focus:border-[var(--color-gold)]"
+            >
+              <option value="notes">Notes</option>
+              <option value="past_questions">Past Questions</option>
+              <option value="textbook">Textbook</option>
+              <option value="aoc">Areas of Concentration</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={handleApprove}
+              disabled={loading || !selectedCourseId}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity"
+            >
+              {loading ? "Working..." : "Approve this file →"}
+            </button>
+            {isAwaitingCourse && (
+              <button
+                onClick={handleResurrect}
+                disabled={loading || !selectedCourseId}
+                className="text-xs px-3 py-1.5 rounded-lg border border-purple-400/40 text-purple-400 hover:bg-purple-500/10 disabled:opacity-40 transition-colors"
+              >
+                {loading ? "Working..." : "Resurrect all matching →"}
+              </button>
+            )}
+          </div>
+
+          {resurrectResult && (
+            <p className="text-xs text-purple-300 mt-1">
+              ✅ {resurrectResult.resurrected} material(s) resurrected.
+              {resurrectResult.failed > 0 && ` ⚠️ ${resurrectResult.failed} failed.`}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Classifier reason */}
+      {material.classifierReason && (
+        <p className="text-xs text-[var(--color-text-secondary)] italic">Classifier: {material.classifierReason}</p>
+      )}
+
+      {/* Text preview */}
+      <div className="rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] p-3">
+        <p className="text-xs text-[var(--color-text-secondary)] mb-1 font-medium">Extracted text preview</p>
+        <p className="text-xs text-[var(--color-text-primary)] leading-relaxed whitespace-pre-wrap break-words">
+          {expanded ? fullText : previewText}
+          {!expanded && fullText.length > 300 && "..."}
+        </p>
+        {fullText.length > 300 && (
+          <button
+            onClick={() => setExpanded((p) => !p)}
+            className="text-xs text-[var(--color-gold)] mt-2 hover:underline"
+          >
+            {expanded ? "Show less" : "Show full text"}
+          </button>
+        )}
+      </div>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+// ─── Course Row ───────────────────────────────────────────────────────────────
 
 function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void }) {
   return (
@@ -266,6 +674,8 @@ function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void 
     </div>
   );
 }
+
+// ─── Upload Modal ─────────────────────────────────────────────────────────────
 
 function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessChange }: {
   course: Course;
@@ -311,7 +721,6 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
           }
         }
         setExistingFiles(result);
-
         const courseDoc = await getDoc(doc(db, "courses", course.id));
         const data = courseDoc.data();
         if (data?.readiness) setReadiness(data.readiness);
@@ -364,31 +773,23 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
           resolve();
         },
         async () => {
-          // ── Storage upload complete ─────────────────────────────────────
           const url = await getDownloadURL(task.snapshot.ref);
-
           await updateDoc(doc(db, "courses", course.id), {
             [`materials.${category}.${file.name}`]: url,
           });
-
           if (readiness === "empty") {
             await updateDoc(doc(db, "courses", course.id), { readiness: "partial" });
             setReadiness("partial");
             onReadinessChange("partial");
           }
-
           setFileStatuses((p) => ({
             ...p,
             [category]: { ...(p[category] || {}), [file.name]: "done" },
           }));
-
           setExistingFiles((p) => ({
             ...p,
             [category]: [...(p[category] || []), { name: file.name, url }],
           }));
-
-          // ── Call /api/process-upload ────────────────────────────────────
-          // Send file to RAG pipeline for text extraction + classification
           try {
             setProcessingStatus((p) => ({ ...p, [file.name]: "processing" }));
             const formData = new FormData();
@@ -396,12 +797,7 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
             formData.append("fileUrl", url);
             formData.append("uploadedBy", uploadedBy);
             formData.append("uploadedByRole", uploadedByRole);
-
-            const res = await fetch("/api/process-upload", {
-              method: "POST",
-              body: formData,
-            });
-
+            const res = await fetch("/api/process-upload", { method: "POST", body: formData });
             if (res.ok) {
               const result = await res.json();
               setProcessingStatus((p) => ({ ...p, [file.name]: result.status }));
@@ -412,7 +808,6 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
             console.error("[admin] process-upload failed:", err);
             setProcessingStatus((p) => ({ ...p, [file.name]: "processing_error" }));
           }
-
           resolve();
         }
       );
@@ -423,16 +818,12 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
     const files = fileQueues[category] || [];
     for (const file of files) {
       const status = fileStatuses[category]?.[file.name];
-      if (status !== "done" && status !== "uploading") {
-        await uploadFile(file, category);
-      }
+      if (status !== "done" && status !== "uploading") await uploadFile(file, category);
     }
   };
 
   const handleBatchUploadAll = () => {
-    (Object.keys(fileQueues) as UploadCategory[]).forEach((cat) => {
-      handleUploadCategory(cat);
-    });
+    (Object.keys(fileQueues) as UploadCategory[]).forEach((cat) => handleUploadCategory(cat));
   };
 
   const handleSetReadiness = async (newReadiness: "empty" | "partial" | "verified") => {
@@ -467,6 +858,7 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
       case "processing": return "⏳ Processing...";
       case "pending_review": return "🟡 Pending review";
       case "quarantined": return "🔴 Needs manual assign";
+      case "awaiting_course": return "🟣 Awaiting course creation";
       case "ocr_pending": return "🔵 OCR pending";
       case "processing_error": return "⚠️ Processing failed";
       default: return "";
@@ -476,7 +868,6 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold text-[var(--color-gold)]" style={{ fontFamily: "Playfair Display, serif" }}>
@@ -498,8 +889,7 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
               disabled={savingReadiness}
               className={`text-xs px-3 py-1 rounded-lg font-semibold transition-all ${readiness === r
                 ? r === "verified" ? "bg-green-500 text-white" :
-                  r === "partial" ? "bg-yellow-400 text-black" :
-                    "bg-red-500 text-white"
+                  r === "partial" ? "bg-yellow-400 text-black" : "bg-red-500 text-white"
                 : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:border-[var(--color-gold)] border border-[var(--color-border)]"
                 }`}
             >
@@ -524,7 +914,6 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
             {CATEGORIES.map(({ key, label, icon }) => {
               const files = fileQueues[key] || [];
               const existing = existingFiles[key] || [];
-
               return (
                 <div key={key} className="border border-[var(--color-border)] rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -566,10 +955,7 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
                         const procStatus = processingStatus[file.name];
                         return (
                           <div key={file.name} className="flex items-center gap-2 flex-wrap">
-                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400" :
-                              status === "error" ? "bg-red-400" :
-                                status === "uploading" ? "bg-yellow-400" : "bg-[var(--color-border)]"
-                              }`} />
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400" : status === "error" ? "bg-red-400" : status === "uploading" ? "bg-yellow-400" : "bg-[var(--color-border)]"}`} />
                             <span className="text-xs text-[var(--color-text-primary)] max-w-[180px] truncate">{file.name}</span>
                             {status === "uploading" && (
                               <div className="flex-1 bg-[var(--color-border)] rounded-full h-1.5 min-w-[60px]">

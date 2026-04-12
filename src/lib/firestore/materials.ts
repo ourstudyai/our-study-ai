@@ -1,7 +1,5 @@
 // src/lib/firestore/materials.ts
 // Firestore read/write operations for the materials and material_chunks collections
-// materials — one doc per uploaded file (extracted text + metadata)
-// material_chunks — one doc per RAG chunk (queried by courseId during chat)
 
 import { db } from "@/lib/firebase/config";
 import {
@@ -22,8 +20,9 @@ import { MaterialCategory } from "@/lib/processing/classifier";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type MaterialStatus =
-    | "pending_review"   // auto-classified, waiting admin confirmation
-    | "quarantined"      // classifier couldn't determine course, needs manual assign
+    | "pending_review"   // auto-classified + course matched, awaiting admin confirmation
+    | "quarantined"      // classifier found nothing useful — no course signal, no name hint
+    | "awaiting_course"  // classifier detected a course name but it doesn't exist in Firestore yet
     | "ocr_pending"      // scanned file, waiting for Google Cloud OCR
     | "approved"         // admin confirmed, live in RAG
     | "rejected";        // admin rejected
@@ -33,8 +32,8 @@ export type Material = {
     fileName: string;
     fileUrl: string;
     mimeType: string;
-    uploadedBy: string;        // user uid
-    uploadedByRole: string;    // "admin" | "class_rep" etc
+    uploadedBy: string;
+    uploadedByRole: string;
     extractedText: string;
     wordCount: number;
     pageCount?: number;
@@ -43,6 +42,7 @@ export type Material = {
     category: MaterialCategory;
     suggestedCourseId: string | null;
     suggestedCourseName: string | null;
+    detectedCourseName: string | null;   // ghost name — may not exist in Firestore yet
     confirmedCourseId: string | null;
     confirmedCourseName: string | null;
     confidence: "high" | "medium" | "low";
@@ -67,8 +67,8 @@ export type MaterialChunk = {
 
 const MATERIALS_COL = "materials";
 const CHUNKS_COL = "material_chunks";
-const CHUNK_SIZE = 400;        // words per chunk
-const CHUNK_OVERLAP = 50;      // words of overlap between chunks
+const CHUNK_SIZE = 400;
+const CHUNK_OVERLAP = 50;
 
 // ─── Save Material ────────────────────────────────────────────────────────────
 
@@ -125,8 +125,6 @@ export async function getMaterial(materialId: string): Promise<Material | null> 
 }
 
 // ─── Save Chunks (RAG) ────────────────────────────────────────────────────────
-// Called after admin approves a material
-// Splits extracted text into overlapping chunks and saves to material_chunks
 
 export async function saveChunks(
     materialId: string,
@@ -145,7 +143,6 @@ export async function saveChunks(
         if (start >= words.length) break;
     }
 
-    // Write all chunks to Firestore
     for (let i = 0; i < chunks.length; i++) {
         const ref = doc(collection(db, CHUNKS_COL));
         await setDoc(ref, {
@@ -162,8 +159,61 @@ export async function saveChunks(
     return chunks.length;
 }
 
+// ─── Resurrect Materials for a Course ────────────────────────────────────────
+// Called when a new course is created (Phase 3 course creation flow).
+// Finds all awaiting_course materials whose detectedCourseName fuzzy-matches
+// the new course name, then chunks and approves them automatically.
+//
+// GOOGLE_CLOUD_OCR_SLOT: When OCR is enabled, also call this after OCR completes
+// on a material that was ocr_pending — re-classify first, then resurrect if needed.
+
+export async function resurrectMaterialsForCourse(
+    courseId: string,
+    courseName: string
+): Promise<{ resurrected: number; failed: number }> {
+    const lowerCourseName = courseName.toLowerCase();
+
+    // Fetch all awaiting_course materials
+    const q = query(
+        collection(db, MATERIALS_COL),
+        where("status", "==", "awaiting_course")
+    );
+    const snapshot = await getDocs(q);
+    const candidates = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Material));
+
+    let resurrected = 0;
+    let failed = 0;
+
+    for (const material of candidates) {
+        const detected = (material.detectedCourseName ?? "").toLowerCase();
+        const suggested = (material.suggestedCourseName ?? "").toLowerCase();
+
+        // Fuzzy match: check if detected/suggested name shares significant words with new course
+        const courseWords = lowerCourseName.split(/\s+/).filter((w) => w.length > 3);
+        const detectedWords = detected.split(/\s+/).filter((w) => w.length > 3);
+        const suggestedWords = suggested.split(/\s+/).filter((w) => w.length > 3);
+
+        const allCandidateWords = [...new Set([...detectedWords, ...suggestedWords])];
+        const matchCount = courseWords.filter((w) => allCandidateWords.includes(w)).length;
+        const matchRatio = courseWords.length > 0 ? matchCount / courseWords.length : 0;
+
+        // Resurrect if at least 50% of course name words match
+        if (matchRatio >= 0.5) {
+            try {
+                await saveChunks(material.id, courseId, material.category, material.extractedText);
+                await updateMaterialStatus(material.id, "approved", courseId, courseName);
+                resurrected++;
+            } catch (err) {
+                console.error(`[resurrect] Failed for material ${material.id}:`, err);
+                failed++;
+            }
+        }
+    }
+
+    return { resurrected, failed };
+}
+
 // ─── Query Chunks for RAG ─────────────────────────────────────────────────────
-// Called by /api/chat to fetch relevant chunks for a courseId
 
 export async function getChunksByCourse(
     courseId: string,
@@ -178,13 +228,10 @@ export async function getChunksByCourse(
     const chunks = snapshot.docs.map(
         (d) => ({ id: d.id, ...d.data() } as MaterialChunk)
     );
-
-    // Return most recent chunks up to limit
     return chunks.slice(0, limitCount);
 }
 
 // ─── Delete Chunks for a Material ────────────────────────────────────────────
-// Called when admin rejects an already-approved material
 
 export async function deleteChunksByMaterial(
     materialId: string
