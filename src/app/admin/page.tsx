@@ -72,6 +72,7 @@ export default function AdminPage() {
     if (!firebaseUser) { router.push("/"); return; }
     if (userProfile && userProfile.role !== "admin" && userProfile.role !== "chief_admin") router.push("/");
   }, [firebaseUser, userProfile, authLoading, router]);
+
   useEffect(() => {
     const fetchCourses = async () => {
       try {
@@ -236,6 +237,8 @@ export default function AdminPage() {
       {selectedCourse && (
         <UploadModal
           course={selectedCourse}
+          uploadedBy={firebaseUser?.uid ?? "unknown"}
+          uploadedByRole={userProfile?.role ?? "admin"}
           onClose={() => setSelectedCourse(null)}
           onReadinessChange={(readiness) => updateCourseReadiness(selectedCourse.id, readiness)}
         />
@@ -264,8 +267,10 @@ function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void 
   );
 }
 
-function UploadModal({ course, onClose, onReadinessChange }: {
+function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessChange }: {
   course: Course;
+  uploadedBy: string;
+  uploadedByRole: string;
   onClose: () => void;
   onReadinessChange: (readiness: "empty" | "partial" | "verified") => void;
 }) {
@@ -276,8 +281,8 @@ function UploadModal({ course, onClose, onReadinessChange }: {
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [readiness, setReadiness] = useState<"empty" | "partial" | "verified">(course.readiness || "empty");
   const [savingReadiness, setSavingReadiness] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<Record<string, string>>({});
 
-  // Load existing files from Firebase Storage
   useEffect(() => {
     const loadExisting = async () => {
       try {
@@ -307,7 +312,6 @@ function UploadModal({ course, onClose, onReadinessChange }: {
         }
         setExistingFiles(result);
 
-        // Auto-compute readiness from Firestore
         const courseDoc = await getDoc(doc(db, "courses", course.id));
         const data = courseDoc.data();
         if (data?.readiness) setReadiness(data.readiness);
@@ -360,24 +364,55 @@ function UploadModal({ course, onClose, onReadinessChange }: {
           resolve();
         },
         async () => {
+          // ── Storage upload complete ─────────────────────────────────────
           const url = await getDownloadURL(task.snapshot.ref);
+
           await updateDoc(doc(db, "courses", course.id), {
             [`materials.${category}.${file.name}`]: url,
           });
-          // Auto-set to partial if was empty
+
           if (readiness === "empty") {
             await updateDoc(doc(db, "courses", course.id), { readiness: "partial" });
             setReadiness("partial");
             onReadinessChange("partial");
           }
+
           setFileStatuses((p) => ({
             ...p,
             [category]: { ...(p[category] || {}), [file.name]: "done" },
           }));
+
           setExistingFiles((p) => ({
             ...p,
             [category]: [...(p[category] || []), { name: file.name, url }],
           }));
+
+          // ── Call /api/process-upload ────────────────────────────────────
+          // Send file to RAG pipeline for text extraction + classification
+          try {
+            setProcessingStatus((p) => ({ ...p, [file.name]: "processing" }));
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("fileUrl", url);
+            formData.append("uploadedBy", uploadedBy);
+            formData.append("uploadedByRole", uploadedByRole);
+
+            const res = await fetch("/api/process-upload", {
+              method: "POST",
+              body: formData,
+            });
+
+            if (res.ok) {
+              const result = await res.json();
+              setProcessingStatus((p) => ({ ...p, [file.name]: result.status }));
+            } else {
+              setProcessingStatus((p) => ({ ...p, [file.name]: "processing_error" }));
+            }
+          } catch (err) {
+            console.error("[admin] process-upload failed:", err);
+            setProcessingStatus((p) => ({ ...p, [file.name]: "processing_error" }));
+          }
+
           resolve();
         }
       );
@@ -427,11 +462,21 @@ function UploadModal({ course, onClose, onReadinessChange }: {
     return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   };
 
+  const getProcessingLabel = (status: string) => {
+    switch (status) {
+      case "processing": return "⏳ Processing...";
+      case "pending_review": return "🟡 Pending review";
+      case "quarantined": return "🔴 Needs manual assign";
+      case "ocr_pending": return "🔵 OCR pending";
+      case "processing_error": return "⚠️ Processing failed";
+      default: return "";
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
 
-        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold text-[var(--color-gold)]" style={{ fontFamily: "Playfair Display, serif" }}>
@@ -444,7 +489,6 @@ function UploadModal({ course, onClose, onReadinessChange }: {
           <button onClick={onClose} className="text-[var(--color-text-secondary)] hover:text-white text-xl font-bold">✕</button>
         </div>
 
-        {/* Readiness control */}
         <div className="flex items-center gap-2 mb-5 p-3 rounded-xl bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
           <span className="text-xs text-[var(--color-text-secondary)] mr-1">Status:</span>
           {(["empty", "partial", "verified"] as const).map((r) => (
@@ -464,7 +508,6 @@ function UploadModal({ course, onClose, onReadinessChange }: {
           ))}
         </div>
 
-        {/* Batch upload */}
         {totalPending > 1 && (
           <button
             onClick={handleBatchUploadAll}
@@ -501,7 +544,6 @@ function UploadModal({ course, onClose, onReadinessChange }: {
                     )}
                   </div>
 
-                  {/* Existing files */}
                   {existing.length > 0 && (
                     <div className="mb-3 space-y-1">
                       {existing.map((f) => (
@@ -516,12 +558,12 @@ function UploadModal({ course, onClose, onReadinessChange }: {
                     </div>
                   )}
 
-                  {/* New files queued */}
                   {files.length > 0 && (
                     <div className="space-y-2 mb-3">
                       {files.map((file) => {
                         const status = fileStatuses[key]?.[file.name] || "idle";
                         const progress = fileProgresses[key]?.[file.name] || 0;
+                        const procStatus = processingStatus[file.name];
                         return (
                           <div key={file.name} className="flex items-center gap-2 flex-wrap">
                             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400" :
@@ -534,7 +576,10 @@ function UploadModal({ course, onClose, onReadinessChange }: {
                                 <div className="bg-[var(--color-gold)] h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }} />
                               </div>
                             )}
-                            {status === "done" && <span className="text-green-400 text-xs">✓</span>}
+                            {status === "done" && !procStatus && <span className="text-green-400 text-xs">✓</span>}
+                            {status === "done" && procStatus && (
+                              <span className="text-xs text-[var(--color-text-secondary)]">{getProcessingLabel(procStatus)}</span>
+                            )}
                             {status === "error" && <span className="text-red-400 text-xs">✗ retry</span>}
                             {status === "idle" && (
                               <button onClick={() => handleDeselect(key, file.name)} className="text-xs text-red-400 hover:text-red-300">✕</button>
@@ -545,7 +590,6 @@ function UploadModal({ course, onClose, onReadinessChange }: {
                     </div>
                   )}
 
-                  {/* Add files */}
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="file"
