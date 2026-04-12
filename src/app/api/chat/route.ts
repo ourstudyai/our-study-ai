@@ -5,7 +5,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { getSystemPrompt } from "@/lib/gemini/system-prompts";
-import { applyPrivacyWrapper } from "@/lib/gemini/privacy-wrapper";
 import { getChunksByCourse } from "@/lib/firestore/materials";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
@@ -47,10 +46,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── 2. Apply privacy wrapper ────────────────────────────────────────────
-    const safeMessages = applyPrivacyWrapper(messages, userId ?? "anonymous");
-
-    // ── 3. Fetch RAG context from Firestore ─────────────────────────────────
+    // ── 2. Fetch RAG context from Firestore ─────────────────────────────────
     let ragContext = "";
     let ragStatus: "loaded" | "empty" | "error" = "empty";
 
@@ -59,7 +55,6 @@ export async function POST(req: NextRequest) {
         const chunks = await getChunksByCourse(courseId, 6);
 
         if (chunks.length > 0) {
-          // ✅ Materials found — inject into system prompt
           ragStatus = "loaded";
           ragContext =
             "\n\n---\n" +
@@ -69,21 +64,16 @@ export async function POST(req: NextRequest) {
             chunks.map((c, i) => `[Material ${i + 1}]:\n${c.text}`).join("\n\n") +
             "\n---\n";
         } else {
-          // ⚠️ No materials uploaded yet for this course
           ragStatus = "empty";
         }
 
       } catch (err) {
-        // ❌ Firestore error — log but don't crash chat
         console.error("[chat] RAG fetch failed:", err);
         ragStatus = "error";
       }
     }
 
-    // ── 4. Build RAG notice for AI ──────────────────────────────────────────
-    // AI is told clearly what the material situation is so it can
-    // communicate this naturally to the student in its own voice
-
+    // ── 3. Build RAG notice for AI ──────────────────────────────────────────
     let ragNotice = "";
 
     if (ragStatus === "empty") {
@@ -101,7 +91,7 @@ export async function POST(req: NextRequest) {
         "try again shortly or inform their admin if the issue persists.";
     }
 
-    // ── 5. Build system prompt ──────────────────────────────────────────────
+    // ── 4. Build system prompt ──────────────────────────────────────────────
     const baseSystemPrompt = getSystemPrompt(studyMode, {
       courseName,
       courseDescription,
@@ -109,19 +99,19 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = baseSystemPrompt + ragNotice + ragContext;
 
-    // ── 6. Stream response from Groq ────────────────────────────────────────
+    // ── 5. Stream response from Groq ────────────────────────────────────────
     const stream = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: systemPrompt },
-        ...safeMessages,
+        ...messages,
       ],
       stream: true,
       temperature: 0.7,
       max_tokens: 2048,
     });
 
-    // ── 7. Return SSE stream ────────────────────────────────────────────────
+    // ── 6. Return SSE stream ────────────────────────────────────────────────
     const encoder = new TextEncoder();
 
     const readable = new ReadableStream({
