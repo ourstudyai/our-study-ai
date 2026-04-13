@@ -138,7 +138,6 @@ export default function ContributePage() {
 
         try {
             for (const file of files) {
-                // Upload to storage
                 const storageRef = ref(storage, `${storagePath}/${file.name}`);
                 const task = uploadBytesResumable(storageRef, file);
 
@@ -153,7 +152,6 @@ export default function ContributePage() {
                         async () => {
                             const url = await getDownloadURL(task.snapshot.ref);
 
-                            // Call process-upload API
                             const formData = new FormData();
                             formData.append("file", file);
                             formData.append("fileUrl", url);
@@ -267,7 +265,7 @@ export default function ContributePage() {
                         been received. Our team will review and make them available to your fellow students soon.
                     </p>
                     <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                        This kind of contribution is what makes OurStudy work. You just made someone's semester easier —
+                        This kind of contribution is what makes OurStudy work. You just made someone&apos;s semester easier —
                         maybe without even knowing it.
                     </p>
                     <p className="text-sm font-semibold" style={{ color: "var(--gold)" }}>
@@ -408,7 +406,7 @@ export default function ContributePage() {
                                         className="text-xs"
                                         style={{ color: "var(--text-muted)" }}
                                     >
-                                        My course isn't listed →
+                                        My course isn&apos;t listed →
                                     </button>
                                 </>
                             ) : (
@@ -422,7 +420,7 @@ export default function ContributePage() {
                                         style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                                     />
                                     <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                        No problem — your material will still be received and linked to this course once it's added to the system.
+                                        No problem — your material will still be received and linked to this course once it&apos;s added to the system.
                                     </p>
                                     <button
                                         onClick={() => { setCourseNotListed(false); setManualCourseName(""); }}
