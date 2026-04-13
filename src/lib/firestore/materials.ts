@@ -42,7 +42,7 @@ export type Material = {
     category: MaterialCategory;
     suggestedCourseId: string | null;
     suggestedCourseName: string | null;
-    detectedCourseName: string | null;   // ghost name — may not exist in Firestore yet
+    detectedCourseName: string | null;
     confirmedCourseId: string | null;
     confirmedCourseName: string | null;
     confidence: "high" | "medium" | "low";
@@ -173,7 +173,6 @@ export async function resurrectMaterialsForCourse(
 ): Promise<{ resurrected: number; failed: number }> {
     const lowerCourseName = courseName.toLowerCase();
 
-    // Fetch all awaiting_course materials
     const q = query(
         collection(db, MATERIALS_COL),
         where("status", "==", "awaiting_course")
@@ -188,16 +187,14 @@ export async function resurrectMaterialsForCourse(
         const detected = (material.detectedCourseName ?? "").toLowerCase();
         const suggested = (material.suggestedCourseName ?? "").toLowerCase();
 
-        // Fuzzy match: check if detected/suggested name shares significant words with new course
         const courseWords = lowerCourseName.split(/\s+/).filter((w) => w.length > 3);
         const detectedWords = detected.split(/\s+/).filter((w) => w.length > 3);
         const suggestedWords = suggested.split(/\s+/).filter((w) => w.length > 3);
 
-        const allCandidateWords = [...new Set([...detectedWords, ...suggestedWords])];
+        const allCandidateWords = Array.from(new Set([...detectedWords, ...suggestedWords]));
         const matchCount = courseWords.filter((w) => allCandidateWords.includes(w)).length;
         const matchRatio = courseWords.length > 0 ? matchCount / courseWords.length : 0;
 
-        // Resurrect if at least 50% of course name words match
         if (matchRatio >= 0.5) {
             try {
                 await saveChunks(material.id, courseId, material.category, material.extractedText);
