@@ -1,111 +1,98 @@
-// src/app/api/process-upload/route.ts
-// API endpoint called after a file is uploaded to Firebase Storage
-// Extracts text, classifies the material, saves to Firestore
-// Called by admin upload panel after storage upload completes
+// src/app/api/chat/route.ts
+// Streaming chat endpoint — Groq LLM with RAG context from material_chunks
 
 import { NextRequest, NextResponse } from "next/server";
-import { extractText } from "@/lib/processing/extractor";
-import { classifyMaterial, ClassificationResult } from "@/lib/processing/classifier";
-import { saveMaterial } from "@/lib/firestore/materials";
-import type { MaterialStatus } from "@/lib/firestore/materials";
+import Groq from "groq-sdk";
+import { getChunksByCourse } from "@/lib/firestore/materials";
+import { getSystemPrompt } from "@/lib/gemini/system-prompts";
 
-// ─── POST /api/process-upload ─────────────────────────────────────────────────
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 
 export async function POST(req: NextRequest) {
   try {
-    // ── 1. Parse request ────────────────────────────────────────────────────
-    const formData = await req.formData();
+    const body = await req.json();
+    const { messages, courseId, courseName, courseDescription, mode } = body;
 
-    const file = formData.get("file") as File | null;
-    const fileUrl = formData.get("fileUrl") as string | null;
-    const uploadedBy = formData.get("uploadedBy") as string | null;
-    const uploadedByRole = formData.get("uploadedByRole") as string | null;
-
-    if (!file || !fileUrl || !uploadedBy || !uploadedByRole) {
-      return NextResponse.json(
-        { error: "Missing required fields: file, fileUrl, uploadedBy, uploadedByRole" },
-        { status: 400 }
-      );
+    if (!messages || !Array.isArray(messages)) {
+      return NextResponse.json({ error: "Missing messages array." }, { status: 400 });
     }
 
-    const fileName = file.name;
-    const mimeType = file.type;
+    // ── RAG: fetch relevant chunks for this course ──────────────────────────
+    let ragContext = "";
+    let ragFailed = false;
 
-    // ── 2. Convert file to buffer ───────────────────────────────────────────
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // ── 3. Extract text ─────────────────────────────────────────────────────
-    const extraction = await extractText(buffer, mimeType, fileName);
-
-    // ── 4. Classify material ────────────────────────────────────────────────
-    const defaultClassification: ClassificationResult = {
-      category: "other",
-      suggestedCourseId: null,
-      suggestedCourseName: null,
-      confidence: "low",
-      reason: "Scanned file — OCR pending.",
-    };
-
-    let classification: ClassificationResult = defaultClassification;
-
-    if (extraction.method !== "ocr_pending" && extraction.text) {
-      classification = await classifyMaterial(extraction.text, fileName);
+    if (courseId) {
+      try {
+        const chunks = await getChunksByCourse(courseId, 6);
+        if (chunks.length > 0) {
+          ragContext = chunks.map((c, i) => `[Chunk ${i + 1}]\n${c.text}`).join("\n\n");
+        }
+      } catch (err) {
+        console.error("[chat] RAG fetch failed:", err);
+        ragFailed = true;
+      }
     }
 
-    // ── 5. Determine status ─────────────────────────────────────────────────
-    // ocr_pending  → scanned file, needs Google Cloud OCR later
-    // quarantined  → text extracted but no course match found
-    // pending_review → text extracted + course suggested, needs admin confirmation
+    // ── System prompt ───────────────────────────────────────────────────────
+    let semesterSummary: string | undefined;
 
-    let status: MaterialStatus = "pending_review";
-
-    if (extraction.method === "ocr_pending") {
-      status = "ocr_pending";
-    } else if (!classification.suggestedCourseId) {
-      status = "quarantined";
+    if (ragFailed) {
+      semesterSummary = "Note: Course materials could not be loaded right now. Let the student know naturally and answer from general knowledge where possible.";
+    } else if (!ragContext) {
+      semesterSummary = "Note: No course materials have been uploaded for this course yet. Let the student know naturally.";
+    } else {
+      semesterSummary = `Relevant course material excerpts:\n\n${ragContext}`;
     }
 
-    // ── 6. Save to Firestore ────────────────────────────────────────────────
-    const materialId = await saveMaterial({
-      fileName,
-      fileUrl,
-      mimeType,
-      uploadedBy,
-      uploadedByRole,
-      extractedText: extraction.text,
-      wordCount: extraction.wordCount,
-      pageCount: extraction.pageCount,
-      isScanned: extraction.isScanned,
-      extractionMethod: extraction.method,
-      category: classification.category,
-      suggestedCourseId: classification.suggestedCourseId,
-      suggestedCourseName: classification.suggestedCourseName,
-      confirmedCourseId: null,
-      confirmedCourseName: null,
-      confidence: classification.confidence,
-      classifierReason: classification.reason,
-      status,
+    const systemPrompt = getSystemPrompt(
+      mode ?? "general",
+      courseName ?? "this course",
+      courseDescription ?? "",
+      semesterSummary
+    );
+
+    // ── Groq streaming call ─────────────────────────────────────────────────
+    const stream = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages,
+      ],
+      stream: true,
+      temperature: 0.7,
+      max_tokens: 1024,
     });
 
-    // ── 7. Return result ────────────────────────────────────────────────────
-    return NextResponse.json({
-      success: true,
-      materialId,
-      status,
-      category: classification.category,
-      suggestedCourseId: classification.suggestedCourseId,
-      suggestedCourseName: classification.suggestedCourseName,
-      confidence: classification.confidence,
-      wordCount: extraction.wordCount,
-      extractionMethod: extraction.method,
+    // ── Stream response back to client ──────────────────────────────────────
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content;
+            if (delta) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`));
+            }
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        } catch (err) {
+          console.error("[chat] Stream error:", err);
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
 
   } catch (err) {
-    console.error("[process-upload] Unexpected error:", err);
-    return NextResponse.json(
-      { error: "Internal server error during file processing." },
-      { status: 500 }
-    );
+    console.error("[chat] Unexpected error:", err);
+    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }
