@@ -204,15 +204,19 @@ export default function ContributePage() {
                 <div className="w-full max-w-sm text-center space-y-6">
                     <div>
                         <p className="text-4xl mb-4">📚</p>
+                        <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ color: "var(--gold)", opacity: 0.6 }}>
+                            OurStudy AI · Bigard Seminary
+                        </p>
                         <h1
                             className="text-2xl font-bold mb-2"
                             style={{ color: "var(--gold)", fontFamily: "Playfair Display, serif" }}
                         >
                             Contribute Materials
                         </h1>
-                        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                            Share your notes, past questions, and study materials with your fellow students at Bigard.
-                            Every contribution helps someone pass.
+                        <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                            You&apos;re in the right place. Every note, past question, and handout you share
+                            makes OurStudy stronger — and makes someone&apos;s semester a little less hard.
+                            Sign in to get started. It takes 10 seconds.
                         </p>
                     </div>
 
@@ -308,6 +312,9 @@ export default function ContributePage() {
                     >
                         ← Back to dashboard
                     </button>
+                    <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ color: "var(--gold)", opacity: 0.5 }}>
+                        OurStudy AI · Bigard Seminary
+                    </p>
                     <h1
                         className="text-2xl font-bold mb-1"
                         style={{ color: "var(--gold)", fontFamily: "Playfair Display, serif" }}
