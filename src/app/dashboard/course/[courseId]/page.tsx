@@ -8,6 +8,7 @@ import PastQuestionsPanel from '@/components/course/PastQuestionsPanel';
 import AOCPanel from '@/components/course/AOCPanel';
 import StudyMemoryPanel from '@/components/course/StudyMemoryPanel';
 import ReactMarkdown from 'react-markdown';
+import { useSettings } from '@/components/AppShell';
 
 type StudyMode = 'plain_explainer' | 'practice_questions' | 'exam_preparation' | 'progress_check' | 'research' | 'readiness_assessment';
 
@@ -37,24 +38,28 @@ const PLACEHOLDERS: Record<string, string> = {
     readiness_assessment: 'Type "Start assessment" to begin your exam readiness check...',
 };
 
-const MarkdownRenderer = ({ content }: { content: string }) => (
-    <ReactMarkdown
-        components={{
-            h1: ({ children }) => <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1.3rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{children}</h1>,
-            h2: ({ children }) => <h2 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.4rem', marginTop: '1rem' }}>{children}</h2>,
-            h3: ({ children }) => <h3 style={{ color: 'var(--gold)', fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.3rem', marginTop: '0.8rem' }}>{children}</h3>,
-            p: ({ children }) => <p style={{ marginBottom: '0.8rem', lineHeight: '1.8' }}>{children}</p>,
-            strong: ({ children }) => <strong style={{ color: 'var(--gold)', fontWeight: 'bold' }}>{children}</strong>,
-            em: ({ children }) => <em style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>{children}</em>,
-            ul: ({ children }) => <ul style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'disc' }}>{children}</ul>,
-            ol: ({ children }) => <ol style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'decimal' }}>{children}</ol>,
-            li: ({ children }) => <li style={{ marginBottom: '0.3rem', lineHeight: '1.7' }}>{children}</li>,
-            blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '1rem', margin: '0.8rem 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{children}</blockquote>,
-        }}
-    >
-        {content}
-    </ReactMarkdown>
-);
+const MarkdownRenderer = ({ content }: { content: string }) => {
+    const { settings } = useSettings();
+    const fs = settings.aiFontSize;
+    return (
+        <ReactMarkdown
+            components={{
+                h1: ({ children }) => <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: `${fs * 1.2}px`, fontWeight: 'bold', marginBottom: '0.5rem' }}>{children}</h1>,
+                h2: ({ children }) => <h2 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: `${fs * 1.07}px`, fontWeight: 'bold', marginBottom: '0.4rem', marginTop: '1rem' }}>{children}</h2>,
+                h3: ({ children }) => <h3 style={{ color: 'var(--gold)', fontSize: `${fs}px`, fontWeight: 'bold', marginBottom: '0.3rem', marginTop: '0.8rem' }}>{children}</h3>,
+                p: ({ children }) => <p style={{ marginBottom: '0.8rem', lineHeight: '1.8', fontSize: `${fs}px` }}>{children}</p>,
+                strong: ({ children }) => <strong style={{ color: 'var(--gold)', fontWeight: 'bold' }}>{children}</strong>,
+                em: ({ children }) => <em style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>{children}</em>,
+                ul: ({ children }) => <ul style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'disc' }}>{children}</ul>,
+                ol: ({ children }) => <ol style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'decimal' }}>{children}</ol>,
+                li: ({ children }) => <li style={{ marginBottom: '0.3rem', lineHeight: '1.7', fontSize: `${fs}px` }}>{children}</li>,
+                blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '1rem', margin: '0.8rem 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{children}</blockquote>,
+            }}
+        >
+            {content}
+        </ReactMarkdown>
+    );
+};
 
 export default function CoursePage() {
     const { courseId } = useParams<{ courseId: string }>();
@@ -70,7 +75,8 @@ export default function CoursePage() {
     const [streamingMessage, setStreamingMessage] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
     const [input, setInput] = useState('');
-    const bottomRef = useRef<HTMLDivElement>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!firebaseUser || !courseId) return;
@@ -80,9 +86,16 @@ export default function CoursePage() {
         });
     }, [firebaseUser, courseId]);
 
+    // Auto-scroll to bottom on new messages only
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatHistory, streamingMessage]);
+
+    const handleNewChat = () => {
+        setChatHistory([]);
+        setStreamingMessage('');
+        setInput('');
+    };
 
     const sendMessage = async (text?: string) => {
         const message = text || input;
@@ -145,13 +158,13 @@ export default function CoursePage() {
     };
 
     if (loading) return (
-        <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
+        <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--body-bg)' }}>
             <p style={{ color: 'var(--gold)' }}>Loading course...</p>
         </div>
     );
 
     if (!course) return (
-        <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
+        <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--body-bg)' }}>
             <p style={{ color: 'var(--text-muted)' }}>Course not found.</p>
         </div>
     );
@@ -165,32 +178,52 @@ export default function CoursePage() {
     const isEmpty = chatHistory.length === 0 && !streamingMessage;
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden', background: 'var(--navy)', color: 'var(--text-primary)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden', background: 'var(--body-bg)', color: 'var(--text-primary)', maxWidth: '100vw' }}>
 
             {/* TOP BAR */}
             <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 16px', gap: '8px' }}>
-                    <button onClick={() => router.back()} style={{ color: 'var(--gold)', fontSize: '0.85rem', flexShrink: 0 }}>← Back</button>
-                    <button
-                        onClick={() => router.push(`/contribute?courseId=${courseId}`)}
-                        style={{
-                            fontSize: '0.7rem', padding: '3px 8px', borderRadius: '8px',
-                            border: '1px solid var(--border)', color: 'var(--text-muted)',
-                            background: 'transparent', whiteSpace: 'nowrap', flexShrink: 0,
-                        }}
-                    >
-                        📤 Contribute
-                    </button>
+                    <button onClick={() => router.back()} style={{ color: 'var(--gold)', fontSize: '0.85rem', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}>← Back</button>
+
                     <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 'bold', flex: 1, textAlign: 'center', margin: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {course.name}
                     </h1>
-                    <button
-                        onClick={() => setSidebarOpen(!sidebarOpen)}
-                        className="hidden md:block"
-                        style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--text-secondary)', background: 'transparent', whiteSpace: 'nowrap', flexShrink: 0 }}
-                    >
-                        {sidebarOpen ? '▶ Hide' : '◀ Show'}
-                    </button>
+
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+                        {/* New Chat button */}
+                        <button
+                            onClick={handleNewChat}
+                            disabled={isEmpty}
+                            title="Start a new chat"
+                            style={{
+                                fontSize: '0.7rem', padding: '3px 8px', borderRadius: '8px',
+                                border: '1px solid var(--border)',
+                                color: isEmpty ? 'var(--text-muted)' : 'var(--gold)',
+                                background: 'transparent', whiteSpace: 'nowrap',
+                                cursor: isEmpty ? 'not-allowed' : 'pointer',
+                                opacity: isEmpty ? 0.5 : 1,
+                            }}
+                        >
+                            ✦ New Chat
+                        </button>
+                        <button
+                            onClick={() => router.push(`/contribute?courseId=${courseId}`)}
+                            style={{
+                                fontSize: '0.7rem', padding: '3px 8px', borderRadius: '8px',
+                                border: '1px solid var(--border)', color: 'var(--text-muted)',
+                                background: 'transparent', whiteSpace: 'nowrap', cursor: 'pointer',
+                            }}
+                        >
+                            📤 Contribute
+                        </button>
+                        <button
+                            onClick={() => setSidebarOpen(!sidebarOpen)}
+                            className="hidden md:block"
+                            style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--text-secondary)', background: 'transparent', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                        >
+                            {sidebarOpen ? '▶ Hide' : '◀ Show'}
+                        </button>
+                    </div>
                 </div>
 
                 {/* Modes */}
@@ -204,7 +237,7 @@ export default function CoursePage() {
                                 flexShrink: 0, padding: '3px 9px', borderRadius: '8px', fontSize: '0.7rem',
                                 fontWeight: 500, border: '1px solid var(--border)',
                                 background: activeMode === mode.id ? 'var(--gold)' : 'var(--navy-card)',
-                                color: activeMode === mode.id ? 'var(--navy)' : 'var(--text-secondary)',
+                                color: activeMode === mode.id ? 'var(--ink)' : 'var(--text-secondary)',
                                 cursor: 'pointer', whiteSpace: 'nowrap',
                             }}
                         >
@@ -220,22 +253,37 @@ export default function CoursePage() {
                 {/* Chat area */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
-                    {/* Messages */}
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '10px', justifyContent: isEmpty ? 'center' : 'flex-end' }}>
+                    {/* ── SCROLL FIX: overflow-y auto, flex-col, no justify tricks ── */}
+                    <div
+                        ref={messagesContainerRef}
+                        style={{
+                            flex: 1,
+                            overflowY: 'auto',
+                            overflowX: 'hidden',
+                            padding: '10px 16px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px',
+                        }}
+                    >
+                        {/* Empty state centered */}
                         {isEmpty && (
-                            <div style={{ textAlign: 'center', maxWidth: '320px', padding: '0 16px', margin: '0 auto' }}>
-                                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{MODES.find(m => m.id === activeMode)?.icon}</div>
-                                <div style={{ color: 'var(--gold)', fontWeight: 600, marginBottom: '4px', fontSize: '0.9rem' }}>{MODES.find(m => m.id === activeMode)?.label}</div>
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{MODES.find(m => m.id === activeMode)?.description}</div>
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <div style={{ textAlign: 'center', maxWidth: '320px', padding: '0 16px' }}>
+                                    <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{MODES.find(m => m.id === activeMode)?.icon}</div>
+                                    <div style={{ color: 'var(--gold)', fontWeight: 600, marginBottom: '4px', fontSize: '0.9rem' }}>{MODES.find(m => m.id === activeMode)?.label}</div>
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{MODES.find(m => m.id === activeMode)?.description}</div>
+                                </div>
                             </div>
                         )}
 
                         {chatHistory.map((msg, i) => (
                             <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                                 <div style={{
-                                    maxWidth: '85%', borderRadius: '16px', padding: '10px 14px', fontSize: '0.875rem',
+                                    maxWidth: '85%', borderRadius: '16px', padding: '10px 14px',
+                                    fontSize: `${14}px`,
                                     background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy-card)',
-                                    color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
+                                    color: msg.role === 'user' ? 'var(--ink)' : 'var(--text-primary)',
                                     border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
                                 }}>
                                     {msg.role === 'assistant' ? <MarkdownRenderer content={msg.content} /> : msg.content}
@@ -245,13 +293,14 @@ export default function CoursePage() {
 
                         {streamingMessage && (
                             <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                                <div style={{ maxWidth: '85%', borderRadius: '16px', padding: '10px 14px', fontSize: '0.875rem', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
+                                <div style={{ maxWidth: '85%', borderRadius: '16px', padding: '10px 14px', fontSize: '14px', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
                                     <MarkdownRenderer content={streamingMessage} />
-                                    <span style={{ display: 'inline-block', width: '6px', height: '16px', marginLeft: '4px', background: 'var(--gold)', animation: 'pulse 1s infinite' }} />
+                                    <span style={{ display: 'inline-block', width: '6px', height: '16px', marginLeft: '4px', background: 'var(--gold)', animation: 'pulse-soft 1s infinite' }} />
                                 </div>
                             </div>
                         )}
-                        <div ref={bottomRef} />
+
+                        <div ref={messagesEndRef} />
                     </div>
 
                     {/* Input */}
@@ -282,7 +331,7 @@ export default function CoursePage() {
                                 disabled={isStreaming || !input.trim()}
                                 style={{
                                     flexShrink: 0, padding: '8px 16px', borderRadius: '12px', fontWeight: 600,
-                                    fontSize: '0.875rem', background: 'var(--gold)', color: 'var(--navy)', border: 'none',
+                                    fontSize: '0.875rem', background: 'var(--gold)', color: 'var(--ink)', border: 'none',
                                     cursor: isStreaming || !input.trim() ? 'not-allowed' : 'pointer',
                                     opacity: isStreaming || !input.trim() ? 0.6 : 1,
                                 }}
@@ -343,7 +392,7 @@ export default function CoursePage() {
                                         style={{
                                             padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
                                             background: activeSideTab === tab.id ? 'var(--gold)' : 'transparent',
-                                            color: activeSideTab === tab.id ? 'var(--navy)' : 'var(--text-secondary)',
+                                            color: activeSideTab === tab.id ? 'var(--ink)' : 'var(--text-secondary)',
                                             border: '1px solid var(--border)', cursor: 'pointer',
                                         }}
                                     >

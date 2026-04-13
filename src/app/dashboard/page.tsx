@@ -21,15 +21,44 @@ export default function DashboardPage() {
   const router = useRouter();
 
   const userYear = userProfile?.year ?? 1;
-  const userDepartment = (userProfile?.department ?? 'theology') as Department;
+  const userDepartment = (userProfile?.department ?? 'philosophy') as Department;
 
   const [activeDept, setActiveDept] = useState<Department>(userDepartment);
   const [activeYear, setActiveYear] = useState<number>(userYear);
-  const [activeSemester, setActiveSemester] = useState<number>(1);
+  const [activeSemester, setActiveSemester] = useState<number>(userProfile?.currentSemester ?? 1);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const accessibleYears = Array.from({ length: userYear }, (_, i) => i + 1);
+  // Year access logic per handoff doc:
+  // Theology students: all 4 philosophy years + theology years up to current
+  // Philosophy students: philosophy years up to current only
+  const getAccessibleYears = (dept: Department): number[] => {
+    if (dept === 'philosophy') {
+      if (userDepartment === 'theology') {
+        // Theology student browsing philosophy — all 4 years
+        return [1, 2, 3, 4];
+      }
+      // Philosophy student browsing philosophy — up to their year
+      return Array.from({ length: userYear }, (_, i) => i + 1);
+    }
+    // Theology dept
+    if (userDepartment === 'philosophy') {
+      // Philosophy student cannot browse theology
+      return [];
+    }
+    // Theology student browsing theology — up to their year
+    return Array.from({ length: userYear }, (_, i) => i + 1);
+  };
+
+  const accessibleYears = getAccessibleYears(activeDept);
+
+  // When switching dept, snap year to a valid one
+  useEffect(() => {
+    const years = getAccessibleYears(activeDept);
+    if (years.length === 0) return;
+    if (!years.includes(activeYear)) setActiveYear(years[years.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDept]);
 
   useEffect(() => {
     setLoading(true);
@@ -39,13 +68,13 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [activeDept, activeYear, activeSemester]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (activeYear > userYear) setActiveYear(userYear);
-  }, [activeDept]);
+  // Hide theology tab entirely for philosophy students
+  const visibleDepts = userDepartment === 'philosophy'
+    ? DEPARTMENTS.filter(d => d.id === 'philosophy')
+    : DEPARTMENTS;
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--navy)', color: 'var(--text-primary)', padding: '16px' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--body-bg)', color: 'var(--text-primary)', padding: '16px', maxWidth: '100vw', overflowX: 'hidden' }}>
 
       {/* Header */}
       <div style={{ marginBottom: '16px' }}>
@@ -59,7 +88,7 @@ export default function DashboardPage() {
 
       {/* Department switcher */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        {DEPARTMENTS.map((d) => (
+        {visibleDepts.map((d) => (
           <button
             key={d.id}
             onClick={() => setActiveDept(d.id)}
@@ -67,7 +96,7 @@ export default function DashboardPage() {
               padding: '5px 14px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 500,
               border: '1px solid var(--border)',
               background: activeDept === d.id ? 'var(--gold)' : 'var(--navy-card)',
-              color: activeDept === d.id ? 'var(--navy)' : 'var(--text-secondary)',
+              color: activeDept === d.id ? 'var(--ink)' : 'var(--text-secondary)',
               cursor: 'pointer',
             }}
           >
@@ -77,23 +106,25 @@ export default function DashboardPage() {
       </div>
 
       {/* Year switcher */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        {accessibleYears.map((y) => (
-          <button
-            key={y}
-            onClick={() => setActiveYear(y)}
-            style={{
-              padding: '4px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
-              border: '1px solid var(--border)',
-              background: activeYear === y ? 'var(--gold)' : 'var(--navy-card)',
-              color: activeYear === y ? 'var(--navy)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
-          >
-            Year {y}
-          </button>
-        ))}
-      </div>
+      {accessibleYears.length > 0 && (
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          {accessibleYears.map((y) => (
+            <button
+              key={y}
+              onClick={() => setActiveYear(y)}
+              style={{
+                padding: '4px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
+                border: '1px solid var(--border)',
+                background: activeYear === y ? 'var(--gold)' : 'var(--navy-card)',
+                color: activeYear === y ? 'var(--ink)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+            >
+              Year {y}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Semester switcher */}
       <div style={{ display: 'flex', gap: '6px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -105,7 +136,7 @@ export default function DashboardPage() {
               padding: '4px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
               border: '1px solid var(--border)',
               background: activeSemester === s.id ? 'var(--gold)' : 'var(--navy-card)',
-              color: activeSemester === s.id ? 'var(--navy)' : 'var(--text-secondary)',
+              color: activeSemester === s.id ? 'var(--ink)' : 'var(--text-secondary)',
               cursor: 'pointer',
             }}
           >
@@ -122,7 +153,7 @@ export default function DashboardPage() {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No courses found for this selection.</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
           {courses.map((course) => (
             <button
               key={course.id}
@@ -130,7 +161,7 @@ export default function DashboardPage() {
               style={{
                 textAlign: 'left', padding: '14px', borderRadius: '14px',
                 border: '1px solid var(--border)', background: 'var(--navy-card)',
-                cursor: 'pointer', transition: 'border-color 0.2s',
+                cursor: 'pointer', transition: 'border-color 0.2s', width: '100%',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--gold)')}
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
