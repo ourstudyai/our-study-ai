@@ -56,6 +56,84 @@ interface ExistingFile {
 
 type ReviewTab = "pending_review" | "quarantined" | "awaiting_course" | "ocr_pending";
 
+// ─── Hint System Types ────────────────────────────────────────────────────────
+// Generic system — add new hints anywhere by adding a Hint object.
+// Severity controls colour. action is optional — if present, renders a button.
+// This same pattern will be used across all pages in the system.
+
+export type HintSeverity = "info" | "tip" | "warning" | "action";
+
+export interface Hint {
+  id: string;
+  severity: HintSeverity;
+  icon: string;
+  title: string;
+  description: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}
+
+// ─── Hint System Component ────────────────────────────────────────────────────
+
+function AdminHints({ hints }: { hints: Hint[] }) {
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const visible = hints.filter((h) => !dismissed.has(h.id));
+  if (visible.length === 0) return null;
+
+  const severityStyles: Record<HintSeverity, string> = {
+    info: "bg-blue-500/10 border-blue-500/20 text-blue-300",
+    tip: "bg-[var(--color-gold)]/10 border-[var(--color-gold)]/20 text-[var(--color-gold)]",
+    warning: "bg-yellow-500/10 border-yellow-500/20 text-yellow-300",
+    action: "bg-purple-500/10 border-purple-500/20 text-purple-300",
+  };
+
+  const actionButtonStyles: Record<HintSeverity, string> = {
+    info: "border-blue-400/40 text-blue-400 hover:bg-blue-500/10",
+    tip: "border-[var(--color-gold)]/40 text-[var(--color-gold)] hover:bg-[var(--color-gold)]/10",
+    warning: "border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/10",
+    action: "border-purple-400/40 text-purple-400 hover:bg-purple-500/10",
+  };
+
+  return (
+    <div className="mb-8 space-y-2">
+      {visible.map((hint) => (
+        <div
+          key={hint.id}
+          className={`flex items-start justify-between gap-4 px-4 py-3 rounded-xl border text-sm ${severityStyles[hint.severity]}`}
+        >
+          <div className="flex items-start gap-3 flex-1">
+            <span className="text-base flex-shrink-0 mt-0.5">{hint.icon}</span>
+            <div className="space-y-1">
+              <p className="font-semibold">{hint.title}</p>
+              <p className="text-xs opacity-80 leading-relaxed">{hint.description}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {hint.action && (
+              <button
+                onClick={hint.action.onClick}
+                className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${actionButtonStyles[hint.severity]}`}
+              >
+                {hint.action.label}
+              </button>
+            )}
+            <button
+              onClick={() => setDismissed((p) => new Set(p).add(hint.id))}
+              className="text-xs opacity-50 hover:opacity-100 transition-opacity px-1"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function ReadinessDot({ status }: { status?: string }) {
@@ -92,6 +170,9 @@ export default function AdminPage() {
     awaiting_course: 0,
     ocr_pending: 0,
   });
+
+  // Batch approve state
+  const [batchApproving, setBatchApproving] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -202,6 +283,121 @@ export default function AdminPage() {
     });
   };
 
+  // ── Batch approve all high-confidence pending_review materials ──────────────
+  const handleBatchApproveHighConfidence = async () => {
+    const highConfidence = reviewMaterials.filter(
+      (m) => m.confidence === "high" && m.suggestedCourseId
+    );
+    if (highConfidence.length === 0) return;
+    setBatchApproving(true);
+    for (const material of highConfidence) {
+      try {
+        await saveChunks(
+          material.id,
+          material.suggestedCourseId!,
+          material.category,
+          material.extractedText
+        );
+        await updateMaterialStatus(
+          material.id,
+          "approved",
+          material.suggestedCourseId!,
+          material.suggestedCourseName ?? ""
+        );
+        removeMaterialFromList(material.id);
+      } catch (err) {
+        console.error(`Batch approve failed for ${material.id}:`, err);
+      }
+    }
+    setBatchApproving(false);
+  };
+
+  // ── Resurrect all awaiting_course against all existing courses ──────────────
+  const handleResurrectAll = async () => {
+    for (const course of courses) {
+      try {
+        await resurrectMaterialsForCourse(course.id, course.name);
+      } catch (err) {
+        console.error(`Resurrect failed for course ${course.id}:`, err);
+      }
+    }
+    // Refresh counts
+    const awaiting = await getMaterialsByStatus("awaiting_course");
+    setReviewCounts((prev) => ({ ...prev, awaiting_course: awaiting.length }));
+    if (activeReviewTab === "awaiting_course") {
+      setReviewMaterials(awaiting);
+    }
+  };
+
+  // ── Build contextual hints from live system state ───────────────────────────
+  const hints: Hint[] = [];
+
+  const highConfidenceCount = activeReviewTab === "pending_review"
+    ? reviewMaterials.filter((m) => m.confidence === "high" && m.suggestedCourseId).length
+    : 0;
+
+  if (highConfidenceCount > 1) {
+    hints.push({
+      id: "batch-approve-high",
+      severity: "tip",
+      icon: "⚡",
+      title: `${highConfidenceCount} materials matched with high confidence`,
+      description: "The classifier is very sure about these. You can approve them all at once instead of one by one.",
+      action: {
+        label: batchApproving ? "Approving..." : `Approve all ${highConfidenceCount} →`,
+        onClick: handleBatchApproveHighConfidence,
+      },
+    });
+  }
+
+  if (reviewCounts.awaiting_course > 0 && activeReviewTab !== "awaiting_course") {
+    hints.push({
+      id: "awaiting-course-reminder",
+      severity: "action",
+      icon: "🟣",
+      title: `${reviewCounts.awaiting_course} material(s) waiting for a course to exist`,
+      description: "These were uploaded for courses not yet in the system. If you have just added new courses, use Resurrect All to activate them instantly.",
+      action: {
+        label: "Resurrect all now →",
+        onClick: handleResurrectAll,
+      },
+    });
+  }
+
+  if (reviewCounts.awaiting_course > 0 && activeReviewTab === "awaiting_course") {
+    hints.push({
+      id: "resurrect-all-tip",
+      severity: "tip",
+      icon: "✨",
+      title: "Resurrect All is available",
+      description: "If you have recently added new courses to Firestore, click Resurrect All to automatically match and approve all waiting materials in one pass.",
+      action: {
+        label: "Resurrect all →",
+        onClick: handleResurrectAll,
+      },
+    });
+  }
+
+  if (reviewCounts.quarantined > 0) {
+    hints.push({
+      id: "quarantined-reminder",
+      severity: "warning",
+      icon: "🔴",
+      title: `${reviewCounts.quarantined} quarantined material(s) need manual assignment`,
+      description: "The classifier found no course signal in these files. Open the Quarantined tab to assign them manually — each has a course dropdown and category picker.",
+    });
+  }
+
+  if (reviewCounts.ocr_pending > 0) {
+    hints.push({
+      id: "ocr-pending-info",
+      severity: "info",
+      icon: "🔵",
+      title: `${reviewCounts.ocr_pending} scanned file(s) waiting for OCR`,
+      description: "These are image-based files with no extractable text yet. They will unlock automatically once Google Cloud Vision is activated. No action needed now.",
+    });
+  }
+
   const filteredCourses = search.trim()
     ? courses.filter((c) =>
       c.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -224,9 +420,12 @@ export default function AdminPage() {
         <h1 className="text-3xl font-bold text-[var(--color-gold)] mb-1" style={{ fontFamily: "Playfair Display, serif" }}>
           Admin Panel
         </h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mb-8">
+        <p className="text-sm text-[var(--color-text-secondary)] mb-6">
           Bigard Memorial Institute — Course Materials Management
         </p>
+
+        {/* ── Hint System ──────────────────────────────────────────────────── */}
+        <AdminHints hints={hints} />
 
         {/* ── Materials Review ─────────────────────────────────────────────── */}
         <section className="mb-12">
@@ -479,8 +678,6 @@ function MaterialReviewCard({
     }
   };
 
-  // Manual resurrection trigger — admin picks a course and fires resurrection
-  // for ALL awaiting_course materials that match it, not just this one
   const handleResurrect = async () => {
     if (!selectedCourseId) {
       setError("Select a course to resurrect against.");
@@ -507,7 +704,6 @@ function MaterialReviewCard({
   return (
     <div className="border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-secondary)] p-5 space-y-4">
 
-      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <p className="font-semibold text-[var(--color-text-primary)] text-sm break-all">{material.fileName}</p>
@@ -546,7 +742,6 @@ function MaterialReviewCard({
         )}
       </div>
 
-      {/* Course info — varies by tab */}
       {tab === "pending_review" && (
         <div className="flex items-center gap-2 text-xs">
           <span className="text-[var(--color-text-secondary)]">Suggested course:</span>
@@ -626,12 +821,10 @@ function MaterialReviewCard({
         </div>
       )}
 
-      {/* Classifier reason */}
       {material.classifierReason && (
         <p className="text-xs text-[var(--color-text-secondary)] italic">Classifier: {material.classifierReason}</p>
       )}
 
-      {/* Text preview */}
       <div className="rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] p-3">
         <p className="text-xs text-[var(--color-text-secondary)] mb-1 font-medium">Extracted text preview</p>
         <p className="text-xs text-[var(--color-text-primary)] leading-relaxed whitespace-pre-wrap break-words">
