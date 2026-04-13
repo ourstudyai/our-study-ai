@@ -53,7 +53,7 @@ export default function DashboardPage() {
           My Courses
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '2px' }}>
-          {userProfile?.name ?? 'Student'} · Year {userYear} · {userDepartment}
+          {userProfile?.displayName ?? 'Student'} · Year {userYear} · {userDepartment}
         </p>
       </div>
 
