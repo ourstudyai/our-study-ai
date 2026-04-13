@@ -100,12 +100,11 @@ export default function CoursePage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message,
+                    messages: chatHistory.concat(userMsg).map(m => ({ role: m.role, content: m.content })),
                     courseId,
                     courseName: course?.name || '',
                     courseDescription: course?.description || '',
                     mode: activeMode,
-                    conversationHistory: chatHistory.map(m => ({ role: m.role, content: m.content })),
                 }),
             });
 
@@ -122,9 +121,11 @@ export default function CoursePage() {
                 buffer = lines.pop() || '';
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
+                        const raw = line.slice(6).trim();
+                        if (raw === '[DONE]') break;
                         try {
-                            const json = JSON.parse(line.slice(6));
-                            if (json.type === 'text' && json.content) {
+                            const json = JSON.parse(raw);
+                            if (json.content) {
                                 fullResponse += json.content;
                                 setStreamingMessage(fullResponse);
                             }
@@ -168,15 +169,25 @@ export default function CoursePage() {
 
             {/* TOP BAR */}
             <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 16px' }}>
-                    <button onClick={() => router.back()} style={{ color: 'var(--gold)', fontSize: '0.85rem' }}>← Back</button>
-                    <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 'bold', flex: 1, textAlign: 'center', margin: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 16px', gap: '8px' }}>
+                    <button onClick={() => router.back()} style={{ color: 'var(--gold)', fontSize: '0.85rem', flexShrink: 0 }}>← Back</button>
+                    <button
+                        onClick={() => router.push(`/contribute?courseId=${courseId}`)}
+                        style={{
+                            fontSize: '0.7rem', padding: '3px 8px', borderRadius: '8px',
+                            border: '1px solid var(--border)', color: 'var(--text-muted)',
+                            background: 'transparent', whiteSpace: 'nowrap', flexShrink: 0,
+                        }}
+                    >
+                        📤 Contribute
+                    </button>
+                    <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 'bold', flex: 1, textAlign: 'center', margin: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {course.name}
                     </h1>
                     <button
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         className="hidden md:block"
-                        style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--text-secondary)', background: 'transparent', whiteSpace: 'nowrap' }}
+                        style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--text-secondary)', background: 'transparent', whiteSpace: 'nowrap', flexShrink: 0 }}
                     >
                         {sidebarOpen ? '▶ Hide' : '◀ Show'}
                     </button>
@@ -190,16 +201,11 @@ export default function CoursePage() {
                             onClick={() => setActiveMode(mode.id)}
                             title={mode.description}
                             style={{
-                                flexShrink: 0,
-                                padding: '3px 9px',
-                                borderRadius: '8px',
-                                fontSize: '0.7rem',
-                                fontWeight: 500,
-                                border: '1px solid var(--border)',
+                                flexShrink: 0, padding: '3px 9px', borderRadius: '8px', fontSize: '0.7rem',
+                                fontWeight: 500, border: '1px solid var(--border)',
                                 background: activeMode === mode.id ? 'var(--gold)' : 'var(--navy-card)',
                                 color: activeMode === mode.id ? 'var(--navy)' : 'var(--text-secondary)',
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
+                                cursor: 'pointer', whiteSpace: 'nowrap',
                             }}
                         >
                             {mode.icon} {mode.label}
@@ -216,7 +222,6 @@ export default function CoursePage() {
 
                     {/* Messages */}
                     <div style={{ flex: 1, overflowY: 'auto', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '10px', justifyContent: isEmpty ? 'center' : 'flex-end' }}>
-
                         {isEmpty && (
                             <div style={{ textAlign: 'center', maxWidth: '320px', padding: '0 16px', margin: '0 auto' }}>
                                 <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{MODES.find(m => m.id === activeMode)?.icon}</div>
@@ -228,10 +233,7 @@ export default function CoursePage() {
                         {chatHistory.map((msg, i) => (
                             <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                                 <div style={{
-                                    maxWidth: '85%',
-                                    borderRadius: '16px',
-                                    padding: '10px 14px',
-                                    fontSize: '0.875rem',
+                                    maxWidth: '85%', borderRadius: '16px', padding: '10px 14px', fontSize: '0.875rem',
                                     background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy-card)',
                                     color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
                                     border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
@@ -270,30 +272,17 @@ export default function CoursePage() {
                                 placeholder={PLACEHOLDERS[activeMode]}
                                 rows={2}
                                 style={{
-                                    flex: 1,
-                                    borderRadius: '12px',
-                                    padding: '8px 12px',
-                                    fontSize: '0.875rem',
-                                    resize: 'none',
-                                    background: 'var(--navy-card)',
-                                    border: '1px solid var(--border)',
-                                    color: 'var(--text-primary)',
-                                    minWidth: 0,
-                                    outline: 'none',
+                                    flex: 1, borderRadius: '12px', padding: '8px 12px', fontSize: '0.875rem',
+                                    resize: 'none', background: 'var(--navy-card)', border: '1px solid var(--border)',
+                                    color: 'var(--text-primary)', minWidth: 0, outline: 'none',
                                 }}
                             />
                             <button
                                 onClick={() => sendMessage()}
                                 disabled={isStreaming || !input.trim()}
                                 style={{
-                                    flexShrink: 0,
-                                    padding: '8px 16px',
-                                    borderRadius: '12px',
-                                    fontWeight: 600,
-                                    fontSize: '0.875rem',
-                                    background: 'var(--gold)',
-                                    color: 'var(--navy)',
-                                    border: 'none',
+                                    flexShrink: 0, padding: '8px 16px', borderRadius: '12px', fontWeight: 600,
+                                    fontSize: '0.875rem', background: 'var(--gold)', color: 'var(--navy)', border: 'none',
                                     cursor: isStreaming || !input.trim() ? 'not-allowed' : 'pointer',
                                     opacity: isStreaming || !input.trim() ? 0.6 : 1,
                                 }}
@@ -316,10 +305,7 @@ export default function CoursePage() {
                                     key={tab.id}
                                     onClick={() => setActiveSideTab(tab.id)}
                                     style={{
-                                        flex: 1,
-                                        padding: '8px 4px',
-                                        fontSize: '0.72rem',
-                                        fontWeight: 500,
+                                        flex: 1, padding: '8px 4px', fontSize: '0.72rem', fontWeight: 500,
                                         background: activeSideTab === tab.id ? 'var(--navy)' : 'transparent',
                                         color: activeSideTab === tab.id ? 'var(--gold)' : 'var(--text-secondary)',
                                         border: 'none',
@@ -355,14 +341,10 @@ export default function CoursePage() {
                                         key={tab.id}
                                         onClick={() => setActiveSideTab(tab.id)}
                                         style={{
-                                            padding: '4px 10px',
-                                            borderRadius: '8px',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 500,
+                                            padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
                                             background: activeSideTab === tab.id ? 'var(--gold)' : 'transparent',
                                             color: activeSideTab === tab.id ? 'var(--navy)' : 'var(--text-secondary)',
-                                            border: '1px solid var(--border)',
-                                            cursor: 'pointer',
+                                            border: '1px solid var(--border)', cursor: 'pointer',
                                         }}
                                     >
                                         {tab.icon} {tab.label}
