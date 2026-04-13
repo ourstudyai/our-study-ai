@@ -19,6 +19,7 @@ export default function AOCPanel({ courseId, onStudy }: Props) {
     const [items, setItems] = useState<AOCItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set());
+    const [search, setSearch] = useState('');
 
     useEffect(() => {
         const fetch = async () => {
@@ -30,7 +31,6 @@ export default function AOCPanel({ courseId, onStudy }: Props) {
                 const snap = await getDocs(q);
                 const data = snap.docs.map(d => ({ id: d.id, ...d.data() })) as AOCItem[];
                 setItems(data);
-                // Auto-expand most recent year
                 if (data.length > 0) {
                     const maxYear = Math.max(...data.map(i => i.year));
                     setExpandedYears(new Set([maxYear]));
@@ -52,49 +52,86 @@ export default function AOCPanel({ courseId, onStudy }: Props) {
         });
     };
 
+    const filtered = items.filter(i =>
+        i.topic.toLowerCase().includes(search.toLowerCase())
+    );
+
     const byYear: Record<number, AOCItem[]> = {};
-    items.forEach(item => {
+    filtered.forEach(item => {
         if (!byYear[item.year]) byYear[item.year] = [];
         byYear[item.year].push(item);
     });
     const sortedYears = Object.keys(byYear).map(Number).sort((a, b) => b - a);
 
-    if (loading) return <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading AOC...</p>;
+    const inputStyle = {
+        width: '100%', borderRadius: '8px', padding: '6px 10px',
+        fontSize: '0.75rem', background: 'var(--navy)',
+        border: '1px solid var(--border)', color: 'var(--text-primary)',
+        outline: 'none', marginBottom: '10px',
+    };
+
+    if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Loading AOC...</p>;
 
     if (items.length === 0) return (
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
             No Areas of Concentration uploaded yet for this course.
         </p>
     );
 
     return (
-        <div className="space-y-2">
-            {sortedYears.map(year => (
-                <div key={year}>
-                    <button
-                        onClick={() => toggleYear(year)}
-                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold"
-                        style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--gold)' }}
-                    >
-                        <span>📅 AOC {year}</span>
-                        <span>{expandedYears.has(year) ? '▲' : '▼'}</span>
-                    </button>
-                    {expandedYears.has(year) && (
-                        <div className="mt-1 space-y-1 pl-2">
-                            {byYear[year].map(item => (
-                                <button
-                                    key={item.id}
-                                    onClick={() => onStudy(`Explain this Area of Concentration from ${year}: "${item.topic}"`)}
-                                    className="w-full text-left p-2 rounded-lg text-xs transition-all hover:border-yellow-400"
-                                    style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-                                >
-                                    🎯 {item.topic}
-                                </button>
-                            ))}
+        <div>
+            {/* Search */}
+            <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="🔍 Search areas of concentration..."
+                style={inputStyle}
+            />
+
+            {filtered.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No topics match your search.</p>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {sortedYears.map(year => (
+                        <div key={year}>
+                            <button
+                                onClick={() => toggleYear(year)}
+                                style={{
+                                    width: '100%', display: 'flex', justifyContent: 'space-between',
+                                    padding: '8px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600,
+                                    background: 'var(--navy)', border: '1px solid var(--border)',
+                                    color: 'var(--gold)', cursor: 'pointer',
+                                }}
+                            >
+                                <span>📅 AOC {year}</span>
+                                <span>{expandedYears.has(year) ? '▲' : '▼'}</span>
+                            </button>
+                            {expandedYears.has(year) && (
+                                <div style={{ marginTop: '4px', paddingLeft: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    {byYear[year].map(item => (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => onStudy(`Explain this Area of Concentration from ${year}: "${item.topic}"`)}
+                                            style={{
+                                                width: '100%', textAlign: 'left', padding: '8px 10px',
+                                                borderRadius: '8px', fontSize: '0.75rem',
+                                                background: 'var(--navy-card)', border: '1px solid var(--border)',
+                                                color: 'var(--text-primary)', cursor: 'pointer',
+                                                transition: 'border-color 0.15s',
+                                            }}
+                                            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                                            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                                        >
+                                            🎯 {item.topic}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    )}
+                    ))}
                 </div>
-            ))}
+            )}
         </div>
     );
 }

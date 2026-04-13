@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 
 interface PastQuestion {
@@ -21,6 +21,7 @@ export default function PastQuestionsPanel({ courseId, onStudy }: Props) {
     const [loading, setLoading] = useState(true);
     const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set());
     const [showFrequent, setShowFrequent] = useState(true);
+    const [search, setSearch] = useState('');
 
     useEffect(() => {
         const fetch = async () => {
@@ -49,103 +50,136 @@ export default function PastQuestionsPanel({ courseId, onStudy }: Props) {
         });
     };
 
-    // Most recurrent first
-    const byFrequency = [...questions].sort((a, b) => b.reoccurrenceCount - a.reoccurrenceCount);
+    const filtered = questions.filter(q =>
+        q.questionText.toLowerCase().includes(search.toLowerCase()) ||
+        (q.topic || '').toLowerCase().includes(search.toLowerCase())
+    );
 
-    // Grouped by year, most recent first
+    const byFrequency = [...filtered].sort((a, b) => b.reoccurrenceCount - a.reoccurrenceCount);
+
     const byYear: Record<number, PastQuestion[]> = {};
-    questions.forEach(q => {
+    filtered.forEach(q => {
         if (!byYear[q.examYear]) byYear[q.examYear] = [];
         byYear[q.examYear].push(q);
     });
     const sortedYears = Object.keys(byYear).map(Number).sort((a, b) => b - a);
 
-    if (loading) return <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading past questions...</p>;
+    const inputStyle = {
+        width: '100%', borderRadius: '8px', padding: '6px 10px',
+        fontSize: '0.75rem', background: 'var(--navy)',
+        border: '1px solid var(--border)', color: 'var(--text-primary)',
+        outline: 'none', marginBottom: '10px',
+    };
+
+    const qCardStyle = {
+        width: '100%', textAlign: 'left' as const,
+        padding: '10px', borderRadius: '10px', fontSize: '0.75rem',
+        background: 'var(--navy)', border: '1px solid var(--border)',
+        color: 'var(--text-primary)', cursor: 'pointer',
+        transition: 'border-color 0.15s',
+    };
+
+    if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Loading past questions...</p>;
 
     if (questions.length === 0) return (
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
             No past questions uploaded yet for this course.
         </p>
     );
 
     return (
         <div>
-            {/* Toggle view */}
-            <div className="flex gap-2 mb-3">
+            {/* Toggle */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
                 <button
                     onClick={() => setShowFrequent(true)}
-                    className="text-xs px-2 py-1 rounded-lg transition-all"
                     style={{
+                        flex: 1, fontSize: '0.72rem', padding: '5px', borderRadius: '8px',
                         background: showFrequent ? 'var(--gold)' : 'transparent',
-                        color: showFrequent ? 'var(--navy)' : 'var(--text-secondary)',
-                        border: '1px solid var(--border)',
+                        color: showFrequent ? 'var(--ink)' : 'var(--text-secondary)',
+                        border: '1px solid var(--border)', cursor: 'pointer',
                     }}
                 >
                     🔥 Most Frequent
                 </button>
                 <button
                     onClick={() => setShowFrequent(false)}
-                    className="text-xs px-2 py-1 rounded-lg transition-all"
                     style={{
+                        flex: 1, fontSize: '0.72rem', padding: '5px', borderRadius: '8px',
                         background: !showFrequent ? 'var(--gold)' : 'transparent',
-                        color: !showFrequent ? 'var(--navy)' : 'var(--text-secondary)',
-                        border: '1px solid var(--border)',
+                        color: !showFrequent ? 'var(--ink)' : 'var(--text-secondary)',
+                        border: '1px solid var(--border)', cursor: 'pointer',
                     }}
                 >
                     📅 By Year
                 </button>
             </div>
 
-            {showFrequent ? (
-                <div className="space-y-2">
+            {/* Search */}
+            <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="🔍 Search questions or topics..."
+                style={inputStyle}
+            />
+
+            {filtered.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No questions match your search.</p>
+            ) : showFrequent ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {byFrequency.map(q => (
                         <button
                             key={q.id}
                             onClick={() => onStudy(`Study this past question from ${q.examYear}: "${q.questionText}"`)}
-                            className="w-full text-left p-2.5 rounded-lg text-xs transition-all hover:border-yellow-400"
-                            style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                            style={qCardStyle}
+                            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
                         >
-                            <div className="flex items-start justify-between gap-2">
-                                <span className="flex-1">{q.questionText}</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                <span style={{ flex: 1, lineHeight: '1.6' }}>{q.questionText}</span>
                                 {q.reoccurrenceCount > 1 && (
-                                    <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full font-bold"
-                                        style={{ background: 'rgba(255,193,7,0.15)', color: 'var(--gold)' }}>
+                                    <span style={{ flexShrink: 0, fontSize: '0.68rem', padding: '2px 6px', borderRadius: '20px', fontWeight: 700, background: 'rgba(255,193,7,0.15)', color: 'var(--gold)' }}>
                                         ×{q.reoccurrenceCount}
                                     </span>
                                 )}
                             </div>
-                            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{q.examYear}</p>
+                            <p style={{ marginTop: '4px', fontSize: '0.68rem', color: 'var(--text-muted)' }}>{q.examYear}</p>
                         </button>
                     ))}
                 </div>
             ) : (
-                <div className="space-y-2">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {sortedYears.map(year => (
                         <div key={year}>
                             <button
                                 onClick={() => toggleYear(year)}
-                                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold"
-                                style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--gold)' }}
+                                style={{
+                                    width: '100%', display: 'flex', justifyContent: 'space-between',
+                                    padding: '8px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600,
+                                    background: 'var(--navy)', border: '1px solid var(--border)',
+                                    color: 'var(--gold)', cursor: 'pointer',
+                                }}
                             >
                                 <span>📅 {year}</span>
                                 <span>{expandedYears.has(year) ? '▲' : '▼'}</span>
                             </button>
                             {expandedYears.has(year) && (
-                                <div className="mt-1 space-y-1 pl-2">
+                                <div style={{ marginTop: '4px', paddingLeft: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     {byYear[year]
                                         .sort((a, b) => b.reoccurrenceCount - a.reoccurrenceCount)
                                         .map(q => (
                                             <button
                                                 key={q.id}
                                                 onClick={() => onStudy(`Study this past question from ${year}: "${q.questionText}"`)}
-                                                className="w-full text-left p-2 rounded-lg text-xs transition-all"
-                                                style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                                                style={{ ...qCardStyle, background: 'var(--navy-card)' }}
+                                                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                                                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
                                             >
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <span className="flex-1">{q.questionText}</span>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                                    <span style={{ flex: 1, lineHeight: '1.6' }}>{q.questionText}</span>
                                                     {q.reoccurrenceCount > 1 && (
-                                                        <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full font-bold"
-                                                            style={{ background: 'rgba(255,193,7,0.15)', color: 'var(--gold)' }}>
+                                                        <span style={{ flexShrink: 0, fontSize: '0.68rem', padding: '2px 6px', borderRadius: '20px', fontWeight: 700, background: 'rgba(255,193,7,0.15)', color: 'var(--gold)' }}>
                                                             ×{q.reoccurrenceCount}
                                                         </span>
                                                     )}
