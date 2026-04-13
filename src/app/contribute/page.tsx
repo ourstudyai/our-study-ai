@@ -7,8 +7,8 @@ import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth, db, storage } from "@/lib/firebase/config";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { saveReport } from "@/lib/firestore/materials";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 interface Course {
     id: string;
     name: string;
@@ -33,14 +33,29 @@ const SEMESTERS = [1, 2];
 
 type Step = "auth" | "form" | "success";
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+type FileStatus = {
+    status: "idle" | "uploading" | "extracting" | "classifying" | "done" | "error";
+    progress: number;
+    error?: string;
+    reported?: boolean;
+    result?: {
+        materialId: string;
+        detectedStatus: string;
+        category: string;
+        suggestedCourseName: string | null;
+        detectedCourseName: string | null;
+        confidence: string;
+        wordCount: number;
+    };
+};
+
 export default function ContributePage() {
     const { firebaseUser, loading: authLoading } = useAuth();
     const router = useRouter();
     const [step, setStep] = useState<Step>("auth");
     const [signingIn, setSigningIn] = useState(false);
 
-    // Form state
+    // Careful upload state
     const [department, setDepartment] = useState("");
     const [year, setYear] = useState<number | "">("");
     const [semester, setSemester] = useState<number | "">("");
@@ -50,43 +65,34 @@ export default function ContributePage() {
     const [courseNotListed, setCourseNotListed] = useState(false);
     const [manualCourseName, setManualCourseName] = useState("");
     const [selectedCategory, setSelectedCategory] = useState<UploadCategory>("lecture_notes");
-    const [files, setFiles] = useState<File[]>([]);
-    const [uploading, setUploading] = useState(false);
-    const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
-    const [submitError, setSubmitError] = useState<string | null>(null);
-    const [successCourse, setSuccessCourse] = useState("");
+    const [carefulFiles, setCarefulFiles] = useState<File[]>([]);
+    const [carefulUploading, setCarefulUploading] = useState(false);
+    const [carefulStatuses, setCarefulStatuses] = useState<Record<string, FileStatus>>({});
+    const [carefulDone, setCarefulDone] = useState(false);
 
-    // Auth check
+    // Auto-detect state
+    const [detectFiles, setDetectFiles] = useState<File[]>([]);
+    const [detectStatuses, setDetectStatuses] = useState<Record<string, FileStatus>>({});
+    const [detectUploading, setDetectUploading] = useState(false);
+
     useEffect(() => {
-        if (!authLoading) {
-            setStep(firebaseUser ? "form" : "auth");
-        }
+        if (!authLoading) setStep(firebaseUser ? "form" : "auth");
     }, [firebaseUser, authLoading]);
 
-    // Load all courses once
     useEffect(() => {
         const load = async () => {
             const q = query(collection(db, "courses"), orderBy("department"));
             const snap = await getDocs(q);
-            const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Course));
-            setAllCourses(data);
+            setAllCourses(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Course)));
         };
         load();
     }, []);
 
-    // Filter courses when dept/year/sem changes
     useEffect(() => {
-        if (!department || !year || !semester) {
-            setFilteredCourses([]);
-            return;
-        }
-        const filtered = allCourses.filter(
-            (c) =>
-                c.department === department &&
-                c.year === Number(year) &&
-                c.semester === Number(semester)
-        );
-        setFilteredCourses(filtered);
+        if (!department || !year || !semester) { setFilteredCourses([]); return; }
+        setFilteredCourses(allCourses.filter(
+            (c) => c.department === department && c.year === Number(year) && c.semester === Number(semester)
+        ));
         setSelectedCourseId("");
         setCourseNotListed(false);
     }, [department, year, semester, allCourses]);
@@ -94,8 +100,7 @@ export default function ContributePage() {
     const handleGoogleSignIn = async () => {
         setSigningIn(true);
         try {
-            const provider = new GoogleAuthProvider();
-            await signInWithPopup(auth, provider);
+            await signInWithPopup(auth, new GoogleAuthProvider());
         } catch (err) {
             console.error("Sign in failed:", err);
         } finally {
@@ -103,31 +108,17 @@ export default function ContributePage() {
         }
     };
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files) return;
-        const incoming = Array.from(e.target.files);
-        setFiles((prev) => {
-            const existing = new Set(prev.map((f) => f.name));
-            return [...prev, ...incoming.filter((f) => !existing.has(f.name))];
-        });
-    };
+    // ── Careful upload ────────────────────────────────────────────────────────
 
-    const removeFile = (name: string) => {
-        setFiles((prev) => prev.filter((f) => f.name !== name));
-    };
-
-    const canSubmit =
-        department &&
-        year &&
-        semester &&
+    const carefulCanSubmit =
+        department && year && semester &&
         (courseNotListed ? manualCourseName.trim().length > 0 : selectedCourseId) &&
-        files.length > 0 &&
-        !uploading;
+        carefulFiles.length > 0 && !carefulUploading;
 
-    const handleSubmit = async () => {
-        if (!canSubmit || !firebaseUser) return;
-        setUploading(true);
-        setSubmitError(null);
+    const handleCarefulSubmit = async () => {
+        if (!carefulCanSubmit || !firebaseUser) return;
+        setCarefulUploading(true);
+        setCarefulDone(false);
 
         const uploaderEmail = firebaseUser.email ?? "unknown";
         const courseName = courseNotListed
@@ -136,60 +127,240 @@ export default function ContributePage() {
         const courseId = courseNotListed ? null : selectedCourseId;
         const storagePath = `contributions/${department}/year${year}/sem${semester}/${courseId ?? "unlisted"}/${selectedCategory}`;
 
-        try {
-            for (const file of files) {
+        const initialStatuses: Record<string, FileStatus> = {};
+        carefulFiles.forEach((f) => { initialStatuses[f.name] = { status: "idle", progress: 0 }; });
+        setCarefulStatuses(initialStatuses);
+
+        let anyFailed = false;
+
+        for (const file of carefulFiles) {
+            try {
+                setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: 0 } }));
                 const storageRef = ref(storage, `${storagePath}/${file.name}`);
                 const task = uploadBytesResumable(storageRef, file);
 
                 await new Promise<void>((resolve, reject) => {
-                    task.on(
-                        "state_changed",
+                    task.on("state_changed",
                         (snap) => {
                             const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-                            setUploadProgress((p) => ({ ...p, [file.name]: pct }));
+                            setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: pct } }));
                         },
-                        reject,
+                        (err) => {
+                            setCarefulStatuses((p) => ({
+                                ...p, [file.name]: {
+                                    status: "error", progress: 0,
+                                    error: `Upload failed for ${file.name}. This is usually a connection issue or a file that is too large. Check your internet and try again. If it keeps happening, note the file name and report it.`,
+                                }
+                            }));
+                            anyFailed = true;
+                            reject(err);
+                        },
                         async () => {
-                            const url = await getDownloadURL(task.snapshot.ref);
+                            try {
+                                const url = await getDownloadURL(task.snapshot.ref);
+                                setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "extracting", progress: 100 } }));
 
-                            const formData = new FormData();
-                            formData.append("file", file);
-                            formData.append("fileUrl", url);
-                            formData.append("uploadedBy", firebaseUser.uid);
-                            formData.append("uploadedByRole", "student");
-                            formData.append("uploaderEmail", uploaderEmail);
-                            formData.append("suggestedCourseName", courseName);
-                            if (courseId) formData.append("suggestedCourseId", courseId);
-                            formData.append("category", selectedCategory);
+                                const formData = new FormData();
+                                formData.append("file", file);
+                                formData.append("fileUrl", url);
+                                formData.append("uploadedBy", firebaseUser.uid);
+                                formData.append("uploadedByRole", "student");
+                                formData.append("uploaderEmail", uploaderEmail);
+                                formData.append("suggestedCourseName", courseName);
+                                if (courseId) formData.append("suggestedCourseId", courseId);
+                                formData.append("category", selectedCategory);
 
-                            await fetch("/api/process-upload", { method: "POST", body: formData });
-                            resolve();
+                                setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "classifying", progress: 100 } }));
+                                const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+
+                                if (!res.ok) {
+                                    setCarefulStatuses((p) => ({
+                                        ...p, [file.name]: {
+                                            status: "error", progress: 100,
+                                            error: `Your file uploaded successfully but something went wrong during processing. It may still appear in the admin review queue. If not, report this with the file name: ${file.name} and the time of upload.`,
+                                        }
+                                    }));
+                                    anyFailed = true;
+                                } else {
+                                    setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "done", progress: 100 } }));
+                                }
+                                resolve();
+                            } catch {
+                                setCarefulStatuses((p) => ({
+                                    ...p, [file.name]: {
+                                        status: "error", progress: 100,
+                                        error: `Your file uploaded successfully but something went wrong during processing. It may still appear in the admin review queue. If not, report this with the file name: ${file.name} and the time of upload.`,
+                                    }
+                                }));
+                                anyFailed = true;
+                                resolve();
+                            }
                         }
                     );
                 });
+            } catch {
+                anyFailed = true;
             }
+        }
 
-            setSuccessCourse(courseName);
-            setStep("success");
+        setCarefulUploading(false);
+        if (!anyFailed) setCarefulDone(true);
+    };
+
+    const handleReportCareful = async (fileName: string, errorMsg: string) => {
+        if (!firebaseUser) return;
+        try {
+            await saveReport({
+                uploaderEmail: firebaseUser.email ?? "unknown",
+                uploadedBy: firebaseUser.uid,
+                fileName,
+                errorType: "upload_failed",
+                description: errorMsg,
+            });
+            setCarefulStatuses((p) => ({ ...p, [fileName]: { ...p[fileName], reported: true } }));
         } catch (err) {
-            console.error("Upload failed:", err);
-            setSubmitError("Something went wrong during upload. Please try again.");
-        } finally {
-            setUploading(false);
+            console.error("Failed to save report:", err);
         }
     };
 
-    const handleUploadMore = () => {
-        setFiles([]);
-        setUploadProgress({});
-        setSubmitError(null);
-        setSelectedCourseId("");
-        setCourseNotListed(false);
-        setManualCourseName("");
-        setStep("form");
+    // ── Auto-detect upload ────────────────────────────────────────────────────
+
+    const handleDetectSubmit = async () => {
+        if (detectFiles.length === 0 || !firebaseUser || detectUploading) return;
+        setDetectUploading(true);
+
+        const uploaderEmail = firebaseUser.email ?? "unknown";
+        const initialStatuses: Record<string, FileStatus> = {};
+        detectFiles.forEach((f) => { initialStatuses[f.name] = { status: "idle", progress: 0 }; });
+        setDetectStatuses(initialStatuses);
+
+        for (const file of detectFiles) {
+            try {
+                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: 0 } }));
+                const storageRef = ref(storage, `auto-detect/${firebaseUser.uid}/${Date.now()}_${file.name}`);
+                const task = uploadBytesResumable(storageRef, file);
+
+                await new Promise<void>((resolve) => {
+                    task.on("state_changed",
+                        (snap) => {
+                            const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+                            setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: pct } }));
+                        },
+                        () => {
+                            setDetectStatuses((p) => ({
+                                ...p, [file.name]: {
+                                    status: "error", progress: 0,
+                                    error: `Upload failed for ${file.name}. Likely a connection issue or file size problem. Try again or use the course selector above.`,
+                                }
+                            }));
+                            resolve();
+                        },
+                        async () => {
+                            try {
+                                const url = await getDownloadURL(task.snapshot.ref);
+                                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "extracting", progress: 100 } }));
+
+                                const formData = new FormData();
+                                formData.append("file", file);
+                                formData.append("fileUrl", url);
+                                formData.append("uploadedBy", firebaseUser.uid);
+                                formData.append("uploadedByRole", "student");
+                                formData.append("uploaderEmail", uploaderEmail);
+
+                                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "classifying", progress: 100 } }));
+                                const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+
+                                if (!res.ok) {
+                                    setDetectStatuses((p) => ({
+                                        ...p, [file.name]: {
+                                            status: "error", progress: 100,
+                                            error: `Your file reached us but processing failed. It may appear in the admin queue as unprocessed. Report this with ${file.name} if it doesn&apos;t show up within a few minutes.`,
+                                        }
+                                    }));
+                                } else {
+                                    const result = await res.json();
+                                    setDetectStatuses((p) => ({
+                                        ...p, [file.name]: {
+                                            status: "done", progress: 100,
+                                            result: {
+                                                materialId: result.materialId,
+                                                detectedStatus: result.status,
+                                                category: result.category,
+                                                suggestedCourseName: result.suggestedCourseName,
+                                                detectedCourseName: result.detectedCourseName,
+                                                confidence: result.confidence,
+                                                wordCount: result.wordCount,
+                                            }
+                                        }
+                                    }));
+                                }
+                                resolve();
+                            } catch {
+                                setDetectStatuses((p) => ({
+                                    ...p, [file.name]: {
+                                        status: "error", progress: 100,
+                                        error: `Your file reached us but processing failed. Report this with file name: ${file.name} if it doesn&apos;t show up in the review queue within a few minutes.`,
+                                    }
+                                }));
+                                resolve();
+                            }
+                        }
+                    );
+                });
+            } catch {
+                setDetectStatuses((p) => ({
+                    ...p, [file.name]: {
+                        status: "error", progress: 0,
+                        error: `Something went wrong with ${file.name}. Please try again.`,
+                    }
+                }));
+            }
+        }
+        setDetectUploading(false);
     };
 
-    // ── Auth screen ─────────────────────────────────────────────────────────────
+    const handleReportDetect = async (fileName: string, errorMsg: string) => {
+        if (!firebaseUser) return;
+        try {
+            await saveReport({
+                uploaderEmail: firebaseUser.email ?? "unknown",
+                uploadedBy: firebaseUser.uid,
+                fileName,
+                errorType: "processing_failed",
+                description: errorMsg,
+            });
+            setDetectStatuses((p) => ({ ...p, [fileName]: { ...p[fileName], reported: true } }));
+        } catch (err) {
+            console.error("Failed to save report:", err);
+        }
+    };
+
+    const getDetectStatusLabel = (status: FileStatus["status"]) => {
+        switch (status) {
+            case "uploading": return "Uploading...";
+            case "extracting": return "Extracting text...";
+            case "classifying": return "Classifying...";
+            case "done": return "Done ✓";
+            case "error": return "Failed";
+            default: return "Waiting";
+        }
+    };
+
+    const getDetectResultMessage = (result: FileStatus["result"]) => {
+        if (!result) return null;
+        const course = result.suggestedCourseName ?? result.detectedCourseName;
+        if (result.detectedStatus === "quarantined" || result.confidence === "low") {
+            return {
+                type: "weak",
+                message: `We received your file but couldn't place it confidently. An admin will sort it manually. For faster placement, try uploading it using the course selector above.`,
+            };
+        }
+        return {
+            type: "strong",
+            message: `Got it. We detected this as ${course ? `"${course}"` : "an unknown course"} — ${result.category.replace("_", " ")}. Confidence: ${result.confidence}. Admins will confirm before it goes live.`,
+        };
+    };
+
     if (authLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--navy)" }}>
@@ -207,10 +378,7 @@ export default function ContributePage() {
                         <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ color: "var(--gold)", opacity: 0.6 }}>
                             OurStudy AI · Bigard Seminary
                         </p>
-                        <h1
-                            className="text-2xl font-bold mb-2"
-                            style={{ color: "var(--gold)", fontFamily: "Playfair Display, serif" }}
-                        >
+                        <h1 className="text-2xl font-bold mb-2" style={{ color: "var(--gold)", fontFamily: "Playfair Display, serif" }}>
                             Contribute Materials
                         </h1>
                         <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
@@ -219,7 +387,6 @@ export default function ContributePage() {
                             Sign in to get started. It takes 10 seconds.
                         </p>
                     </div>
-
                     <button
                         onClick={handleGoogleSignIn}
                         disabled={signingIn}
@@ -234,17 +401,11 @@ export default function ContributePage() {
                         </svg>
                         {signingIn ? "Signing in..." : "Continue with Google"}
                     </button>
-
                     <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                         We use Google sign-in to verify your identity and credit your contributions.
                         No passwords, no accounts to create.
                     </p>
-
-                    <button
-                        onClick={() => router.push("/dashboard")}
-                        className="text-xs"
-                        style={{ color: "var(--text-muted)" }}
-                    >
+                    <button onClick={() => router.push("/dashboard")} className="text-xs" style={{ color: "var(--text-muted)" }}>
                         ← Back to dashboard
                     </button>
                 </div>
@@ -252,34 +413,31 @@ export default function ContributePage() {
         );
     }
 
-    // ── Success screen ──────────────────────────────────────────────────────────
     if (step === "success") {
         return (
             <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "var(--navy)" }}>
                 <div className="w-full max-w-sm text-center space-y-5">
                     <p className="text-5xl">🙏</p>
-                    <h1
-                        className="text-2xl font-bold"
-                        style={{ color: "var(--gold)", fontFamily: "Playfair Display, serif" }}
-                    >
+                    <h1 className="text-2xl font-bold" style={{ color: "var(--gold)", fontFamily: "Playfair Display, serif" }}>
                         Thank you — genuinely.
                     </h1>
                     <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                        Your materials for <span style={{ color: "var(--gold)", fontWeight: 600 }}>{successCourse}</span> have
-                        been received. Our team will review and make them available to your fellow students soon.
-                    </p>
-                    <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                        This kind of contribution is what makes OurStudy work. You just made someone&apos;s semester easier —
-                        maybe without even knowing it.
+                        Your files have been received. Our team will review and make them available to your fellow students soon.
                     </p>
                     <p className="text-sm font-semibold" style={{ color: "var(--gold)" }}>
-                        What else have you got? Every past question, every handout, every area of concentration helps.
-                        Keep them coming. 🔥
+                        What else have you got? Every past question, every handout, every area of concentration helps. Keep them coming. 🔥
                     </p>
-
                     <div className="flex flex-col gap-3 pt-2">
                         <button
-                            onClick={handleUploadMore}
+                            onClick={() => {
+                                setCarefulFiles([]);
+                                setCarefulStatuses({});
+                                setCarefulDone(false);
+                                setSelectedCourseId("");
+                                setCourseNotListed(false);
+                                setManualCourseName("");
+                                setStep("form");
+                            }}
                             className="w-full py-3 rounded-xl font-semibold text-sm"
                             style={{ background: "var(--gold)", color: "var(--navy)" }}
                         >
@@ -298,27 +456,19 @@ export default function ContributePage() {
         );
     }
 
-    // ── Contribute form ─────────────────────────────────────────────────────────
     return (
         <div className="min-h-screen px-4 py-8" style={{ background: "var(--navy)", color: "var(--text-primary)" }}>
             <div className="max-w-lg mx-auto space-y-6">
 
                 {/* Header */}
                 <div>
-                    <button
-                        onClick={() => router.push("/dashboard")}
-                        className="text-sm mb-4 block"
-                        style={{ color: "var(--text-muted)" }}
-                    >
+                    <button onClick={() => router.push("/dashboard")} className="text-sm mb-4 block" style={{ color: "var(--text-muted)" }}>
                         ← Back to dashboard
                     </button>
                     <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ color: "var(--gold)", opacity: 0.5 }}>
                         OurStudy AI · Bigard Seminary
                     </p>
-                    <h1
-                        className="text-2xl font-bold mb-1"
-                        style={{ color: "var(--gold)", fontFamily: "Playfair Display, serif" }}
-                    >
+                    <h1 className="text-2xl font-bold mb-1" style={{ color: "var(--gold)", fontFamily: "Playfair Display, serif" }}>
                         Contribute Materials
                     </h1>
                     <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
@@ -326,248 +476,298 @@ export default function ContributePage() {
                     </p>
                 </div>
 
-                {/* Step 1 — Course selection */}
-                <div
-                    className="rounded-xl p-5 space-y-4"
-                    style={{ background: "var(--navy-card)", border: "1px solid var(--border)" }}
-                >
-                    <h2 className="font-semibold text-sm" style={{ color: "var(--gold)" }}>
-                        1. Which course is this for?
-                    </h2>
+                {/* ── Section A: Careful upload ─────────────────────────────── */}
+                <div className="rounded-xl p-5 space-y-4" style={{ background: "var(--navy-card)", border: "1px solid var(--border)" }}>
+                    <div>
+                        <h2 className="font-semibold text-sm mb-1" style={{ color: "var(--gold)" }}>Upload by course</h2>
+                        <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                            Select the course, pick a category, and upload your files. This gives your materials the best chance of going live quickly.
+                        </p>
+                    </div>
 
                     {/* Department */}
                     <div className="space-y-1">
                         <label className="text-xs" style={{ color: "var(--text-secondary)" }}>Department</label>
-                        <select
-                            value={department}
-                            onChange={(e) => setDepartment(e.target.value)}
+                        <select value={department} onChange={(e) => setDepartment(e.target.value)}
                             className="w-full px-3 py-2 rounded-lg text-sm"
-                            style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                        >
+                            style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
                             <option value="">— Select department —</option>
-                            {DEPARTMENTS.map((d) => (
-                                <option key={d} value={d}>
-                                    {d.charAt(0).toUpperCase() + d.slice(1)}
-                                </option>
-                            ))}
+                            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
                         </select>
                     </div>
 
-                    {/* Year */}
                     {department && (
                         <div className="space-y-1">
                             <label className="text-xs" style={{ color: "var(--text-secondary)" }}>Year</label>
-                            <select
-                                value={year}
-                                onChange={(e) => setYear(Number(e.target.value))}
+                            <select value={year} onChange={(e) => setYear(Number(e.target.value))}
                                 className="w-full px-3 py-2 rounded-lg text-sm"
-                                style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                            >
+                                style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
                                 <option value="">— Select year —</option>
-                                {YEARS.map((y) => (
-                                    <option key={y} value={y}>Year {y}</option>
-                                ))}
+                                {YEARS.map((y) => <option key={y} value={y}>Year {y}</option>)}
                             </select>
                         </div>
                     )}
 
-                    {/* Semester */}
                     {department && year && (
                         <div className="space-y-1">
                             <label className="text-xs" style={{ color: "var(--text-secondary)" }}>Semester</label>
-                            <select
-                                value={semester}
-                                onChange={(e) => setSemester(Number(e.target.value))}
+                            <select value={semester} onChange={(e) => setSemester(Number(e.target.value))}
                                 className="w-full px-3 py-2 rounded-lg text-sm"
-                                style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                            >
+                                style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
                                 <option value="">— Select semester —</option>
-                                {SEMESTERS.map((s) => (
-                                    <option key={s} value={s}>Semester {s}</option>
-                                ))}
+                                {SEMESTERS.map((s) => <option key={s} value={s}>Semester {s}</option>)}
                             </select>
                         </div>
                     )}
 
-                    {/* Course */}
                     {department && year && semester && (
                         <div className="space-y-2">
                             <label className="text-xs" style={{ color: "var(--text-secondary)" }}>Course</label>
                             {!courseNotListed ? (
                                 <>
-                                    <select
-                                        value={selectedCourseId}
-                                        onChange={(e) => setSelectedCourseId(e.target.value)}
+                                    <select value={selectedCourseId} onChange={(e) => setSelectedCourseId(e.target.value)}
                                         className="w-full px-3 py-2 rounded-lg text-sm"
-                                        style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                                    >
+                                        style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
                                         <option value="">— Select course —</option>
-                                        {filteredCourses.map((c) => (
-                                            <option key={c.id} value={c.id}>
-                                                {c.code} — {c.name}
-                                            </option>
-                                        ))}
+                                        {filteredCourses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
                                     </select>
-                                    <button
-                                        onClick={() => { setCourseNotListed(true); setSelectedCourseId(""); }}
-                                        className="text-xs"
-                                        style={{ color: "var(--text-muted)" }}
-                                    >
+                                    <button onClick={() => { setCourseNotListed(true); setSelectedCourseId(""); }}
+                                        className="text-xs" style={{ color: "var(--text-muted)" }}>
                                         My course isn&apos;t listed →
                                     </button>
                                 </>
                             ) : (
                                 <>
-                                    <input
-                                        type="text"
-                                        value={manualCourseName}
-                                        onChange={(e) => setManualCourseName(e.target.value)}
+                                    <input type="text" value={manualCourseName} onChange={(e) => setManualCourseName(e.target.value)}
                                         placeholder="Type the full course name..."
                                         className="w-full px-3 py-2 rounded-lg text-sm"
-                                        style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                                    />
+                                        style={{ background: "var(--navy)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
                                     <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                                         No problem — your material will still be received and linked to this course once it&apos;s added to the system.
                                     </p>
-                                    <button
-                                        onClick={() => { setCourseNotListed(false); setManualCourseName(""); }}
-                                        className="text-xs"
-                                        style={{ color: "var(--text-muted)" }}
-                                    >
+                                    <button onClick={() => { setCourseNotListed(false); setManualCourseName(""); }}
+                                        className="text-xs" style={{ color: "var(--text-muted)" }}>
                                         ← Back to course list
                                     </button>
                                 </>
                             )}
                         </div>
                     )}
+
+                    {(selectedCourseId || (courseNotListed && manualCourseName.trim())) && (
+                        <>
+                            <div className="space-y-2">
+                                <label className="text-xs" style={{ color: "var(--text-secondary)" }}>Category</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {CATEGORIES.map(({ key, label, icon, description }) => (
+                                        <button key={key} onClick={() => setSelectedCategory(key)}
+                                            className="text-left p-3 rounded-xl transition-colors"
+                                            style={{
+                                                background: selectedCategory === key ? "var(--gold)" : "var(--navy)",
+                                                border: `1px solid ${selectedCategory === key ? "var(--gold)" : "var(--border)"}`,
+                                                color: selectedCategory === key ? "var(--navy)" : "var(--text-primary)",
+                                            }}>
+                                            <p className="text-base mb-1">{icon}</p>
+                                            <p className="text-xs font-semibold">{label}</p>
+                                            <p className="text-xs opacity-70 mt-0.5">{description}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="flex flex-col items-center justify-center gap-2 p-6 rounded-xl cursor-pointer"
+                                    style={{ border: "2px dashed var(--border)", color: "var(--text-muted)" }}>
+                                    <input type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="hidden"
+                                        onChange={(e) => {
+                                            if (!e.target.files) return;
+                                            const incoming = Array.from(e.target.files);
+                                            setCarefulFiles((prev) => {
+                                                const existing = new Set(prev.map((f) => f.name));
+                                                return [...prev, ...incoming.filter((f) => !existing.has(f.name))];
+                                            });
+                                        }} />
+                                    <span className="text-2xl">📎</span>
+                                    <span className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>Click to add files</span>
+                                    <span className="text-xs">PDF, DOCX, DOC, JPG, PNG · Multiple files supported</span>
+                                </label>
+                            </div>
+
+                            {carefulFiles.length > 0 && (
+                                <div className="space-y-2">
+                                    {carefulFiles.map((file) => {
+                                        const fs = carefulStatuses[file.name];
+                                        return (
+                                            <div key={file.name} className="space-y-1">
+                                                <div className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                                                    style={{ background: "var(--navy)", border: "1px solid var(--border)" }}>
+                                                    <span className="text-xs flex-1 truncate" style={{ color: "var(--text-primary)" }}>{file.name}</span>
+                                                    {!fs || fs.status === "idle" ? (
+                                                        <button onClick={() => setCarefulFiles((p) => p.filter((f) => f.name !== file.name))}
+                                                            className="text-xs flex-shrink-0" style={{ color: "var(--text-muted)" }}>✕</button>
+                                                    ) : fs.status === "uploading" ? (
+                                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                                            <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                                                                <div className="h-full rounded-full transition-all" style={{ width: `${fs.progress}%`, background: "var(--gold)" }} />
+                                                            </div>
+                                                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{fs.progress}%</span>
+                                                        </div>
+                                                    ) : fs.status === "extracting" ? (
+                                                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>Extracting text...</span>
+                                                    ) : fs.status === "classifying" ? (
+                                                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>Classifying...</span>
+                                                    ) : fs.status === "done" ? (
+                                                        <span className="text-xs" style={{ color: "#22c55e" }}>✓ Done</span>
+                                                    ) : (
+                                                        <span className="text-xs" style={{ color: "#ef4444" }}>✗ Failed</span>
+                                                    )}
+                                                </div>
+                                                {fs?.status === "error" && fs.error && (
+                                                    <div className="px-3 py-2 rounded-lg text-xs space-y-1" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#fca5a5" }}>
+                                                        <p>{fs.error}</p>
+                                                        <button
+                                                            onClick={() => handleReportCareful(file.name, fs.error!)}
+                                                            disabled={fs.reported}
+                                                            className="text-xs font-semibold underline"
+                                                            style={{ color: fs.reported ? "#6b7280" : "#f87171" }}
+                                                        >
+                                                            {fs.reported ? "Reported ✓ — Thank you, this helps us improve." : "Report this issue →"}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {carefulFiles.length > 0 && (
+                                <button onClick={handleCarefulSubmit} disabled={!carefulCanSubmit}
+                                    className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity"
+                                    style={{ background: "var(--gold)", color: "var(--navy)", opacity: carefulCanSubmit ? 1 : 0.5 }}>
+                                    {carefulUploading
+                                        ? `Uploading ${carefulFiles.length} file${carefulFiles.length > 1 ? "s" : ""}...`
+                                        : carefulDone
+                                            ? "✓ All files submitted"
+                                            : `Submit ${carefulFiles.length} file${carefulFiles.length > 1 ? "s" : ""} →`}
+                                </button>
+                            )}
+
+                            {carefulDone && (
+                                <p className="text-xs text-center" style={{ color: "#22c55e" }}>
+                                    Your files are in. Admins will review and make them live soon. Thank you.
+                                </p>
+                            )}
+                        </>
+                    )}
                 </div>
 
-                {/* Step 2 — Category */}
-                {(selectedCourseId || (courseNotListed && manualCourseName.trim())) && (
-                    <div
-                        className="rounded-xl p-5 space-y-3"
-                        style={{ background: "var(--navy-card)", border: "1px solid var(--border)" }}
-                    >
-                        <h2 className="font-semibold text-sm" style={{ color: "var(--gold)" }}>
-                            2. What type of material is this?
-                        </h2>
-                        <div className="grid grid-cols-2 gap-2">
-                            {CATEGORIES.map(({ key, label, icon, description }) => (
-                                <button
-                                    key={key}
-                                    onClick={() => setSelectedCategory(key)}
-                                    className="text-left p-3 rounded-xl transition-colors"
-                                    style={{
-                                        background: selectedCategory === key ? "var(--gold)" : "var(--navy)",
-                                        border: `1px solid ${selectedCategory === key ? "var(--gold)" : "var(--border)"}`,
-                                        color: selectedCategory === key ? "var(--navy)" : "var(--text-primary)",
-                                    }}
-                                >
-                                    <p className="text-base mb-1">{icon}</p>
-                                    <p className="text-xs font-semibold">{label}</p>
-                                    <p className="text-xs opacity-70 mt-0.5">{description}</p>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Step 3 — Files */}
-                {(selectedCourseId || (courseNotListed && manualCourseName.trim())) && (
-                    <div
-                        className="rounded-xl p-5 space-y-3"
-                        style={{ background: "var(--navy-card)", border: "1px solid var(--border)" }}
-                    >
-                        <h2 className="font-semibold text-sm" style={{ color: "var(--gold)" }}>
-                            3. Add your files
-                        </h2>
-
-                        <label
-                            className="flex flex-col items-center justify-center gap-2 p-6 rounded-xl cursor-pointer transition-colors"
-                            style={{ border: "2px dashed var(--border)", color: "var(--text-muted)" }}
-                        >
-                            <input
-                                type="file"
-                                multiple
-                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                                className="hidden"
-                                onChange={handleFileSelect}
-                            />
-                            <span className="text-2xl">📎</span>
-                            <span className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
-                                Click to add files
-                            </span>
-                            <span className="text-xs">PDF, DOCX, DOC, JPG, PNG</span>
-                        </label>
-
-                        {files.length > 0 && (
-                            <div className="space-y-2">
-                                {files.map((file) => {
-                                    const progress = uploadProgress[file.name];
-                                    return (
-                                        <div
-                                            key={file.name}
-                                            className="flex items-center gap-3 px-3 py-2 rounded-lg"
-                                            style={{ background: "var(--navy)", border: "1px solid var(--border)" }}
-                                        >
-                                            <span className="text-xs flex-1 truncate" style={{ color: "var(--text-primary)" }}>
-                                                {file.name}
-                                            </span>
-                                            {uploading && progress !== undefined ? (
-                                                <div className="flex items-center gap-2 flex-shrink-0">
-                                                    <div
-                                                        className="w-16 h-1.5 rounded-full overflow-hidden"
-                                                        style={{ background: "var(--border)" }}
-                                                    >
-                                                        <div
-                                                            className="h-full rounded-full transition-all"
-                                                            style={{ width: `${progress}%`, background: "var(--gold)" }}
-                                                        />
-                                                    </div>
-                                                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>{progress}%</span>
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    onClick={() => removeFile(file.name)}
-                                                    className="text-xs flex-shrink-0"
-                                                    style={{ color: "var(--text-muted)" }}
-                                                >
-                                                    ✕
-                                                </button>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Submit */}
-                {files.length > 0 && (
-                    <div className="space-y-3">
-                        {submitError && (
-                            <p className="text-xs text-center" style={{ color: "#ef4444" }}>{submitError}</p>
-                        )}
-                        <button
-                            onClick={handleSubmit}
-                            disabled={!canSubmit}
-                            className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity"
-                            style={{
-                                background: "var(--gold)",
-                                color: "var(--navy)",
-                                opacity: canSubmit ? 1 : 0.5,
-                            }}
-                        >
-                            {uploading
-                                ? `Uploading ${files.length} file${files.length > 1 ? "s" : ""}...`
-                                : `Submit ${files.length} file${files.length > 1 ? "s" : ""} →`}
-                        </button>
-                        <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
-                            Submitted as {firebaseUser?.email}. All contributions are reviewed before going live.
+                {/* ── Section B: Auto-detect ────────────────────────────────── */}
+                <div className="rounded-xl p-5 space-y-4" style={{ background: "var(--navy-card)", border: "1px solid var(--border)" }}>
+                    <div>
+                        <h2 className="font-semibold text-sm mb-1" style={{ color: "var(--gold)" }}>Drop files — let the system sort them</h2>
+                        <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                            Have files that don&apos;t fit neatly into a course right now? Drop them here. Our system will read them and do its best to sort them automatically. Admins will confirm placement before anything goes live.
                         </p>
                     </div>
-                )}
+
+                    <label className="flex flex-col items-center justify-center gap-2 p-6 rounded-xl cursor-pointer"
+                        style={{ border: "2px dashed var(--border)", color: "var(--text-muted)" }}>
+                        <input type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="hidden"
+                            onChange={(e) => {
+                                if (!e.target.files) return;
+                                const incoming = Array.from(e.target.files);
+                                setDetectFiles((prev) => {
+                                    const existing = new Set(prev.map((f) => f.name));
+                                    return [...prev, ...incoming.filter((f) => !existing.has(f.name))];
+                                });
+                            }} />
+                        <span className="text-2xl">🔍</span>
+                        <span className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>Click to add files</span>
+                        <span className="text-xs">PDF, DOCX, DOC, JPG, PNG · Multiple files supported</span>
+                    </label>
+
+                    {detectFiles.length > 0 && (
+                        <div className="space-y-3">
+                            {detectFiles.map((file) => {
+                                const fs = detectStatuses[file.name];
+                                const resultMsg = fs?.result ? getDetectResultMessage(fs.result) : null;
+                                return (
+                                    <div key={file.name} className="space-y-2">
+                                        <div className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                                            style={{ background: "var(--navy)", border: "1px solid var(--border)" }}>
+                                            <span className="text-xs flex-1 truncate" style={{ color: "var(--text-primary)" }}>{file.name}</span>
+                                            {!fs || fs.status === "idle" ? (
+                                                <button onClick={() => setDetectFiles((p) => p.filter((f) => f.name !== file.name))}
+                                                    className="text-xs flex-shrink-0" style={{ color: "var(--text-muted)" }}>✕</button>
+                                            ) : (
+                                                <span className="text-xs flex-shrink-0" style={{ color: fs.status === "done" ? "#22c55e" : fs.status === "error" ? "#ef4444" : "var(--text-muted)" }}>
+                                                    {getDetectStatusLabel(fs.status)}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {fs?.status === "uploading" && (
+                                            <div className="px-3">
+                                                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                                                    <div className="h-full rounded-full transition-all" style={{ width: `${fs.progress}%`, background: "var(--gold)" }} />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {fs?.status === "done" && resultMsg && (
+                                            <div className="px-3 py-2 rounded-lg text-xs leading-relaxed"
+                                                style={{
+                                                    background: resultMsg.type === "strong" ? "rgba(34,197,94,0.08)" : "rgba(234,179,8,0.08)",
+                                                    border: `1px solid ${resultMsg.type === "strong" ? "rgba(34,197,94,0.2)" : "rgba(234,179,8,0.2)"}`,
+                                                    color: resultMsg.type === "strong" ? "#86efac" : "#fde68a",
+                                                }}>
+                                                {resultMsg.message}
+                                            </div>
+                                        )}
+
+                                        {fs?.status === "error" && fs.error && (
+                                            <div className="px-3 py-2 rounded-lg text-xs space-y-1"
+                                                style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#fca5a5" }}>
+                                                <p>{fs.error}</p>
+                                                <p className="mt-1" style={{ color: "var(--text-muted)" }}>
+                                                    For faster placement, try uploading using the course selector above.
+                                                </p>
+                                                <button
+                                                    onClick={() => handleReportDetect(file.name, fs.error!)}
+                                                    disabled={fs.reported}
+                                                    className="text-xs font-semibold underline"
+                                                    style={{ color: fs.reported ? "#6b7280" : "#f87171" }}
+                                                >
+                                                    {fs.reported ? "Reported ✓ — Thank you, this helps us improve." : "Report this issue →"}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                            <button
+                                onClick={handleDetectSubmit}
+                                disabled={detectUploading || detectFiles.every((f) => detectStatuses[f.name]?.status === "done")}
+                                className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity"
+                                style={{
+                                    background: "var(--gold)", color: "var(--navy)",
+                                    opacity: detectUploading || detectFiles.every((f) => detectStatuses[f.name]?.status === "done") ? 0.5 : 1
+                                }}>
+                                {detectUploading
+                                    ? `Processing ${detectFiles.length} file${detectFiles.length > 1 ? "s" : ""}...`
+                                    : detectFiles.every((f) => detectStatuses[f.name]?.status === "done")
+                                        ? "✓ All processed"
+                                        : `Analyse ${detectFiles.length} file${detectFiles.length > 1 ? "s" : ""} →`}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <p className="text-xs text-center pb-4" style={{ color: "var(--text-muted)" }}>
+                    Submitted as {firebaseUser?.email}. All contributions are reviewed before going live.
+                </p>
             </div>
         </div>
     );

@@ -12,7 +12,8 @@ import { db, storage } from "@/lib/firebase/config";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   getMaterialsByStatus, updateMaterialStatus, saveChunks,
-  resurrectMaterialsForCourse, Material,
+  resurrectMaterialsForCourse, Material, getReports, getMaterialStats,
+  UploadReport, MaterialStats,
 } from "@/lib/firestore/materials";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,6 +54,21 @@ interface ExistingFile {
 
 type ReviewTab = "pending_review" | "quarantined" | "awaiting_course" | "ocr_pending";
 
+type FileStatus = {
+  status: "idle" | "uploading" | "extracting" | "classifying" | "done" | "error";
+  progress: number;
+  error?: string;
+  result?: {
+    materialId: string;
+    detectedStatus: string;
+    category: string;
+    suggestedCourseName: string | null;
+    detectedCourseName: string | null;
+    confidence: string;
+    wordCount: number;
+  };
+};
+
 // ─── Hint System ──────────────────────────────────────────────────────────────
 export type HintSeverity = "info" | "tip" | "warning" | "action";
 
@@ -62,10 +78,7 @@ export interface Hint {
   icon: string;
   title: string;
   description: string;
-  action?: {
-    label: string;
-    onClick: () => void;
-  };
+  action?: { label: string; onClick: () => void };
 }
 
 function AdminHints({ hints }: { hints: Hint[] }) {
@@ -90,10 +103,7 @@ function AdminHints({ hints }: { hints: Hint[] }) {
   return (
     <div className="mb-8 space-y-2">
       {visible.map((hint) => (
-        <div
-          key={hint.id}
-          className={`flex items-start justify-between gap-4 px-4 py-3 rounded-xl border text-sm ${severityStyles[hint.severity]}`}
-        >
+        <div key={hint.id} className={`flex items-start justify-between gap-4 px-4 py-3 rounded-xl border text-sm ${severityStyles[hint.severity]}`}>
           <div className="flex items-start gap-3 flex-1">
             <span className="text-base flex-shrink-0 mt-0.5">{hint.icon}</span>
             <div className="space-y-1">
@@ -103,20 +113,13 @@ function AdminHints({ hints }: { hints: Hint[] }) {
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {hint.action && (
-              <button
-                onClick={hint.action.onClick}
-                className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${actionButtonStyles[hint.severity]}`}
-              >
+              <button onClick={hint.action.onClick}
+                className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${actionButtonStyles[hint.severity]}`}>
                 {hint.action.label}
               </button>
             )}
-            <button
-              onClick={() => setDismissed((p) => new Set(p).add(hint.id))}
-              className="text-xs opacity-50 hover:opacity-100 transition-opacity px-1"
-              title="Dismiss"
-            >
-              ✕
-            </button>
+            <button onClick={() => setDismissed((p) => new Set(p).add(hint.id))}
+              className="text-xs opacity-50 hover:opacity-100 transition-opacity px-1" title="Dismiss">✕</button>
           </div>
         </div>
       ))}
@@ -137,6 +140,143 @@ function confidenceBadge(confidence: string) {
   return "bg-red-500/20 text-red-400 border-red-500/30";
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// ─── Stats Bar ────────────────────────────────────────────────────────────────
+function StatsBar({ stats }: { stats: MaterialStats | null }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!stats) return null;
+
+  const years = Object.keys(stats.byYear).sort((a, b) => Number(b) - Number(a));
+
+  return (
+    <div className="mb-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] overflow-hidden">
+      <button
+        onClick={() => setExpanded((p) => !p)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-[var(--color-bg-tertiary)] transition-colors"
+      >
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-semibold text-[var(--color-gold)]">📊 File Activity</span>
+          <span className="text-xs text-[var(--color-text-secondary)]">
+            {stats.total} total · {years[0] ? `${stats.byYear[years[0]].total} in ${years[0]}` : ""}
+          </span>
+        </div>
+        <span className="text-[var(--color-text-secondary)] text-xs">{expanded ? "▲ collapse" : "▼ expand"}</span>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg p-3 text-center" style={{ background: "var(--color-bg-tertiary)" }}>
+              <p className="text-2xl font-bold text-[var(--color-gold)]">{stats.total}</p>
+              <p className="text-xs text-[var(--color-text-secondary)] mt-1">All time</p>
+            </div>
+            <div className="rounded-lg p-3 text-center" style={{ background: "var(--color-bg-tertiary)" }}>
+              <p className="text-2xl font-bold text-blue-400">
+                {years.reduce((acc, y) => acc + stats.byYear[y].contributors, 0)}
+              </p>
+              <p className="text-xs text-[var(--color-text-secondary)] mt-1">From students</p>
+            </div>
+            <div className="rounded-lg p-3 text-center" style={{ background: "var(--color-bg-tertiary)" }}>
+              <p className="text-2xl font-bold text-purple-400">
+                {years.reduce((acc, y) => acc + stats.byYear[y].admins, 0)}
+              </p>
+              <p className="text-xs text-[var(--color-text-secondary)] mt-1">From admins</p>
+            </div>
+          </div>
+
+          {years.map((year) => {
+            const yd = stats.byYear[year];
+            return (
+              <div key={year}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-[var(--color-text-primary)]">{year}</p>
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    {yd.total} total · {yd.contributors} students · {yd.admins} admins
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+                  {MONTHS.filter((m) => yd.byMonth[m]).map((month) => {
+                    const md = yd.byMonth[month];
+                    return (
+                      <div key={month} className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs"
+                        style={{ background: "var(--color-bg-tertiary)" }}>
+                        <span className="text-[var(--color-text-secondary)]">{month}</span>
+                        <span className="text-[var(--color-text-primary)] font-medium">{md.total}</span>
+                        <span className="text-blue-400">{md.contributors}s</span>
+                        <span className="text-purple-400">{md.admins}a</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Reports Section ──────────────────────────────────────────────────────────
+function ReportsSection({ reports }: { reports: UploadReport[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const unread = reports.filter((r) => !r.read).length;
+
+  return (
+    <div className="mb-12 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] overflow-hidden">
+      <button
+        onClick={() => setExpanded((p) => !p)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-[var(--color-bg-tertiary)] transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-[var(--color-text-primary)]">⚠️ Contributor Reports</span>
+          {unread > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-500/20 text-red-400">{unread} unread</span>
+          )}
+          {reports.length === 0 && (
+            <span className="text-xs text-[var(--color-text-secondary)]">No reports yet</span>
+          )}
+        </div>
+        <span className="text-[var(--color-text-secondary)] text-xs">{expanded ? "▲ collapse" : "▼ expand"}</span>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 space-y-3">
+          {reports.length === 0 ? (
+            <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
+              No upload issues have been reported by contributors.
+            </p>
+          ) : (
+            reports.map((report) => (
+              <div key={report.id}
+                className={`p-4 rounded-xl border text-sm space-y-1 ${report.read ? "border-[var(--color-border)] bg-[var(--color-bg-tertiary)]" : "border-red-500/20 bg-red-500/5"}`}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <p className="font-semibold text-[var(--color-text-primary)]">{report.fileName}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full border ${report.errorType === "upload_failed"
+                    ? "border-red-400/30 text-red-400 bg-red-400/10"
+                    : report.errorType === "processing_failed"
+                      ? "border-yellow-400/30 text-yellow-400 bg-yellow-400/10"
+                      : "border-orange-400/30 text-orange-400 bg-orange-400/10"}`}>
+                    {report.errorType.replace("_", " ")}
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--color-text-secondary)]">📧 {report.uploaderEmail}</p>
+                <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">{report.description}</p>
+                {report.timestamp && (
+                  <p className="text-xs text-[var(--color-text-secondary)] opacity-60">
+                    {report.timestamp.toDate().toLocaleString()}
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { firebaseUser, userProfile, loading: authLoading } = useAuth();
@@ -150,19 +290,15 @@ export default function AdminPage() {
   const [activeReviewTab, setActiveReviewTab] = useState<ReviewTab>("pending_review");
   const [reviewMaterials, setReviewMaterials] = useState<Material[]>([]);
   const [reviewLoading, setReviewLoading] = useState(true);
-  const [reviewCounts, setReviewCounts] = useState({
-    pending_review: 0,
-    quarantined: 0,
-    awaiting_course: 0,
-    ocr_pending: 0,
-  });
+  const [reviewCounts, setReviewCounts] = useState({ pending_review: 0, quarantined: 0, awaiting_course: 0, ocr_pending: 0 });
   const [batchApproving, setBatchApproving] = useState(false);
+  const [reports, setReports] = useState<UploadReport[]>([]);
+  const [stats, setStats] = useState<MaterialStats | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
     if (!firebaseUser) { router.push("/"); return; }
-    if (userProfile && userProfile.role !== "admin" && userProfile.role !== "chief_admin")
-      router.push("/");
+    if (userProfile && userProfile.role !== "admin" && userProfile.role !== "chief_admin") router.push("/");
   }, [firebaseUser, userProfile, authLoading, router]);
 
   useEffect(() => {
@@ -221,12 +357,23 @@ export default function AdminPage() {
     fetchMaterials();
   }, [firebaseUser, activeReviewTab]);
 
+  useEffect(() => {
+    const fetchReportsAndStats = async () => {
+      if (!firebaseUser) return;
+      try {
+        const [r, s] = await Promise.all([getReports(), getMaterialStats()]);
+        setReports(r);
+        setStats(s);
+      } catch (err) {
+        console.error("Error fetching reports/stats:", err);
+      }
+    };
+    fetchReportsAndStats();
+  }, [firebaseUser]);
+
   const removeMaterialFromList = (materialId: string) => {
     setReviewMaterials((prev) => prev.filter((m) => m.id !== materialId));
-    setReviewCounts((prev) => ({
-      ...prev,
-      [activeReviewTab]: Math.max(0, prev[activeReviewTab] - 1),
-    }));
+    setReviewCounts((prev) => ({ ...prev, [activeReviewTab]: Math.max(0, prev[activeReviewTab] - 1) }));
   };
 
   const groupCourses = (data: Course[]) => {
@@ -269,9 +416,7 @@ export default function AdminPage() {
   };
 
   const handleBatchApproveHighConfidence = async () => {
-    const highConfidence = reviewMaterials.filter(
-      (m) => m.confidence === "high" && m.suggestedCourseId
-    );
+    const highConfidence = reviewMaterials.filter((m) => m.confidence === "high" && m.suggestedCourseId);
     if (highConfidence.length === 0) return;
     setBatchApproving(true);
     for (const material of highConfidence) {
@@ -299,102 +444,62 @@ export default function AdminPage() {
     if (activeReviewTab === "awaiting_course") setReviewMaterials(awaiting);
   };
 
-  // ── Build hints ───────────────────────────────────────────────────────────
+  // ── Hints ─────────────────────────────────────────────────────────────────
   const hints: Hint[] = [];
-
-  const highConfidenceCount =
-    activeReviewTab === "pending_review"
-      ? reviewMaterials.filter((m) => m.confidence === "high" && m.suggestedCourseId).length
-      : 0;
+  const highConfidenceCount = activeReviewTab === "pending_review"
+    ? reviewMaterials.filter((m) => m.confidence === "high" && m.suggestedCourseId).length : 0;
 
   if (highConfidenceCount > 1) {
     hints.push({
-      id: "batch-approve-high",
-      severity: "tip",
-      icon: "⚡",
+      id: "batch-approve-high", severity: "tip", icon: "⚡",
       title: `${highConfidenceCount} materials matched with high confidence`,
       description: "The classifier is very sure about these. You can approve them all at once instead of one by one.",
-      action: {
-        label: batchApproving ? "Approving..." : `Approve all ${highConfidenceCount} →`,
-        onClick: handleBatchApproveHighConfidence,
-      },
+      action: { label: batchApproving ? "Approving..." : `Approve all ${highConfidenceCount} →`, onClick: handleBatchApproveHighConfidence },
     });
   }
-
   if (reviewCounts.awaiting_course > 0 && activeReviewTab !== "awaiting_course") {
     hints.push({
-      id: "awaiting-course-reminder",
-      severity: "action",
-      icon: "⏳",
+      id: "awaiting-course-reminder", severity: "action", icon: "⏳",
       title: `${reviewCounts.awaiting_course} material(s) waiting for a course to exist`,
       description: "If you have just added new courses, use Resurrect All to activate them instantly.",
-      action: {
-        label: "Resurrect all now →",
-        onClick: handleResurrectAll,
-      },
+      action: { label: "Resurrect all now →", onClick: handleResurrectAll },
     });
   }
-
   if (reviewCounts.awaiting_course > 0 && activeReviewTab === "awaiting_course") {
     hints.push({
-      id: "resurrect-all-tip",
-      severity: "tip",
-      icon: "🔁",
+      id: "resurrect-all-tip", severity: "tip", icon: "🔁",
       title: "Resurrect All is available",
       description: "If you have recently added new courses to Firestore, click Resurrect All to automatically match and approve all waiting materials in one pass.",
-      action: {
-        label: "Resurrect all →",
-        onClick: handleResurrectAll,
-      },
+      action: { label: "Resurrect all →", onClick: handleResurrectAll },
     });
   }
-
   if (reviewCounts.quarantined > 0) {
     hints.push({
-      id: "quarantined-reminder",
-      severity: "warning",
-      icon: "🔒",
+      id: "quarantined-reminder", severity: "warning", icon: "🔒",
       title: `${reviewCounts.quarantined} quarantined material(s) need manual assignment`,
       description: "The classifier found no course signal in these files. Open the Quarantined tab to assign them manually.",
     });
   }
-
   if (reviewCounts.ocr_pending > 0) {
     hints.push({
-      id: "ocr-pending-info",
-      severity: "info",
-      icon: "🔍",
+      id: "ocr-pending-info", severity: "info", icon: "🔍",
       title: `${reviewCounts.ocr_pending} scanned file(s) waiting for OCR`,
       description: "These are image-based files with no extractable text yet. They will unlock automatically once Google Cloud Vision is activated.",
     });
   }
-
-  // Repeated email detection in quarantine
-  const quarantineEmails =
-    activeReviewTab === "quarantined"
-      ? reviewMaterials.map((m) => m.uploaderEmail).filter(Boolean)
-      : [];
-  const emailCounts = quarantineEmails.reduce<Record<string, number>>((acc, e) => {
-    acc[e] = (acc[e] || 0) + 1;
-    return acc;
-  }, {});
+  const quarantineEmails = activeReviewTab === "quarantined" ? reviewMaterials.map((m) => m.uploaderEmail).filter(Boolean) : [];
+  const emailCounts = quarantineEmails.reduce<Record<string, number>>((acc, e) => { acc[e] = (acc[e] || 0) + 1; return acc; }, {});
   const suspiciousEmails = Object.entries(emailCounts).filter(([, count]) => count >= 3);
   if (suspiciousEmails.length > 0) {
     hints.push({
-      id: "repeated-email-quarantine",
-      severity: "warning",
-      icon: "⚠️",
+      id: "repeated-email-quarantine", severity: "warning", icon: "⚠️",
       title: "Repeated submissions from same email in quarantine",
       description: `${suspiciousEmails.map(([e]) => e).join(", ")} — ${suspiciousEmails.length > 1 ? "these emails have" : "this email has"} 3+ quarantined submissions. Review carefully.`,
     });
   }
 
   const filteredCourses = search.trim()
-    ? courses.filter(
-      (c) =>
-        c.name?.toLowerCase().includes(search.toLowerCase()) ||
-        c.code?.toLowerCase().includes(search.toLowerCase())
-    )
+    ? courses.filter((c) => c.name?.toLowerCase().includes(search.toLowerCase()) || c.code?.toLowerCase().includes(search.toLowerCase()))
     : null;
 
   if (authLoading || coursesLoading) {
@@ -408,36 +513,33 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] p-6">
       <div className="max-w-6xl mx-auto">
-        <h1
-          className="text-3xl font-bold text-[var(--color-gold)] mb-1"
-          style={{ fontFamily: "Playfair Display, serif" }}
-        >
+        <h1 className="text-3xl font-bold text-[var(--color-gold)] mb-1" style={{ fontFamily: "Playfair Display, serif" }}>
           Admin Panel
         </h1>
         <p className="text-sm text-[var(--color-text-secondary)] mb-6">
           Bigard Memorial Institute — Course Materials Management
         </p>
 
+        {/* Stats */}
+        <StatsBar stats={stats} />
+
         <AdminHints hints={hints} />
 
-        {/* ── Materials Review ─────────────────────────────────────────── */}
+        {/* ── Reports ───────────────────────────────────────────────────── */}
+        <ReportsSection reports={reports} />
+
+        {/* ── Materials Review ──────────────────────────────────────────── */}
         <section className="mb-12">
-          <h2
-            className="text-xl font-semibold text-[var(--color-text-primary)] mb-4"
-            style={{ fontFamily: "Playfair Display, serif" }}
-          >
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4" style={{ fontFamily: "Playfair Display, serif" }}>
             Materials Review
           </h2>
-
           <div className="flex gap-2 mb-6 flex-wrap">
-            {(
-              [
-                { key: "pending_review", label: "Pending Review", color: "yellow" },
-                { key: "quarantined", label: "Quarantined", color: "red" },
-                { key: "awaiting_course", label: "Awaiting Course", color: "purple" },
-                { key: "ocr_pending", label: "OCR Pending", color: "blue" },
-              ] as const
-            ).map(({ key, label, color }) => {
+            {([
+              { key: "pending_review", label: "Pending Review", color: "yellow" },
+              { key: "quarantined", label: "Quarantined", color: "red" },
+              { key: "awaiting_course", label: "Awaiting Course", color: "purple" },
+              { key: "ocr_pending", label: "OCR Pending", color: "blue" },
+            ] as const).map(({ key, label, color }) => {
               const count = reviewCounts[key];
               const isActive = activeReviewTab === key;
               const colorMap = {
@@ -453,17 +555,10 @@ export default function AdminPage() {
                 blue: "bg-blue-400/20 text-blue-400",
               };
               return (
-                <button
-                  key={key}
-                  onClick={() => setActiveReviewTab(key)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors bg-[var(--color-bg-secondary)] ${colorMap[color]}`}
-                >
+                <button key={key} onClick={() => setActiveReviewTab(key)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors bg-[var(--color-bg-secondary)] ${colorMap[color]}`}>
                   {label}
-                  {count > 0 && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${badgeMap[color]}`}>
-                      {count}
-                    </span>
-                  )}
+                  {count > 0 && <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${badgeMap[color]}`}>{count}</span>}
                 </button>
               );
             })}
@@ -498,24 +593,15 @@ export default function AdminPage() {
                 </div>
               )}
               {reviewMaterials.map((material) => (
-                <MaterialReviewCard
-                  key={material.id}
-                  material={material}
-                  courses={courses}
-                  tab={activeReviewTab}
-                  onDismiss={() => removeMaterialFromList(material.id)}
-                />
+                <MaterialReviewCard key={material.id} material={material} courses={courses} tab={activeReviewTab} onDismiss={() => removeMaterialFromList(material.id)} />
               ))}
             </div>
           )}
         </section>
 
-        {/* ── Course Browser ───────────────────────────────────────────── */}
+        {/* ── Course Browser ────────────────────────────────────────────── */}
         <section>
-          <h2
-            className="text-xl font-semibold text-[var(--color-text-primary)] mb-4"
-            style={{ fontFamily: "Playfair Display, serif" }}
-          >
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4" style={{ fontFamily: "Playfair Display, serif" }}>
             Course Browser
           </h2>
           <div className="flex items-center gap-4 mb-4 text-xs text-[var(--color-text-secondary)]">
@@ -523,19 +609,12 @@ export default function AdminPage() {
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Partial</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Verified</span>
           </div>
-          <input
-            type="text"
-            placeholder="Search courses by name or code..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full max-w-md px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-gold)] mb-6"
-          />
+          <input type="text" placeholder="Search courses by name or code..." value={search} onChange={(e) => setSearch(e.target.value)}
+            className="w-full max-w-md px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-gold)] mb-6" />
 
           {filteredCourses ? (
             <div className="space-y-2">
-              <p className="text-sm text-[var(--color-text-secondary)] mb-3">
-                {filteredCourses.length} result(s) for &quot;{search}&quot;
-              </p>
+              <p className="text-sm text-[var(--color-text-secondary)] mb-3">{filteredCourses.length} result(s) for &quot;{search}&quot;</p>
               {filteredCourses.map((course) => (
                 <CourseRow key={course.id} course={course} onUpload={() => setSelectedCourse(course)} />
               ))}
@@ -544,10 +623,8 @@ export default function AdminPage() {
             <div className="space-y-6">
               {Object.keys(grouped).sort().map((dept) => (
                 <div key={dept} className="border border-[var(--color-border)] rounded-xl overflow-hidden">
-                  <button
-                    onClick={() => toggleKey(dept)}
-                    className="w-full flex items-center justify-between px-5 py-4 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-                  >
+                  <button onClick={() => toggleKey(dept)}
+                    className="w-full flex items-center justify-between px-5 py-4 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors">
                     <span className="text-lg font-semibold text-[var(--color-gold)] capitalize">{dept} Department</span>
                     <span className="text-[var(--color-text-secondary)]">{expandedKeys.has(dept) ? "▲" : "▼"}</span>
                   </button>
@@ -555,10 +632,8 @@ export default function AdminPage() {
                     <div className="p-4 space-y-4">
                       {Object.keys(grouped[dept]).sort().map((year) => (
                         <div key={year}>
-                          <button
-                            onClick={() => toggleKey(`${dept}-${year}`)}
-                            className="w-full flex items-center justify-between px-4 py-2 bg-[var(--color-bg-tertiary)] rounded-lg mb-2"
-                          >
+                          <button onClick={() => toggleKey(`${dept}-${year}`)}
+                            className="w-full flex items-center justify-between px-4 py-2 bg-[var(--color-bg-tertiary)] rounded-lg mb-2">
                             <span className="font-medium text-[var(--color-text-primary)]">Year {year}</span>
                             <span className="text-[var(--color-text-secondary)] text-sm">{expandedKeys.has(`${dept}-${year}`) ? "▲" : "▼"}</span>
                           </button>
@@ -566,10 +641,8 @@ export default function AdminPage() {
                             <div className="pl-4 space-y-3">
                               {Object.keys(grouped[dept][Number(year)]).sort().map((sem) => (
                                 <div key={sem}>
-                                  <button
-                                    onClick={() => toggleKey(`${dept}-${year}-${sem}`)}
-                                    className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-[var(--color-text-secondary)] border-b border-[var(--color-border)] mb-2"
-                                  >
+                                  <button onClick={() => toggleKey(`${dept}-${year}-${sem}`)}
+                                    className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-[var(--color-text-secondary)] border-b border-[var(--color-border)] mb-2">
                                     <span>Semester {sem}</span>
                                     <span>{expandedKeys.has(`${dept}-${year}-${sem}`) ? "▲" : "▼"}</span>
                                   </button>
@@ -610,13 +683,8 @@ export default function AdminPage() {
 }
 
 // ─── Material Review Card ─────────────────────────────────────────────────────
-function MaterialReviewCard({
-  material, courses, tab, onDismiss,
-}: {
-  material: Material;
-  courses: Course[];
-  tab: ReviewTab;
-  onDismiss: () => void;
+function MaterialReviewCard({ material, courses, tab, onDismiss }: {
+  material: Material; courses: Course[]; tab: ReviewTab; onDismiss: () => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -680,46 +748,28 @@ function MaterialReviewCard({
 
   return (
     <div className="border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-secondary)] p-5 space-y-4">
-      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <p className="font-semibold text-[var(--color-text-primary)] text-sm break-all">{material.fileName}</p>
-          {/* Uploader email — always visible to admin */}
           {material.uploaderEmail && (
-            <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
-              📧 {material.uploaderEmail}
-            </p>
+            <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>📧 {material.uploaderEmail}</p>
           )}
           <div className="flex items-center gap-2 flex-wrap mt-1">
-            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-              {material.category}
-            </span>
-            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${confidenceBadge(material.confidence)}`}>
-              {material.confidence} confidence
-            </span>
-            {material.wordCount > 0 && (
-              <span className="text-xs text-[var(--color-text-secondary)]">{material.wordCount.toLocaleString()} words</span>
-            )}
-            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-              {material.uploadedByRole}
-            </span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">{material.category}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${confidenceBadge(material.confidence)}`}>{material.confidence} confidence</span>
+            {material.wordCount > 0 && <span className="text-xs text-[var(--color-text-secondary)]">{material.wordCount.toLocaleString()} words</span>}
+            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">{material.uploadedByRole}</span>
           </div>
         </div>
         {!isReadOnly && (
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={handleReject}
-              disabled={loading}
-              className="text-xs px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-            >
+            <button onClick={handleReject} disabled={loading}
+              className="text-xs px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
               Reject
             </button>
             {!isAwaitingCourse && (
-              <button
-                onClick={handleApprove}
-                disabled={loading}
-                className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
+              <button onClick={handleApprove} disabled={loading}
+                className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50">
                 {loading ? "Working..." : "Approve →"}
               </button>
             )}
@@ -727,7 +777,6 @@ function MaterialReviewCard({
         )}
       </div>
 
-      {/* Course info */}
       {tab === "pending_review" && (
         <div className="flex items-center gap-2 text-xs">
           <span className="text-[var(--color-text-secondary)]">Suggested course:</span>
@@ -743,61 +792,42 @@ function MaterialReviewCard({
               <span className="text-[var(--color-text-primary)] font-semibold">{material.detectedCourseName}</span>
             </div>
           )}
-          {tab === "quarantined" && (
-            <p className="text-xs text-red-400 font-medium">No course signal detected. Assign manually:</p>
-          )}
-          {tab === "awaiting_course" && (
-            <p className="text-xs text-purple-400 font-medium">Assign to an existing course now, or wait for the course to be created:</p>
-          )}
+          {tab === "quarantined" && <p className="text-xs text-red-400 font-medium">No course signal detected. Assign manually:</p>}
+          {tab === "awaiting_course" && <p className="text-xs text-purple-400 font-medium">Assign to an existing course now, or wait for the course to be created:</p>}
           <div className="space-y-2">
             <label className="text-xs text-[var(--color-text-secondary)]">Course</label>
-            <select
-              value={selectedCourseId}
-              onChange={(e) => setSelectedCourseId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-xs focus:outline-none focus:border-[var(--color-gold)]"
-            >
+            <select value={selectedCourseId} onChange={(e) => setSelectedCourseId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-xs focus:outline-none focus:border-[var(--color-gold)]">
               <option value="">— Select a course —</option>
-              {courses.map((c) => (
-                <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-              ))}
+              {courses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
             </select>
           </div>
           <div className="space-y-2">
             <label className="text-xs text-[var(--color-text-secondary)]">Category</label>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-xs focus:outline-none focus:border-[var(--color-gold)]"
-            >
-              <option value="notes">Notes</option>
+            <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-xs focus:outline-none focus:border-[var(--color-gold)]">
+              <option value="lecture_notes">Lecture Notes</option>
               <option value="past_questions">Past Questions</option>
-              <option value="textbook">Textbook</option>
+              <option value="syllabus">Syllabus</option>
               <option value="aoc">Areas of Concentration</option>
               <option value="other">Other</option>
             </select>
           </div>
           <div className="flex gap-2 pt-1">
-            <button
-              onClick={handleApprove}
-              disabled={loading || !selectedCourseId}
-              className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity"
-            >
+            <button onClick={handleApprove} disabled={loading || !selectedCourseId}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity">
               {loading ? "Working..." : "Approve this file →"}
             </button>
             {isAwaitingCourse && (
-              <button
-                onClick={handleResurrect}
-                disabled={loading || !selectedCourseId}
-                className="text-xs px-3 py-1.5 rounded-lg border border-purple-400/40 text-purple-400 hover:bg-purple-500/10 disabled:opacity-40 transition-colors"
-              >
+              <button onClick={handleResurrect} disabled={loading || !selectedCourseId}
+                className="text-xs px-3 py-1.5 rounded-lg border border-purple-400/40 text-purple-400 hover:bg-purple-500/10 disabled:opacity-40 transition-colors">
                 {loading ? "Working..." : "Resurrect all matching →"}
               </button>
             )}
           </div>
           {resurrectResult && (
             <p className="text-xs text-purple-300 mt-1">
-              {resurrectResult.resurrected} material(s) resurrected.
-              {resurrectResult.failed > 0 && ` ${resurrectResult.failed} failed.`}
+              {resurrectResult.resurrected} material(s) resurrected.{resurrectResult.failed > 0 && ` ${resurrectResult.failed} failed.`}
             </p>
           )}
         </div>
@@ -810,19 +840,14 @@ function MaterialReviewCard({
       <div className="rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] p-3">
         <p className="text-xs text-[var(--color-text-secondary)] mb-1 font-medium">Extracted text preview</p>
         <p className="text-xs text-[var(--color-text-primary)] leading-relaxed whitespace-pre-wrap break-words">
-          {expanded ? fullText : previewText}
-          {!expanded && fullText.length > 300 && "..."}
+          {expanded ? fullText : previewText}{!expanded && fullText.length > 300 && "..."}
         </p>
         {fullText.length > 300 && (
-          <button
-            onClick={() => setExpanded((p) => !p)}
-            className="text-xs text-[var(--color-gold)] mt-2 hover:underline"
-          >
+          <button onClick={() => setExpanded((p) => !p)} className="text-xs text-[var(--color-gold)] mt-2 hover:underline">
             {expanded ? "Show less" : "Show full text"}
           </button>
         )}
       </div>
-
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );
@@ -839,10 +864,8 @@ function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void 
           <p className="text-xs text-[var(--color-text-secondary)]">{course.code}</p>
         </div>
       </div>
-      <button
-        onClick={onUpload}
-        className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity"
-      >
+      <button onClick={onUpload}
+        className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90 transition-opacity">
         Manage
       </button>
     </div>
@@ -850,15 +873,9 @@ function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void 
 }
 
 // ─── Upload Modal ─────────────────────────────────────────────────────────────
-function UploadModal({
-  course, uploadedBy, uploadedByRole, uploaderEmail, onClose, onReadinessChange,
-}: {
-  course: Course;
-  uploadedBy: string;
-  uploadedByRole: string;
-  uploaderEmail: string;
-  onClose: () => void;
-  onReadinessChange: (readiness: "empty" | "partial" | "verified") => void;
+function UploadModal({ course, uploadedBy, uploadedByRole, uploaderEmail, onClose, onReadinessChange }: {
+  course: Course; uploadedBy: string; uploadedByRole: string; uploaderEmail: string;
+  onClose: () => void; onReadinessChange: (readiness: "empty" | "partial" | "verified") => void;
 }) {
   const [fileQueues, setFileQueues] = useState<Record<string, File[]>>({});
   const [fileStatuses, setFileStatuses] = useState<Record<string, Record<string, "idle" | "uploading" | "done" | "error">>>({});
@@ -869,11 +886,16 @@ function UploadModal({
   const [savingReadiness, setSavingReadiness] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<Record<string, string>>({});
 
+  // Auto-detect state
+  const [detectFiles, setDetectFiles] = useState<File[]>([]);
+  const [detectStatuses, setDetectStatuses] = useState<Record<string, FileStatus>>({});
+  const [detectUploading, setDetectUploading] = useState(false);
+
   useEffect(() => {
     const loadExisting = async () => {
       try {
         const result: Record<string, ExistingFile[]> = {};
-        for (const { key } of CATEGORIES) {
+        await Promise.all(CATEGORIES.map(async ({ key }) => {
           const path = `materials/${course.department}/year${course.year}/sem${course.semester}/${course.id}/${key}`;
           try {
             const listRef = ref(storage, path);
@@ -887,7 +909,7 @@ function UploadModal({
                   const meta = await getMetadata(itemRef);
                   size = meta.size;
                   uploadedAt = meta.timeCreated;
-                } catch { }
+                } catch { /* metadata optional */ }
                 return { name: itemRef.name, url, size, uploadedAt };
               })
             );
@@ -895,11 +917,13 @@ function UploadModal({
           } catch {
             result[key] = [];
           }
-        }
+        }));
         setExistingFiles(result);
-        const courseDoc = await getDoc(doc(db, "courses", course.id));
-        const data = courseDoc.data();
-        if (data?.readiness) setReadiness(data.readiness);
+        try {
+          const courseDoc = await getDoc(doc(db, "courses", course.id));
+          const data = courseDoc.data();
+          if (data?.readiness) setReadiness(data.readiness);
+        } catch { /* readiness optional */ }
       } catch (err) {
         console.error("Error loading existing files:", err);
       } finally {
@@ -915,10 +939,7 @@ function UploadModal({
   };
 
   const handleDeselect = (category: UploadCategory, fileName: string) => {
-    setFileQueues((p) => ({
-      ...p,
-      [category]: (p[category] || []).filter((f) => f.name !== fileName),
-    }));
+    setFileQueues((p) => ({ ...p, [category]: (p[category] || []).filter((f) => f.name !== fileName) }));
   };
 
   const uploadFile = async (file: File, category: UploadCategory) => {
@@ -928,8 +949,7 @@ function UploadModal({
     setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "uploading" } }));
 
     return new Promise<void>((resolve) => {
-      task.on(
-        "state_changed",
+      task.on("state_changed",
         (snap) => {
           const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
           setFileProgresses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: pct } }));
@@ -940,9 +960,7 @@ function UploadModal({
         },
         async () => {
           const url = await getDownloadURL(task.snapshot.ref);
-          await updateDoc(doc(db, "courses", course.id), {
-            [`materials.${category}.${file.name}`]: url,
-          });
+          await updateDoc(doc(db, "courses", course.id), { [`materials.${category}.${file.name}`]: url });
           if (readiness === "empty") {
             await updateDoc(doc(db, "courses", course.id), { readiness: "partial" });
             setReadiness("partial");
@@ -958,6 +976,8 @@ function UploadModal({
             formData.append("uploadedBy", uploadedBy);
             formData.append("uploadedByRole", uploadedByRole);
             formData.append("uploaderEmail", uploaderEmail);
+            formData.append("suggestedCourseId", course.id);
+            formData.append("suggestedCourseName", course.name);
             const res = await fetch("/api/process-upload", { method: "POST", body: formData });
             if (res.ok) {
               const result = await res.json();
@@ -987,6 +1007,100 @@ function UploadModal({
     (Object.keys(fileQueues) as UploadCategory[]).forEach((cat) => handleUploadCategory(cat));
   };
 
+  // Auto-detect upload
+  const handleDetectSubmit = async () => {
+    if (detectFiles.length === 0 || detectUploading) return;
+    setDetectUploading(true);
+
+    const initialStatuses: Record<string, FileStatus> = {};
+    detectFiles.forEach((f) => { initialStatuses[f.name] = { status: "idle", progress: 0 }; });
+    setDetectStatuses(initialStatuses);
+
+    for (const file of detectFiles) {
+      try {
+        setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: 0 } }));
+        const storageRef = ref(storage, `auto-detect/admin/${uploadedBy}/${Date.now()}_${file.name}`);
+        const task = uploadBytesResumable(storageRef, file);
+
+        await new Promise<void>((resolve) => {
+          task.on("state_changed",
+            (snap) => {
+              const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+              setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: pct } }));
+            },
+            () => {
+              setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 0, error: `Upload failed for ${file.name}. Check connection or file size.` } }));
+              resolve();
+            },
+            async () => {
+              try {
+                const url = await getDownloadURL(task.snapshot.ref);
+                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "extracting", progress: 100 } }));
+                const formData = new FormData();
+                formData.append("file", file);
+                formData.append("fileUrl", url);
+                formData.append("uploadedBy", uploadedBy);
+                formData.append("uploadedByRole", uploadedByRole);
+                formData.append("uploaderEmail", uploaderEmail);
+                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "classifying", progress: 100 } }));
+                const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+                if (!res.ok) {
+                  setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 100, error: `Processing failed for ${file.name}. Check the review queue.` } }));
+                } else {
+                  const result = await res.json();
+                  setDetectStatuses((p) => ({
+                    ...p, [file.name]: {
+                      status: "done", progress: 100,
+                      result: {
+                        materialId: result.materialId,
+                        detectedStatus: result.status,
+                        category: result.category,
+                        suggestedCourseName: result.suggestedCourseName,
+                        detectedCourseName: result.detectedCourseName,
+                        confidence: result.confidence,
+                        wordCount: result.wordCount,
+                      }
+                    }
+                  }));
+                }
+                resolve();
+              } catch {
+                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 100, error: `Processing failed for ${file.name}. It may still appear in the review queue.` } }));
+                resolve();
+              }
+            }
+          );
+        });
+      } catch {
+        setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 0, error: `Failed to process ${file.name}.` } }));
+      }
+    }
+    setDetectUploading(false);
+  };
+
+  const getDetectStatusLabel = (status: FileStatus["status"]) => {
+    switch (status) {
+      case "uploading": return "Uploading...";
+      case "extracting": return "Extracting text...";
+      case "classifying": return "Classifying...";
+      case "done": return "Done ✓";
+      case "error": return "Failed";
+      default: return "Waiting";
+    }
+  };
+
+  const getAdminDetectResultMessage = (result: FileStatus["result"]) => {
+    if (!result) return null;
+    const course = result.suggestedCourseName ?? result.detectedCourseName;
+    if (result.detectedStatus === "quarantined" || result.confidence === "low") {
+      return { type: "weak", message: `Detection was weak. This file has been sent to the Quarantined tab for manual assignment.` };
+    }
+    return {
+      type: "strong",
+      message: `Detected as "${course ?? "unknown course"}" — ${result.category.replace("_", " ")}. Confidence: ${result.confidence}. ${result.wordCount} words extracted.`,
+    };
+  };
+
   const handleSetReadiness = async (newReadiness: "empty" | "partial" | "verified") => {
     setSavingReadiness(true);
     try {
@@ -1001,10 +1115,7 @@ function UploadModal({
   };
 
   const totalPending = Object.entries(fileQueues).reduce((acc, [cat, files]) => {
-    return acc + files.filter((f) => {
-      const status = fileStatuses[cat]?.[f.name];
-      return status !== "done" && status !== "uploading";
-    }).length;
+    return acc + files.filter((f) => { const s = fileStatuses[cat]?.[f.name]; return s !== "done" && s !== "uploading"; }).length;
   }, 0);
 
   const formatSize = (bytes?: number) => {
@@ -1029,46 +1140,38 @@ function UploadModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-bold text-[var(--color-gold)]" style={{ fontFamily: "Playfair Display, serif" }}>
-              {course.name}
-            </h2>
-            <p className="text-xs text-[var(--color-text-secondary)]">
-              {course.code} · Year {course.year} · Sem {course.semester}
-            </p>
+            <h2 className="text-xl font-bold text-[var(--color-gold)]" style={{ fontFamily: "Playfair Display, serif" }}>{course.name}</h2>
+            <p className="text-xs text-[var(--color-text-secondary)]">{course.code} · Year {course.year} · Sem {course.semester}</p>
           </div>
           <button onClick={onClose} className="text-[var(--color-text-secondary)] hover:text-white text-xl font-bold">✕</button>
         </div>
 
+        {/* Readiness */}
         <div className="flex items-center gap-2 mb-5 p-3 rounded-xl bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
           <span className="text-xs text-[var(--color-text-secondary)] mr-1">Status:</span>
           {(["empty", "partial", "verified"] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => handleSetReadiness(r)}
-              disabled={savingReadiness}
+            <button key={r} onClick={() => handleSetReadiness(r)} disabled={savingReadiness}
               className={`text-xs px-3 py-1 rounded-lg font-semibold transition-all ${readiness === r
-                  ? r === "verified" ? "bg-green-500 text-white"
-                    : r === "partial" ? "bg-yellow-400 text-black"
-                      : "bg-red-500 text-white"
-                  : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:border-[var(--color-gold)] border border-[var(--color-border)]"
-                }`}
-            >
+                ? r === "verified" ? "bg-green-500 text-white" : r === "partial" ? "bg-yellow-400 text-black" : "bg-red-500 text-white"
+                : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:border-[var(--color-gold)] border border-[var(--color-border)]"}`}>
               {r === "empty" ? "🔴 Empty" : r === "partial" ? "🟡 Partial" : "🟢 Verified"}
             </button>
           ))}
         </div>
 
+        {/* Batch upload all */}
         {totalPending > 1 && (
-          <button
-            onClick={handleBatchUploadAll}
-            className="w-full mb-4 py-2 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold text-sm hover:opacity-90 transition-opacity"
-          >
+          <button onClick={handleBatchUploadAll}
+            className="w-full mb-4 py-2 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold text-sm hover:opacity-90 transition-opacity">
             Upload All {totalPending} Pending Files
           </button>
         )}
 
+        {/* Category upload sections */}
         {loadingExisting ? (
           <p className="text-xs text-[var(--color-text-secondary)] text-center py-4">Loading existing files...</p>
         ) : (
@@ -1081,15 +1184,11 @@ function UploadModal({
                   <div className="flex items-center justify-between mb-3">
                     <span className="font-medium text-sm text-[var(--color-text-primary)]">
                       {icon} {label}
-                      {existing.length > 0 && (
-                        <span className="ml-2 text-xs text-green-400">({existing.length} uploaded)</span>
-                      )}
+                      {existing.length > 0 && <span className="ml-2 text-xs text-green-400">({existing.length} uploaded)</span>}
                     </span>
                     {files.length > 0 && (
-                      <button
-                        onClick={() => handleUploadCategory(key)}
-                        className="text-xs px-3 py-1 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90"
-                      >
+                      <button onClick={() => handleUploadCategory(key)}
+                        className="text-xs px-3 py-1 rounded-lg bg-[var(--color-gold)] text-[var(--color-bg-primary)] font-semibold hover:opacity-90">
                         Upload {files.length > 1 ? `${files.length} files` : "file"}
                       </button>
                     )}
@@ -1100,9 +1199,7 @@ function UploadModal({
                       {existing.map((f) => (
                         <div key={f.name} className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-tertiary)] px-2 py-1.5 rounded-lg">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
-                          <a href={f.url} target="_blank" rel="noopener noreferrer" className="truncate max-w-[200px] hover:text-[var(--color-gold)] transition-colors">
-                            {f.name}
-                          </a>
+                          <a href={f.url} target="_blank" rel="noopener noreferrer" className="truncate max-w-[200px] hover:text-[var(--color-gold)] transition-colors">{f.name}</a>
                           {f.size && <span className="ml-auto flex-shrink-0">{formatSize(f.size)}</span>}
                         </div>
                       ))}
@@ -1117,11 +1214,7 @@ function UploadModal({
                         const procStatus = processingStatus[file.name];
                         return (
                           <div key={file.name} className="flex items-center gap-2 flex-wrap">
-                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400"
-                                : status === "error" ? "bg-red-400"
-                                  : status === "uploading" ? "bg-yellow-400"
-                                    : "bg-[var(--color-border)]"
-                              }`} />
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400" : status === "error" ? "bg-red-400" : status === "uploading" ? "bg-yellow-400" : "bg-[var(--color-border)]"}`} />
                             <span className="text-xs text-[var(--color-text-primary)] max-w-[180px] truncate">{file.name}</span>
                             {status === "uploading" && (
                               <div className="flex-1 bg-[var(--color-border)] rounded-full h-1.5 min-w-[60px]">
@@ -1129,13 +1222,9 @@ function UploadModal({
                               </div>
                             )}
                             {status === "done" && !procStatus && <span className="text-green-400 text-xs">✓</span>}
-                            {status === "done" && procStatus && (
-                              <span className="text-xs text-[var(--color-text-secondary)]">{getProcessingLabel(procStatus)}</span>
-                            )}
+                            {status === "done" && procStatus && <span className="text-xs text-[var(--color-text-secondary)]">{getProcessingLabel(procStatus)}</span>}
                             {status === "error" && <span className="text-red-400 text-xs">✗ retry</span>}
-                            {status === "idle" && (
-                              <button onClick={() => handleDeselect(key, file.name)} className="text-xs text-red-400 hover:text-red-300">✕</button>
-                            )}
+                            {status === "idle" && <button onClick={() => handleDeselect(key, file.name)} className="text-xs text-red-400 hover:text-red-300">✕</button>}
                           </div>
                         );
                       })}
@@ -1143,13 +1232,8 @@ function UploadModal({
                   )}
 
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => { if (e.target.files) handleFileSelect(e.target.files, key); }}
-                    />
+                    <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple className="hidden"
+                      onChange={(e) => { if (e.target.files) handleFileSelect(e.target.files, key); }} />
                     <span className="text-xs px-3 py-1.5 border border-[var(--color-border)] rounded-lg hover:border-[var(--color-gold)] text-[var(--color-text-secondary)] hover:text-[var(--color-gold)] transition-colors">
                       + Add files
                     </span>
@@ -1160,6 +1244,101 @@ function UploadModal({
             })}
           </div>
         )}
+
+        {/* ── Auto-detect zone ─────────────────────────────────────────── */}
+        <div className="mt-6 border border-[var(--color-border)] rounded-xl p-4 space-y-3">
+          <div>
+            <p className="font-medium text-sm text-[var(--color-text-primary)] mb-1">🔍 Drop files — let the system sort them</p>
+            <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+              Have files that don&apos;t fit a specific category right now? Drop them here. The system will read and classify them automatically. You&apos;ll see what was detected and can approve or send to the review queue.
+            </p>
+          </div>
+
+          <label className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl cursor-pointer"
+            style={{ border: "2px dashed var(--color-border)", color: "var(--color-text-secondary)" }}>
+            <input type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="hidden"
+              onChange={(e) => {
+                if (!e.target.files) return;
+                const incoming = Array.from(e.target.files);
+                setDetectFiles((prev) => {
+                  const existing = new Set(prev.map((f) => f.name));
+                  return [...prev, ...incoming.filter((f) => !existing.has(f.name))];
+                });
+              }} />
+            <span className="text-xl">📎</span>
+            <span className="text-xs">Click to add files · Multiple supported</span>
+          </label>
+
+          {detectFiles.length > 0 && (
+            <div className="space-y-3">
+              {detectFiles.map((file) => {
+                const fs = detectStatuses[file.name];
+                const resultMsg = fs?.result ? getAdminDetectResultMessage(fs.result) : null;
+                return (
+                  <div key={file.name} className="space-y-2">
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                      style={{ background: "var(--color-bg-tertiary)", border: "1px solid var(--color-border)" }}>
+                      <span className="text-xs flex-1 truncate text-[var(--color-text-primary)]">{file.name}</span>
+                      {!fs || fs.status === "idle" ? (
+                        <button onClick={() => setDetectFiles((p) => p.filter((f) => f.name !== file.name))}
+                          className="text-xs text-[var(--color-text-secondary)]">✕</button>
+                      ) : (
+                        <span className={`text-xs flex-shrink-0 ${fs.status === "done" ? "text-green-400" : fs.status === "error" ? "text-red-400" : "text-[var(--color-text-secondary)]"}`}>
+                          {getDetectStatusLabel(fs.status)}
+                        </span>
+                      )}
+                    </div>
+
+                    {fs?.status === "uploading" && (
+                      <div className="px-3">
+                        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-border)" }}>
+                          <div className="h-full rounded-full transition-all bg-[var(--color-gold)]" style={{ width: `${fs.progress}%` }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {fs?.status === "done" && resultMsg && (
+                      <div className="px-3 py-2 rounded-lg text-xs leading-relaxed space-y-2"
+                        style={{
+                          background: resultMsg.type === "strong" ? "rgba(34,197,94,0.08)" : "rgba(234,179,8,0.08)",
+                          border: `1px solid ${resultMsg.type === "strong" ? "rgba(34,197,94,0.2)" : "rgba(234,179,8,0.2)"}`,
+                          color: resultMsg.type === "strong" ? "#86efac" : "#fde68a",
+                        }}>
+                        <p>{resultMsg.message}</p>
+                        {resultMsg.type === "weak" && (
+                          <p className="text-[var(--color-text-secondary)]">
+                            Head to the <span className="text-purple-400 font-medium">Quarantined tab</span> in Materials Review to assign it manually.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {fs?.status === "error" && fs.error && (
+                      <div className="px-3 py-2 rounded-lg text-xs" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#fca5a5" }}>
+                        {fs.error}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={handleDetectSubmit}
+                disabled={detectUploading || detectFiles.every((f) => detectStatuses[f.name]?.status === "done")}
+                className="w-full py-2 rounded-lg font-semibold text-sm transition-opacity"
+                style={{
+                  background: "var(--color-gold)", color: "var(--color-bg-primary)",
+                  opacity: detectUploading || detectFiles.every((f) => detectStatuses[f.name]?.status === "done") ? 0.5 : 1
+                }}>
+                {detectUploading
+                  ? `Processing ${detectFiles.length} file${detectFiles.length > 1 ? "s" : ""}...`
+                  : detectFiles.every((f) => detectStatuses[f.name]?.status === "done")
+                    ? "✓ All processed"
+                    : `Analyse ${detectFiles.length} file${detectFiles.length > 1 ? "s" : ""} →`}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

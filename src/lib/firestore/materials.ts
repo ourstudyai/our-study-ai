@@ -51,8 +51,25 @@ export type MaterialChunk = {
     createdAt: Timestamp | null;
 };
 
+export type UploadReport = {
+    id: string;
+    uploaderEmail: string;
+    uploadedBy: string;
+    fileName: string;
+    errorType: "upload_failed" | "processing_failed" | "partial_batch";
+    description: string;
+    timestamp: Timestamp | null;
+    read: boolean;
+};
+
+export type MaterialStats = {
+    total: number;
+    byYear: Record<string, { total: number; contributors: number; admins: number; byMonth: Record<string, { total: number; contributors: number; admins: number }> }>;
+};
+
 const MATERIALS_COL = "materials";
 const CHUNKS_COL = "material_chunks";
+const REPORTS_COL = "upload_reports";
 const CHUNK_SIZE = 400;
 const CHUNK_OVERLAP = 50;
 
@@ -195,4 +212,70 @@ export async function deleteChunksByMaterial(materialId: string): Promise<void> 
     for (const d of snapshot.docs) {
         await updateDoc(doc(db, CHUNKS_COL, d.id), { deleted: true });
     }
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+export async function saveReport(
+    data: Omit<UploadReport, "id" | "timestamp" | "read">
+): Promise<string> {
+    const ref = doc(collection(db, REPORTS_COL));
+    await setDoc(ref, {
+        ...data,
+        read: false,
+        timestamp: serverTimestamp(),
+    });
+    return ref.id;
+}
+
+export async function getReports(): Promise<UploadReport[]> {
+    const q = query(
+        collection(db, REPORTS_COL),
+        orderBy("timestamp", "desc")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as UploadReport));
+}
+
+export async function markReportRead(reportId: string): Promise<void> {
+    await updateDoc(doc(db, REPORTS_COL, reportId), { read: true });
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+export async function getMaterialStats(): Promise<MaterialStats> {
+    const q = query(
+        collection(db, MATERIALS_COL),
+        orderBy("createdAt", "desc")
+    );
+    const snapshot = await getDocs(q);
+    const materials = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Material));
+
+    const stats: MaterialStats = { total: materials.length, byYear: {} };
+
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    for (const m of materials) {
+        if (!m.createdAt) continue;
+        const date = m.createdAt.toDate();
+        const year = date.getFullYear().toString();
+        const month = MONTHS[date.getMonth()];
+        const isAdmin = m.uploadedByRole === "admin" || m.uploadedByRole === "chief_admin";
+
+        if (!stats.byYear[year]) {
+            stats.byYear[year] = { total: 0, contributors: 0, admins: 0, byMonth: {} };
+        }
+        stats.byYear[year].total++;
+        if (isAdmin) stats.byYear[year].admins++;
+        else stats.byYear[year].contributors++;
+
+        if (!stats.byYear[year].byMonth[month]) {
+            stats.byYear[year].byMonth[month] = { total: 0, contributors: 0, admins: 0 };
+        }
+        stats.byYear[year].byMonth[month].total++;
+        if (isAdmin) stats.byYear[year].byMonth[month].admins++;
+        else stats.byYear[year].byMonth[month].contributors++;
+    }
+
+    return stats;
 }
