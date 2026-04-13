@@ -1,31 +1,18 @@
 // src/lib/firestore/materials.ts
-// Firestore read/write operations for the materials and material_chunks collections
-
 import { db } from "@/lib/firebase/config";
 import {
-    collection,
-    doc,
-    setDoc,
-    getDoc,
-    updateDoc,
-    query,
-    where,
-    getDocs,
-    orderBy,
-    serverTimestamp,
-    Timestamp,
+    collection, doc, setDoc, getDoc, updateDoc,
+    query, where, getDocs, orderBy, serverTimestamp, Timestamp,
 } from "firebase/firestore";
 import { MaterialCategory } from "@/lib/processing/classifier";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export type MaterialStatus =
-    | "pending_review"   // auto-classified + course matched, awaiting admin confirmation
-    | "quarantined"      // classifier found nothing useful — no course signal, no name hint
-    | "awaiting_course"  // classifier detected a course name but it doesn't exist in Firestore yet
-    | "ocr_pending"      // scanned file, waiting for Google Cloud OCR
-    | "approved"         // admin confirmed, live in RAG
-    | "rejected";        // admin rejected
+    | "pending_review"
+    | "quarantined"
+    | "awaiting_course"
+    | "ocr_pending"
+    | "approved"
+    | "rejected";
 
 export type Material = {
     id: string;
@@ -34,6 +21,7 @@ export type Material = {
     mimeType: string;
     uploadedBy: string;
     uploadedByRole: string;
+    uploaderEmail: string;
     extractedText: string;
     wordCount: number;
     pageCount?: number;
@@ -63,14 +51,10 @@ export type MaterialChunk = {
     createdAt: Timestamp | null;
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
 const MATERIALS_COL = "materials";
 const CHUNKS_COL = "material_chunks";
 const CHUNK_SIZE = 400;
 const CHUNK_OVERLAP = 50;
-
-// ─── Save Material ────────────────────────────────────────────────────────────
 
 export async function saveMaterial(
     data: Omit<Material, "id" | "createdAt" | "updatedAt">
@@ -83,8 +67,6 @@ export async function saveMaterial(
     });
     return ref.id;
 }
-
-// ─── Update Material Status ───────────────────────────────────────────────────
 
 export async function updateMaterialStatus(
     materialId: string,
@@ -101,8 +83,6 @@ export async function updateMaterialStatus(
     });
 }
 
-// ─── Get Materials by Status ──────────────────────────────────────────────────
-
 export async function getMaterialsByStatus(
     status: MaterialStatus
 ): Promise<Material[]> {
@@ -115,16 +95,12 @@ export async function getMaterialsByStatus(
     return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Material));
 }
 
-// ─── Get Single Material ──────────────────────────────────────────────────────
-
 export async function getMaterial(materialId: string): Promise<Material | null> {
     const ref = doc(db, MATERIALS_COL, materialId);
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
     return { id: snap.id, ...snap.data() } as Material;
 }
-
-// ─── Save Chunks (RAG) ────────────────────────────────────────────────────────
 
 export async function saveChunks(
     materialId: string,
@@ -134,7 +110,6 @@ export async function saveChunks(
 ): Promise<number> {
     const words = text.split(/\s+/).filter(Boolean);
     const chunks: string[] = [];
-
     let start = 0;
     while (start < words.length) {
         const end = Math.min(start + CHUNK_SIZE, words.length);
@@ -142,7 +117,6 @@ export async function saveChunks(
         start += CHUNK_SIZE - CHUNK_OVERLAP;
         if (start >= words.length) break;
     }
-
     for (let i = 0; i < chunks.length; i++) {
         const ref = doc(collection(db, CHUNKS_COL));
         await setDoc(ref, {
@@ -155,24 +129,14 @@ export async function saveChunks(
             createdAt: serverTimestamp(),
         });
     }
-
     return chunks.length;
 }
-
-// ─── Resurrect Materials for a Course ────────────────────────────────────────
-// Called when a new course is created (Phase 3 course creation flow).
-// Finds all awaiting_course materials whose detectedCourseName fuzzy-matches
-// the new course name, then chunks and approves them automatically.
-//
-// GOOGLE_CLOUD_OCR_SLOT: When OCR is enabled, also call this after OCR completes
-// on a material that was ocr_pending — re-classify first, then resurrect if needed.
 
 export async function resurrectMaterialsForCourse(
     courseId: string,
     courseName: string
 ): Promise<{ resurrected: number; failed: number }> {
     const lowerCourseName = courseName.toLowerCase();
-
     const q = query(
         collection(db, MATERIALS_COL),
         where("status", "==", "awaiting_course")
@@ -186,11 +150,9 @@ export async function resurrectMaterialsForCourse(
     for (const material of candidates) {
         const detected = (material.detectedCourseName ?? "").toLowerCase();
         const suggested = (material.suggestedCourseName ?? "").toLowerCase();
-
         const courseWords = lowerCourseName.split(/\s+/).filter((w) => w.length > 3);
         const detectedWords = detected.split(/\s+/).filter((w) => w.length > 3);
         const suggestedWords = suggested.split(/\s+/).filter((w) => w.length > 3);
-
         const allCandidateWords = Array.from(new Set([...detectedWords, ...suggestedWords]));
         const matchCount = courseWords.filter((w) => allCandidateWords.includes(w)).length;
         const matchRatio = courseWords.length > 0 ? matchCount / courseWords.length : 0;
@@ -206,11 +168,8 @@ export async function resurrectMaterialsForCourse(
             }
         }
     }
-
     return { resurrected, failed };
 }
-
-// ─── Query Chunks for RAG ─────────────────────────────────────────────────────
 
 export async function getChunksByCourse(
     courseId: string,
@@ -222,17 +181,12 @@ export async function getChunksByCourse(
         orderBy("createdAt", "desc")
     );
     const snapshot = await getDocs(q);
-    const chunks = snapshot.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as MaterialChunk)
-    );
-    return chunks.slice(0, limitCount);
+    return snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() } as MaterialChunk))
+        .slice(0, limitCount);
 }
 
-// ─── Delete Chunks for a Material ────────────────────────────────────────────
-
-export async function deleteChunksByMaterial(
-    materialId: string
-): Promise<void> {
+export async function deleteChunksByMaterial(materialId: string): Promise<void> {
     const q = query(
         collection(db, CHUNKS_COL),
         where("materialId", "==", materialId)

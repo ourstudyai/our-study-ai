@@ -3,22 +3,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  collection, getDocs, query, orderBy,
-  doc, updateDoc, getDoc
+  collection, getDocs, query, orderBy, doc, updateDoc, getDoc,
 } from "firebase/firestore";
-import { ref, uploadBytesResumable, getDownloadURL, listAll, getMetadata } from "firebase/storage";
+import {
+  ref, uploadBytesResumable, getDownloadURL, listAll, getMetadata,
+} from "firebase/storage";
 import { db, storage } from "@/lib/firebase/config";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
-  getMaterialsByStatus,
-  updateMaterialStatus,
-  saveChunks,
-  resurrectMaterialsForCourse,
-  Material,
+  getMaterialsByStatus, updateMaterialStatus, saveChunks,
+  resurrectMaterialsForCourse, Material,
 } from "@/lib/firestore/materials";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
 interface Course {
   id: string;
   name: string;
@@ -56,11 +53,7 @@ interface ExistingFile {
 
 type ReviewTab = "pending_review" | "quarantined" | "awaiting_course" | "ocr_pending";
 
-// ─── Hint System Types ────────────────────────────────────────────────────────
-// Generic system — add new hints anywhere by adding a Hint object.
-// Severity controls colour. action is optional — if present, renders a button.
-// This same pattern will be used across all pages in the system.
-
+// ─── Hint System ──────────────────────────────────────────────────────────────
 export type HintSeverity = "info" | "tip" | "warning" | "action";
 
 export interface Hint {
@@ -75,11 +68,8 @@ export interface Hint {
   };
 }
 
-// ─── Hint System Component ────────────────────────────────────────────────────
-
 function AdminHints({ hints }: { hints: Hint[] }) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-
   const visible = hints.filter((h) => !dismissed.has(h.id));
   if (visible.length === 0) return null;
 
@@ -135,7 +125,6 @@ function AdminHints({ hints }: { hints: Hint[] }) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function ReadinessDot({ status }: { status?: string }) {
   if (status === "verified") return <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-green-500" title="Verified" />;
   if (status === "partial") return <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-yellow-400" title="Partial" />;
@@ -149,18 +138,15 @@ function confidenceBadge(confidence: string) {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-
 export default function AdminPage() {
   const { firebaseUser, userProfile, loading: authLoading } = useAuth();
   const router = useRouter();
-
   const [courses, setCourses] = useState<Course[]>([]);
   const [grouped, setGrouped] = useState<GroupedCourses>({});
   const [coursesLoading, setCoursesLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
-
   const [activeReviewTab, setActiveReviewTab] = useState<ReviewTab>("pending_review");
   const [reviewMaterials, setReviewMaterials] = useState<Material[]>([]);
   const [reviewLoading, setReviewLoading] = useState(true);
@@ -170,14 +156,13 @@ export default function AdminPage() {
     awaiting_course: 0,
     ocr_pending: 0,
   });
-
-  // Batch approve state
   const [batchApproving, setBatchApproving] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
     if (!firebaseUser) { router.push("/"); return; }
-    if (userProfile && userProfile.role !== "admin" && userProfile.role !== "chief_admin") router.push("/");
+    if (userProfile && userProfile.role !== "admin" && userProfile.role !== "chief_admin")
+      router.push("/");
   }, [firebaseUser, userProfile, authLoading, router]);
 
   useEffect(() => {
@@ -273,8 +258,8 @@ export default function AdminPage() {
       for (const dept of Object.keys(next)) {
         for (const year of Object.keys(next[dept])) {
           for (const sem of Object.keys(next[dept][Number(year)])) {
-            next[dept][Number(year)][Number(sem)] = next[dept][Number(year)][Number(sem)].map((c) =>
-              c.id === courseId ? { ...c, readiness } : c
+            next[dept][Number(year)][Number(sem)] = next[dept][Number(year)][Number(sem)].map(
+              (c) => c.id === courseId ? { ...c, readiness } : c
             );
           }
         }
@@ -283,7 +268,6 @@ export default function AdminPage() {
     });
   };
 
-  // ── Batch approve all high-confidence pending_review materials ──────────────
   const handleBatchApproveHighConfidence = async () => {
     const highConfidence = reviewMaterials.filter(
       (m) => m.confidence === "high" && m.suggestedCourseId
@@ -292,18 +276,8 @@ export default function AdminPage() {
     setBatchApproving(true);
     for (const material of highConfidence) {
       try {
-        await saveChunks(
-          material.id,
-          material.suggestedCourseId!,
-          material.category,
-          material.extractedText
-        );
-        await updateMaterialStatus(
-          material.id,
-          "approved",
-          material.suggestedCourseId!,
-          material.suggestedCourseName ?? ""
-        );
+        await saveChunks(material.id, material.suggestedCourseId!, material.category, material.extractedText);
+        await updateMaterialStatus(material.id, "approved", material.suggestedCourseId!, material.suggestedCourseName ?? "");
         removeMaterialFromList(material.id);
       } catch (err) {
         console.error(`Batch approve failed for ${material.id}:`, err);
@@ -312,7 +286,6 @@ export default function AdminPage() {
     setBatchApproving(false);
   };
 
-  // ── Resurrect all awaiting_course against all existing courses ──────────────
   const handleResurrectAll = async () => {
     for (const course of courses) {
       try {
@@ -321,20 +294,18 @@ export default function AdminPage() {
         console.error(`Resurrect failed for course ${course.id}:`, err);
       }
     }
-    // Refresh counts
     const awaiting = await getMaterialsByStatus("awaiting_course");
     setReviewCounts((prev) => ({ ...prev, awaiting_course: awaiting.length }));
-    if (activeReviewTab === "awaiting_course") {
-      setReviewMaterials(awaiting);
-    }
+    if (activeReviewTab === "awaiting_course") setReviewMaterials(awaiting);
   };
 
-  // ── Build contextual hints from live system state ───────────────────────────
+  // ── Build hints ───────────────────────────────────────────────────────────
   const hints: Hint[] = [];
 
-  const highConfidenceCount = activeReviewTab === "pending_review"
-    ? reviewMaterials.filter((m) => m.confidence === "high" && m.suggestedCourseId).length
-    : 0;
+  const highConfidenceCount =
+    activeReviewTab === "pending_review"
+      ? reviewMaterials.filter((m) => m.confidence === "high" && m.suggestedCourseId).length
+      : 0;
 
   if (highConfidenceCount > 1) {
     hints.push({
@@ -354,9 +325,9 @@ export default function AdminPage() {
     hints.push({
       id: "awaiting-course-reminder",
       severity: "action",
-      icon: "🟣",
+      icon: "⏳",
       title: `${reviewCounts.awaiting_course} material(s) waiting for a course to exist`,
-      description: "These were uploaded for courses not yet in the system. If you have just added new courses, use Resurrect All to activate them instantly.",
+      description: "If you have just added new courses, use Resurrect All to activate them instantly.",
       action: {
         label: "Resurrect all now →",
         onClick: handleResurrectAll,
@@ -368,7 +339,7 @@ export default function AdminPage() {
     hints.push({
       id: "resurrect-all-tip",
       severity: "tip",
-      icon: "✨",
+      icon: "🔁",
       title: "Resurrect All is available",
       description: "If you have recently added new courses to Firestore, click Resurrect All to automatically match and approve all waiting materials in one pass.",
       action: {
@@ -382,9 +353,9 @@ export default function AdminPage() {
     hints.push({
       id: "quarantined-reminder",
       severity: "warning",
-      icon: "🔴",
+      icon: "🔒",
       title: `${reviewCounts.quarantined} quarantined material(s) need manual assignment`,
-      description: "The classifier found no course signal in these files. Open the Quarantined tab to assign them manually — each has a course dropdown and category picker.",
+      description: "The classifier found no course signal in these files. Open the Quarantined tab to assign them manually.",
     });
   }
 
@@ -392,16 +363,37 @@ export default function AdminPage() {
     hints.push({
       id: "ocr-pending-info",
       severity: "info",
-      icon: "🔵",
+      icon: "🔍",
       title: `${reviewCounts.ocr_pending} scanned file(s) waiting for OCR`,
-      description: "These are image-based files with no extractable text yet. They will unlock automatically once Google Cloud Vision is activated. No action needed now.",
+      description: "These are image-based files with no extractable text yet. They will unlock automatically once Google Cloud Vision is activated.",
+    });
+  }
+
+  // Repeated email detection in quarantine
+  const quarantineEmails =
+    activeReviewTab === "quarantined"
+      ? reviewMaterials.map((m) => m.uploaderEmail).filter(Boolean)
+      : [];
+  const emailCounts = quarantineEmails.reduce<Record<string, number>>((acc, e) => {
+    acc[e] = (acc[e] || 0) + 1;
+    return acc;
+  }, {});
+  const suspiciousEmails = Object.entries(emailCounts).filter(([, count]) => count >= 3);
+  if (suspiciousEmails.length > 0) {
+    hints.push({
+      id: "repeated-email-quarantine",
+      severity: "warning",
+      icon: "⚠️",
+      title: "Repeated submissions from same email in quarantine",
+      description: `${suspiciousEmails.map(([e]) => e).join(", ")} — ${suspiciousEmails.length > 1 ? "these emails have" : "this email has"} 3+ quarantined submissions. Review carefully.`,
     });
   }
 
   const filteredCourses = search.trim()
-    ? courses.filter((c) =>
-      c.name?.toLowerCase().includes(search.toLowerCase()) ||
-      c.code?.toLowerCase().includes(search.toLowerCase())
+    ? courses.filter(
+      (c) =>
+        c.name?.toLowerCase().includes(search.toLowerCase()) ||
+        c.code?.toLowerCase().includes(search.toLowerCase())
     )
     : null;
 
@@ -416,20 +408,24 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] p-6">
       <div className="max-w-6xl mx-auto">
-
-        <h1 className="text-3xl font-bold text-[var(--color-gold)] mb-1" style={{ fontFamily: "Playfair Display, serif" }}>
+        <h1
+          className="text-3xl font-bold text-[var(--color-gold)] mb-1"
+          style={{ fontFamily: "Playfair Display, serif" }}
+        >
           Admin Panel
         </h1>
         <p className="text-sm text-[var(--color-text-secondary)] mb-6">
           Bigard Memorial Institute — Course Materials Management
         </p>
 
-        {/* ── Hint System ──────────────────────────────────────────────────── */}
         <AdminHints hints={hints} />
 
-        {/* ── Materials Review ─────────────────────────────────────────────── */}
+        {/* ── Materials Review ─────────────────────────────────────────── */}
         <section className="mb-12">
-          <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4" style={{ fontFamily: "Playfair Display, serif" }}>
+          <h2
+            className="text-xl font-semibold text-[var(--color-text-primary)] mb-4"
+            style={{ fontFamily: "Playfair Display, serif" }}
+          >
             Materials Review
           </h2>
 
@@ -456,7 +452,6 @@ export default function AdminPage() {
                 purple: "bg-purple-400/20 text-purple-400",
                 blue: "bg-blue-400/20 text-blue-400",
               };
-
               return (
                 <button
                   key={key}
@@ -481,9 +476,7 @@ export default function AdminPage() {
           ) : reviewMaterials.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-secondary)]">
               <p className="text-4xl mb-3">
-                {activeReviewTab === "pending_review" ? "🟡" :
-                  activeReviewTab === "quarantined" ? "🔴" :
-                    activeReviewTab === "awaiting_course" ? "🟣" : "🔵"}
+                {activeReviewTab === "pending_review" ? "📭" : activeReviewTab === "quarantined" ? "🔒" : activeReviewTab === "awaiting_course" ? "⏳" : "🔍"}
               </p>
               <p className="text-[var(--color-text-secondary)] text-sm">
                 {activeReviewTab === "pending_review" && "No materials awaiting review."}
@@ -496,12 +489,12 @@ export default function AdminPage() {
             <div className="space-y-4">
               {activeReviewTab === "awaiting_course" && (
                 <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-sm">
-                  🟣 These materials have a detected course name but that course does not exist in Firestore yet. They will resurrect automatically when the matching course is created. You can also manually assign them now.
+                  These materials have a detected course name but that course does not exist in Firestore yet. They will resurrect automatically when the matching course is created.
                 </div>
               )}
               {activeReviewTab === "ocr_pending" && (
                 <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm">
-                  🔵 These files are scanned images. Google Cloud OCR integration is not yet active. Once enabled, they will be re-processed and move to the appropriate tab automatically.
+                  These files are scanned images. Google Cloud OCR is not yet active. Once enabled, they will be re-processed automatically.
                 </div>
               )}
               {reviewMaterials.map((material) => (
@@ -517,18 +510,19 @@ export default function AdminPage() {
           )}
         </section>
 
-        {/* ── Course Browser ───────────────────────────────────────────────── */}
+        {/* ── Course Browser ───────────────────────────────────────────── */}
         <section>
-          <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4" style={{ fontFamily: "Playfair Display, serif" }}>
+          <h2
+            className="text-xl font-semibold text-[var(--color-text-primary)] mb-4"
+            style={{ fontFamily: "Playfair Display, serif" }}
+          >
             Course Browser
           </h2>
-
           <div className="flex items-center gap-4 mb-4 text-xs text-[var(--color-text-secondary)]">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Empty</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Partial</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Verified</span>
           </div>
-
           <input
             type="text"
             placeholder="Search courses by name or code..."
@@ -557,7 +551,6 @@ export default function AdminPage() {
                     <span className="text-lg font-semibold text-[var(--color-gold)] capitalize">{dept} Department</span>
                     <span className="text-[var(--color-text-secondary)]">{expandedKeys.has(dept) ? "▲" : "▼"}</span>
                   </button>
-
                   {expandedKeys.has(dept) && (
                     <div className="p-4 space-y-4">
                       {Object.keys(grouped[dept]).sort().map((year) => (
@@ -569,7 +562,6 @@ export default function AdminPage() {
                             <span className="font-medium text-[var(--color-text-primary)]">Year {year}</span>
                             <span className="text-[var(--color-text-secondary)] text-sm">{expandedKeys.has(`${dept}-${year}`) ? "▲" : "▼"}</span>
                           </button>
-
                           {expandedKeys.has(`${dept}-${year}`) && (
                             <div className="pl-4 space-y-3">
                               {Object.keys(grouped[dept][Number(year)]).sort().map((sem) => (
@@ -581,7 +573,6 @@ export default function AdminPage() {
                                     <span>Semester {sem}</span>
                                     <span>{expandedKeys.has(`${dept}-${year}-${sem}`) ? "▲" : "▼"}</span>
                                   </button>
-
                                   {expandedKeys.has(`${dept}-${year}-${sem}`) && (
                                     <div className="space-y-2 pl-2">
                                       {grouped[dept][Number(year)][Number(sem)].map((course) => (
@@ -609,6 +600,7 @@ export default function AdminPage() {
           course={selectedCourse}
           uploadedBy={firebaseUser?.uid ?? "unknown"}
           uploadedByRole={userProfile?.role ?? "admin"}
+          uploaderEmail={firebaseUser?.email ?? "unknown"}
           onClose={() => setSelectedCourse(null)}
           onReadinessChange={(readiness) => updateCourseReadiness(selectedCourse.id, readiness)}
         />
@@ -618,12 +610,8 @@ export default function AdminPage() {
 }
 
 // ─── Material Review Card ─────────────────────────────────────────────────────
-
 function MaterialReviewCard({
-  material,
-  courses,
-  tab,
-  onDismiss,
+  material, courses, tab, onDismiss,
 }: {
   material: Material;
   courses: Course[];
@@ -644,14 +632,8 @@ function MaterialReviewCard({
     const courseId = (isAwaitingCourse || tab === "quarantined") ? selectedCourseId : material.suggestedCourseId;
     const category = (isAwaitingCourse || tab === "quarantined") ? selectedCategory : material.category;
     const courseName = courses.find((c) => c.id === courseId)?.name ?? material.suggestedCourseName ?? "";
-
-    if (!courseId) {
-      setError("Please select a course before approving.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
+    if (!courseId) { setError("Please select a course before approving."); return; }
+    setLoading(true); setError(null);
     try {
       await saveChunks(material.id, courseId, category as never, material.extractedText);
       await updateMaterialStatus(material.id, "approved", courseId, courseName);
@@ -665,8 +647,7 @@ function MaterialReviewCard({
   };
 
   const handleReject = async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       await updateMaterialStatus(material.id, "rejected");
       onDismiss();
@@ -679,13 +660,9 @@ function MaterialReviewCard({
   };
 
   const handleResurrect = async () => {
-    if (!selectedCourseId) {
-      setError("Select a course to resurrect against.");
-      return;
-    }
+    if (!selectedCourseId) { setError("Select a course to resurrect against."); return; }
     const courseName = courses.find((c) => c.id === selectedCourseId)?.name ?? "";
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const result = await resurrectMaterialsForCourse(selectedCourseId, courseName);
       setResurrectResult(result);
@@ -703,11 +680,17 @@ function MaterialReviewCard({
 
   return (
     <div className="border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-secondary)] p-5 space-y-4">
-
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <p className="font-semibold text-[var(--color-text-primary)] text-sm break-all">{material.fileName}</p>
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Uploader email — always visible to admin */}
+          {material.uploaderEmail && (
+            <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
+              📧 {material.uploaderEmail}
+            </p>
+          )}
+          <div className="flex items-center gap-2 flex-wrap mt-1">
             <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
               {material.category}
             </span>
@@ -717,9 +700,11 @@ function MaterialReviewCard({
             {material.wordCount > 0 && (
               <span className="text-xs text-[var(--color-text-secondary)]">{material.wordCount.toLocaleString()} words</span>
             )}
+            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+              {material.uploadedByRole}
+            </span>
           </div>
         </div>
-
         {!isReadOnly && (
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
@@ -742,6 +727,7 @@ function MaterialReviewCard({
         )}
       </div>
 
+      {/* Course info */}
       {tab === "pending_review" && (
         <div className="flex items-center gap-2 text-xs">
           <span className="text-[var(--color-text-secondary)]">Suggested course:</span>
@@ -753,17 +739,16 @@ function MaterialReviewCard({
         <div className="space-y-3 p-3 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
           {tab === "awaiting_course" && material.detectedCourseName && (
             <div className="flex items-center gap-2 text-xs mb-1">
-              <span className="text-purple-400 font-medium">🔍 Detected course name:</span>
+              <span className="text-purple-400 font-medium">Detected course name:</span>
               <span className="text-[var(--color-text-primary)] font-semibold">{material.detectedCourseName}</span>
             </div>
           )}
           {tab === "quarantined" && (
-            <p className="text-xs text-red-400 font-medium">⚠️ No course signal detected. Assign manually:</p>
+            <p className="text-xs text-red-400 font-medium">No course signal detected. Assign manually:</p>
           )}
           {tab === "awaiting_course" && (
             <p className="text-xs text-purple-400 font-medium">Assign to an existing course now, or wait for the course to be created:</p>
           )}
-
           <div className="space-y-2">
             <label className="text-xs text-[var(--color-text-secondary)]">Course</label>
             <select
@@ -777,7 +762,6 @@ function MaterialReviewCard({
               ))}
             </select>
           </div>
-
           <div className="space-y-2">
             <label className="text-xs text-[var(--color-text-secondary)]">Category</label>
             <select
@@ -792,7 +776,6 @@ function MaterialReviewCard({
               <option value="other">Other</option>
             </select>
           </div>
-
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleApprove}
@@ -811,11 +794,10 @@ function MaterialReviewCard({
               </button>
             )}
           </div>
-
           {resurrectResult && (
             <p className="text-xs text-purple-300 mt-1">
-              ✅ {resurrectResult.resurrected} material(s) resurrected.
-              {resurrectResult.failed > 0 && ` ⚠️ ${resurrectResult.failed} failed.`}
+              {resurrectResult.resurrected} material(s) resurrected.
+              {resurrectResult.failed > 0 && ` ${resurrectResult.failed} failed.`}
             </p>
           )}
         </div>
@@ -847,7 +829,6 @@ function MaterialReviewCard({
 }
 
 // ─── Course Row ───────────────────────────────────────────────────────────────
-
 function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg-secondary)] rounded-lg border border-[var(--color-border)] hover:border-[var(--color-gold)] transition-colors">
@@ -869,11 +850,13 @@ function CourseRow({ course, onUpload }: { course: Course; onUpload: () => void 
 }
 
 // ─── Upload Modal ─────────────────────────────────────────────────────────────
-
-function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessChange }: {
+function UploadModal({
+  course, uploadedBy, uploadedByRole, uploaderEmail, onClose, onReadinessChange,
+}: {
   course: Course;
   uploadedBy: string;
   uploadedByRole: string;
+  uploaderEmail: string;
   onClose: () => void;
   onReadinessChange: (readiness: "empty" | "partial" | "verified") => void;
 }) {
@@ -942,27 +925,17 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
     const path = `materials/${course.department}/year${course.year}/sem${course.semester}/${course.id}/${category}/${file.name}`;
     const storageRef = ref(storage, path);
     const task = uploadBytesResumable(storageRef, file);
-
-    setFileStatuses((p) => ({
-      ...p,
-      [category]: { ...(p[category] || {}), [file.name]: "uploading" },
-    }));
+    setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "uploading" } }));
 
     return new Promise<void>((resolve) => {
       task.on(
         "state_changed",
         (snap) => {
           const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-          setFileProgresses((p) => ({
-            ...p,
-            [category]: { ...(p[category] || {}), [file.name]: pct },
-          }));
+          setFileProgresses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: pct } }));
         },
         () => {
-          setFileStatuses((p) => ({
-            ...p,
-            [category]: { ...(p[category] || {}), [file.name]: "error" },
-          }));
+          setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "error" } }));
           resolve();
         },
         async () => {
@@ -975,14 +948,8 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
             setReadiness("partial");
             onReadinessChange("partial");
           }
-          setFileStatuses((p) => ({
-            ...p,
-            [category]: { ...(p[category] || {}), [file.name]: "done" },
-          }));
-          setExistingFiles((p) => ({
-            ...p,
-            [category]: [...(p[category] || []), { name: file.name, url }],
-          }));
+          setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "done" } }));
+          setExistingFiles((p) => ({ ...p, [category]: [...(p[category] || []), { name: file.name, url }] }));
           try {
             setProcessingStatus((p) => ({ ...p, [file.name]: "processing" }));
             const formData = new FormData();
@@ -990,6 +957,7 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
             formData.append("fileUrl", url);
             formData.append("uploadedBy", uploadedBy);
             formData.append("uploadedByRole", uploadedByRole);
+            formData.append("uploaderEmail", uploaderEmail);
             const res = await fetch("/api/process-upload", { method: "POST", body: formData });
             if (res.ok) {
               const result = await res.json();
@@ -1050,10 +1018,10 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
     switch (status) {
       case "processing": return "⏳ Processing...";
       case "pending_review": return "🟡 Pending review";
-      case "quarantined": return "🔴 Needs manual assign";
-      case "awaiting_course": return "🟣 Awaiting course creation";
-      case "ocr_pending": return "🔵 OCR pending";
-      case "processing_error": return "⚠️ Processing failed";
+      case "quarantined": return "🔒 Needs manual assign";
+      case "awaiting_course": return "⏳ Awaiting course creation";
+      case "ocr_pending": return "🔍 OCR pending";
+      case "processing_error": return "❌ Processing failed";
       default: return "";
     }
   };
@@ -1081,9 +1049,10 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
               onClick={() => handleSetReadiness(r)}
               disabled={savingReadiness}
               className={`text-xs px-3 py-1 rounded-lg font-semibold transition-all ${readiness === r
-                ? r === "verified" ? "bg-green-500 text-white" :
-                  r === "partial" ? "bg-yellow-400 text-black" : "bg-red-500 text-white"
-                : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:border-[var(--color-gold)] border border-[var(--color-border)]"
+                  ? r === "verified" ? "bg-green-500 text-white"
+                    : r === "partial" ? "bg-yellow-400 text-black"
+                      : "bg-red-500 text-white"
+                  : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:border-[var(--color-gold)] border border-[var(--color-border)]"
                 }`}
             >
               {r === "empty" ? "🔴 Empty" : r === "partial" ? "🟡 Partial" : "🟢 Verified"}
@@ -1148,7 +1117,11 @@ function UploadModal({ course, uploadedBy, uploadedByRole, onClose, onReadinessC
                         const procStatus = processingStatus[file.name];
                         return (
                           <div key={file.name} className="flex items-center gap-2 flex-wrap">
-                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400" : status === "error" ? "bg-red-400" : status === "uploading" ? "bg-yellow-400" : "bg-[var(--color-border)]"}`} />
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status === "done" ? "bg-green-400"
+                                : status === "error" ? "bg-red-400"
+                                  : status === "uploading" ? "bg-yellow-400"
+                                    : "bg-[var(--color-border)]"
+                              }`} />
                             <span className="text-xs text-[var(--color-text-primary)] max-w-[180px] truncate">{file.name}</span>
                             {status === "uploading" && (
                               <div className="flex-1 bg-[var(--color-border)] rounded-full h-1.5 min-w-[60px]">
