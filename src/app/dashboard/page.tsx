@@ -7,8 +7,8 @@ import { getFilteredCourses } from '@/lib/firestore/courses';
 import { Course, Department } from '@/lib/types';
 
 const DEPARTMENTS: { id: Department; label: string }[] = [
-  { id: 'Theology', label: '✝️ Theology' },
-  { id: 'Philosophy', label: '🏛️ Philosophy' },
+  { id: 'theology', label: '✝️ Theology' },
+  { id: 'philosophy', label: '🏛️ Philosophy' },
 ];
 
 const SEMESTERS = [
@@ -21,7 +21,7 @@ export default function DashboardPage() {
   const router = useRouter();
 
   const userYear = userProfile?.year ?? 1;
-  const userDepartment = (userProfile?.department ?? 'Theology') as Department;
+  const userDepartment = (userProfile?.department ?? 'theology') as Department;
 
   const [activeDept, setActiveDept] = useState<Department>(userDepartment);
   const [activeYear, setActiveYear] = useState<number>(userYear);
@@ -29,7 +29,6 @@ export default function DashboardPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Max year a student can browse = their own registered year
   const accessibleYears = Array.from({ length: userYear }, (_, i) => i + 1);
 
   useEffect(() => {
@@ -40,7 +39,7 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [activeDept, activeYear, activeSemester]);
 
-  // If user switches to a dept that shows a year above their own, clamp it
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (activeYear > userYear) setActiveYear(userYear);
   }, [activeDept]);
@@ -65,10 +64,7 @@ export default function DashboardPage() {
             key={d.id}
             onClick={() => setActiveDept(d.id)}
             style={{
-              padding: '5px 14px',
-              borderRadius: '10px',
-              fontSize: '0.78rem',
-              fontWeight: 500,
+              padding: '5px 14px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 500,
               border: '1px solid var(--border)',
               background: activeDept === d.id ? 'var(--gold)' : 'var(--navy-card)',
               color: activeDept === d.id ? 'var(--navy)' : 'var(--text-secondary)',
@@ -87,10 +83,7 @@ export default function DashboardPage() {
             key={y}
             onClick={() => setActiveYear(y)}
             style={{
-              padding: '4px 12px',
-              borderRadius: '8px',
-              fontSize: '0.75rem',
-              fontWeight: 500,
+              padding: '4px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
               border: '1px solid var(--border)',
               background: activeYear === y ? 'var(--gold)' : 'var(--navy-card)',
               color: activeYear === y ? 'var(--navy)' : 'var(--text-secondary)',
@@ -109,10 +102,7 @@ export default function DashboardPage() {
             key={s.id}
             onClick={() => setActiveSemester(s.id)}
             style={{
-              padding: '4px 12px',
-              borderRadius: '8px',
-              fontSize: '0.75rem',
-              fontWeight: 500,
+              padding: '4px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
               border: '1px solid var(--border)',
               background: activeSemester === s.id ? 'var(--gold)' : 'var(--navy-card)',
               color: activeSemester === s.id ? 'var(--navy)' : 'var(--text-secondary)',
@@ -138,13 +128,9 @@ export default function DashboardPage() {
               key={course.id}
               onClick={() => router.push(`/dashboard/course/${course.id}`)}
               style={{
-                textAlign: 'left',
-                padding: '14px',
-                borderRadius: '14px',
-                border: '1px solid var(--border)',
-                background: 'var(--navy-card)',
-                cursor: 'pointer',
-                transition: 'border-color 0.2s',
+                textAlign: 'left', padding: '14px', borderRadius: '14px',
+                border: '1px solid var(--border)', background: 'var(--navy-card)',
+                cursor: 'pointer', transition: 'border-color 0.2s',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--gold)')}
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
