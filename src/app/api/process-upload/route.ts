@@ -17,10 +17,11 @@ export async function POST(req: NextRequest) {
         const fileUrl = formData.get("fileUrl") as string | null;
         const uploadedBy = formData.get("uploadedBy") as string | null;
         const uploadedByRole = formData.get("uploadedByRole") as string | null;
+        const uploaderEmail = formData.get("uploaderEmail") as string | null;
 
-        if (!file || !fileUrl || !uploadedBy || !uploadedByRole) {
+        if (!file || !fileUrl || !uploadedBy || !uploadedByRole || !uploaderEmail) {
             return NextResponse.json(
-                { error: "Missing required fields: file, fileUrl, uploadedBy, uploadedByRole" },
+                { error: "Missing required fields: file, fileUrl, uploadedBy, uploadedByRole, uploaderEmail" },
                 { status: 400 }
             );
         }
@@ -50,20 +51,6 @@ export async function POST(req: NextRequest) {
         }
 
         // ── 5. Determine status ─────────────────────────────────────────────────
-        //
-        // ocr_pending     → scanned file, needs Google Cloud OCR
-        //                   GOOGLE_CLOUD_OCR_SLOT: after OCR, re-run classifyMaterial
-        //                   then call resurrectMaterialsForCourse if course still missing
-        //
-        // awaiting_course → text extracted, classifier detected a course name signal
-        //                   (detectedCourseName is set) but no matching Firestore course
-        //                   exists yet. Will be resurrected when that course is created.
-        //
-        // quarantined     → text extracted but classifier found no course signal at all —
-        //                   no courseId, no detectedCourseName. Needs full manual assign.
-        //
-        // pending_review  → text extracted + Firestore course matched. Admin confirms.
-
         let status: MaterialStatus = "pending_review";
 
         if (extraction.method === "ocr_pending") {
@@ -83,6 +70,7 @@ export async function POST(req: NextRequest) {
             mimeType,
             uploadedBy,
             uploadedByRole,
+            uploaderEmail,
             extractedText: extraction.text,
             wordCount: extraction.wordCount,
             pageCount: extraction.pageCount,
