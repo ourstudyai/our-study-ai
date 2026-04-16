@@ -7,7 +7,13 @@ interface SettingsContextType {
     update: (patch: Partial<AppSettings>) => void;
 }
 const SettingsContext = createContext<SettingsContextType>({
-    settings: { theme: 'sacred_academia', uiFontSize: 20, aiFontSize: 18 },
+    settings: {
+        theme: 'sacred_academia',
+        uiFontSize: 20,
+        aiFontSize: 18,
+        chatInputBottom: 24,
+        settingsBtnTop: 167,
+    },
     update: () => { },
 });
 export function useSettings() {
