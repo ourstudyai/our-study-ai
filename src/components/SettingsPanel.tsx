@@ -52,7 +52,9 @@ export default function SettingsPanel() {
                         borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '360px',
                         boxShadow: 'var(--shadow-float)',
                         animation: 'slide-up 0.25s ease forwards',
+                        maxHeight: '90vh', overflowY: 'auto',
                     }}>
+
                         {/* Header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                             <h2 style={{ fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '1.1rem', fontWeight: 700 }}>
@@ -64,10 +66,8 @@ export default function SettingsPanel() {
                             >✕</button>
                         </div>
 
-                        {/* Theme */}
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>
-                            Theme
-                        </p>
+                        {/* ── Theme ── */}
+                        <SectionLabel>Theme</SectionLabel>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
                             {THEMES.map(t => (
                                 <button
@@ -90,31 +90,43 @@ export default function SettingsPanel() {
                                             {t.description}
                                         </div>
                                     </div>
-                                    {settings.theme === t.id && (
-                                        <span style={{ color: 'var(--gold)', fontSize: '1rem' }}>✓</span>
-                                    )}
+                                    {settings.theme === t.id && <span style={{ color: 'var(--gold)', fontSize: '1rem' }}>✓</span>}
                                 </button>
                             ))}
                         </div>
 
-                        {/* UI Font Size */}
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '8px' }}>
-                            Interface Font Size
+                        {/* ── Interface Font Size ── */}
+                        <SectionLabel>Interface Font Size</SectionLabel>
+                        <FontSizeControl value={settings.uiFontSize} onChange={v => update({ uiFontSize: v })} label="UI" />
+
+                        {/* ── AI Font Size ── */}
+                        <SectionLabel top={20}>AI Response Font Size</SectionLabel>
+                        <FontSizeControl value={settings.aiFontSize} onChange={v => update({ aiFontSize: v })} label="AI" />
+
+                        {/* ── Chat Input Position ── */}
+                        <SectionLabel top={20}>Chat Input Position</SectionLabel>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '8px' }}>
+                            Distance from bottom of screen — drag up to raise the input box
                         </p>
-                        <FontSizeControl
-                            value={settings.uiFontSize}
-                            onChange={v => update({ uiFontSize: v })}
-                            label="UI"
+                        <PositionSlider
+                            value={settings.chatInputBottom}
+                            min={16}
+                            max={420}
+                            onChange={v => update({ chatInputBottom: v })}
+                            unit="px from bottom"
                         />
 
-                        {/* AI Font Size */}
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', margin: '20px 0 8px' }}>
-                            AI Response Font Size
+                        {/* ── Settings Button Position ── */}
+                        <SectionLabel top={20}>Settings Button Position</SectionLabel>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '8px' }}>
+                            Distance from top of screen
                         </p>
-                        <FontSizeControl
-                            value={settings.aiFontSize}
-                            onChange={v => update({ aiFontSize: v })}
-                            label="AI"
+                        <PositionSlider
+                            value={settings.settingsBtnTop}
+                            min={60}
+                            max={600}
+                            onChange={v => update({ settingsBtnTop: v })}
+                            unit="px from top"
                         />
 
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textAlign: 'center', marginTop: '20px' }}>
@@ -124,6 +136,20 @@ export default function SettingsPanel() {
                 </div>
             )}
         </>
+    );
+}
+
+/* ── Shared sub-components ── */
+
+function SectionLabel({ children, top = 0 }: { children: React.ReactNode; top?: number }) {
+    return (
+        <p style={{
+            color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 600,
+            letterSpacing: '0.08em', textTransform: 'uppercase',
+            marginTop: top, marginBottom: '8px',
+        }}>
+            {children}
+        </p>
     );
 }
 
@@ -152,9 +178,7 @@ function FontSizeControl({ value, onChange, label }: { value: number; onChange: 
                         color: value === s ? 'var(--gold-light)' : 'var(--text-muted)',
                         cursor: 'pointer',
                     }}
-                >
-                    {s}
-                </button>
+                >{s}</button>
             ))}
             <button
                 onClick={() => { const i = sizes.indexOf(value); if (i < sizes.length - 1) onChange(sizes[i + 1]); }}
@@ -167,6 +191,32 @@ function FontSizeControl({ value, onChange, label }: { value: number; onChange: 
                 }}
             >+</button>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '4px' }}>{value}px</span>
+        </div>
+    );
+}
+
+function PositionSlider({ value, min, max, onChange, unit }: {
+    value: number; min: number; max: number;
+    onChange: (v: number) => void; unit: string;
+}) {
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+                type="range"
+                min={min}
+                max={max}
+                value={value}
+                onChange={e => onChange(Number(e.target.value))}
+                style={{
+                    flex: 1, accentColor: 'var(--gold)', cursor: 'pointer', height: '4px',
+                }}
+            />
+            <span style={{
+                fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 600,
+                minWidth: '72px', textAlign: 'right',
+            }}>
+                {value}px
+            </span>
         </div>
     );
 }

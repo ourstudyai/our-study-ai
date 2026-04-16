@@ -1,3 +1,4 @@
+// src/app/dashboard/course/[courseId]/page.tsx
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -7,7 +8,11 @@ import { getCourseById } from '@/lib/firestore/courses';
 import PastQuestionsPanel from '@/components/course/PastQuestionsPanel';
 import AOCPanel from '@/components/course/AOCPanel';
 import StudyMemoryPanel from '@/components/course/StudyMemoryPanel';
+import SettingsPanel from '@/components/SettingsPanel';
 import ReactMarkdown from 'react-markdown';
+import { useSettings } from '@/components/AppShell';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 
 type StudyMode = 'plain_explainer' | 'practice_questions' | 'exam_preparation' | 'progress_check' | 'research' | 'readiness_assessment';
 
@@ -37,6 +42,7 @@ const PLACEHOLDERS: Record<string, string> = {
   readiness_assessment: 'Type "Start assessment" to begin...',
 };
 
+/* ── Markdown renderer ──────────────────────────────────────────────────── */
 const MarkdownRenderer = ({ content }: { content: string }) => (
   <ReactMarkdown
     components={{
@@ -56,18 +62,17 @@ const MarkdownRenderer = ({ content }: { content: string }) => (
   </ReactMarkdown>
 );
 
-// ── Draggable floating settings button ──────────────────────────────────────
-function DraggableSettingsButton({ onClick }: { onClick: () => void }) {
+/* ── Draggable floating settings button ─────────────────────────────────── */
+function DraggableSettingsButton({ onClick, topOverride }: { onClick: () => void; topOverride: number }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
   const didDrag = useRef(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Initial position: above the Past Questions / AOC / Memory panel
   useEffect(() => {
-    setPos({ x: window.innerWidth - 310, y: 167 });
-  }, []);
+    setPos({ x: window.innerWidth - 310, y: topOverride });
+  }, [topOverride]);
 
   const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 
@@ -84,23 +89,14 @@ function DraggableSettingsButton({ onClick }: { onClick: () => void }) {
     const move = (e: MouseEvent) => {
       if (!dragging.current) return;
       didDrag.current = true;
-      setPos({
-        x: clamp(e.clientX - offset.current.x, 0, window.innerWidth - 56),
-        y: clamp(e.clientY - offset.current.y, 0, window.innerHeight - 56),
-      });
+      setPos({ x: clamp(e.clientX - offset.current.x, 0, window.innerWidth - 56), y: clamp(e.clientY - offset.current.y, 0, window.innerHeight - 56) });
     };
-    const up = () => {
-      if (holdTimer.current) clearTimeout(holdTimer.current);
-      dragging.current = false;
-    };
+    const up = () => { if (holdTimer.current) clearTimeout(holdTimer.current); dragging.current = false; };
     const tmove = (e: TouchEvent) => {
       if (!dragging.current) return;
       didDrag.current = true;
       const t = e.touches[0];
-      setPos({
-        x: clamp(t.clientX - offset.current.x, 0, window.innerWidth - 56),
-        y: clamp(t.clientY - offset.current.y, 0, window.innerHeight - 56),
-      });
+      setPos({ x: clamp(t.clientX - offset.current.x, 0, window.innerWidth - 56), y: clamp(t.clientY - offset.current.y, 0, window.innerHeight - 56) });
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
@@ -118,33 +114,16 @@ function DraggableSettingsButton({ onClick }: { onClick: () => void }) {
 
   return (
     <button
-      onMouseDown={(e) => startHold(e.clientX, e.clientY)}
-      onTouchStart={(e) => {
-        const t = e.touches[0];
-        startHold(t.clientX, t.clientY);
-      }}
-      onClick={() => {
-        if (!didDrag.current) onClick();
-        didDrag.current = false;
-      }}
+      onMouseDown={e => startHold(e.clientX, e.clientY)}
+      onTouchStart={e => { const t = e.touches[0]; startHold(t.clientX, t.clientY); }}
+      onClick={() => { if (!didDrag.current) onClick(); didDrag.current = false; }}
       style={{
-        position: 'fixed',
-        left: pos.x,
-        top: pos.y,
-        zIndex: 9999,
-        cursor: 'grab',
-        touchAction: 'none',
-        userSelect: 'none',
-        width: '44px',
-        height: '44px',
-        borderRadius: '50%',
-        background: 'var(--navy-card)',
-        border: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '1.2rem',
-        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+        position: 'fixed', left: pos.x, top: pos.y, zIndex: 9999,
+        cursor: 'grab', touchAction: 'none', userSelect: 'none',
+        width: '44px', height: '44px', borderRadius: '50%',
+        background: 'var(--navy-card)', border: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '1.2rem', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
         transition: 'box-shadow 0.2s',
       }}
       title="Settings (hold to move)"
@@ -154,10 +133,121 @@ function DraggableSettingsButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+/* ── Per-message action bar ─────────────────────────────────────────────── */
+interface MessageActionsProps {
+  message: ChatMessage;
+  messageIndex: number;
+  courseId: string;
+  userId: string;
+  onRegenerate: () => void;
+}
+
+function MessageActions({ message, messageIndex, courseId, userId, onRegenerate }: MessageActionsProps) {
+  const [liked, setLiked] = useState(false);
+  const [disliked, setDisliked] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const btnStyle = (active = false): React.CSSProperties => ({
+    background: 'none',
+    border: `1px solid ${active ? 'var(--gold)' : 'var(--border)'}`,
+    borderRadius: '6px',
+    padding: '4px 8px',
+    cursor: 'pointer',
+    color: active ? 'var(--gold)' : 'var(--text-muted)',
+    fontSize: '0.78rem',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    transition: 'all 0.15s ease',
+  });
+
+  const sendFeedback = async (type: 'like' | 'dislike') => {
+    try {
+      await addDoc(collection(db, 'feedback'), {
+        type,
+        messageContent: message.content,
+        courseId,
+        userId,
+        timestamp: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('Feedback write failed:', err);
+    }
+  };
+
+  const handleLike = async () => {
+    if (liked) return;
+    setLiked(true);
+    setDisliked(false);
+    await sendFeedback('like');
+  };
+
+  const handleDislike = async () => {
+    if (disliked) return;
+    setDisliked(true);
+    setLiked(false);
+    await sendFeedback('dislike');
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ text: message.content });
+      } catch { /* user cancelled */ }
+    } else {
+      await handleCopy(); // fallback
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap', paddingLeft: '4px' }}>
+      {/* Like */}
+      <button style={btnStyle(liked)} onClick={handleLike} title="Helpful">
+        <i className="fa-regular fa-thumbs-up" />
+      </button>
+
+      {/* Dislike */}
+      <button style={btnStyle(disliked)} onClick={handleDislike} title="Not helpful">
+        <i className="fa-regular fa-thumbs-down" />
+      </button>
+
+      {/* Copy */}
+      <button style={btnStyle(copied)} onClick={handleCopy} title="Copy to clipboard">
+        <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'} />
+        <span>{copied ? 'Copied' : 'Copy'}</span>
+      </button>
+
+      {/* Regenerate */}
+      <button style={btnStyle()} onClick={onRegenerate} title="Regenerate response">
+        <i className="fa-solid fa-rotate-right" />
+        <span>Retry</span>
+      </button>
+
+      {/* Share */}
+      <button style={btnStyle()} onClick={handleShare} title="Share this response">
+        <i className="fa-solid fa-share-from-square" />
+      </button>
+    </div>
+  );
+}
+
+/* ── Main page ──────────────────────────────────────────────────────────── */
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const { firebaseUser } = useAuth();
+  const { settings } = useSettings();
   const router = useRouter();
+
   const [course, setCourse] = useState<any>(null);
   const [activeMode, setActiveMode] = useState<StudyMode>('plain_explainer');
   const [activeSideTab, setActiveSideTab] = useState<SideTab>('past-questions');
@@ -172,19 +262,26 @@ export default function CoursePage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  /* Inject Font Awesome */
+  useEffect(() => {
+    const id = 'fa-cdn';
+    if (document.getElementById(id)) return;
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css';
+    document.head.appendChild(link);
+  }, []);
+
   useEffect(() => {
     if (!firebaseUser || !courseId) return;
-    getCourseById(courseId).then((data) => {
-      setCourse(data);
-      setLoading(false);
-    });
+    getCourseById(courseId).then(data => { setCourse(data); setLoading(false); });
   }, [firebaseUser, courseId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, streamingMessage]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -192,6 +289,7 @@ export default function CoursePage() {
     }
   }, [input]);
 
+  /* ── Send / stream ── */
   const sendMessage = async (text?: string) => {
     const message = text || input;
     if (!message.trim() || isStreaming) return;
@@ -217,8 +315,7 @@ export default function CoursePage() {
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
-      let fullResponse = '';
+      let buffer = '', fullResponse = '';
 
       while (reader) {
         const { done, value } = await reader.read();
@@ -249,12 +346,24 @@ export default function CoursePage() {
     }
   };
 
+  /* ── Regenerate: resend the last user message, replace last AI message ── */
+  const regenerate = (aiMessageIndex: number) => {
+    // Find the user message that preceded this AI response
+    let lastUserMsg = '';
+    for (let i = aiMessageIndex - 1; i >= 0; i--) {
+      if (chatHistory[i].role === 'user') { lastUserMsg = chatHistory[i].content; break; }
+    }
+    if (!lastUserMsg) return;
+    // Strip the AI message being replaced and everything after it
+    setChatHistory(prev => prev.slice(0, aiMessageIndex));
+    sendMessage(lastUserMsg);
+  };
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
       <p style={{ color: 'var(--gold)' }}>Loading course...</p>
     </div>
   );
-
   if (!course) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
       <p style={{ color: 'var(--text-muted)' }}>Course not found.</p>
@@ -274,21 +383,11 @@ export default function CoursePage() {
 
       {/* ── TOP BAR ── */}
       <div className="flex-shrink-0 border-b" style={{ borderColor: 'var(--border)' }}>
-
-        {/* Row 1: back + course name + panel toggle */}
         <div className="flex items-center gap-2 px-3 py-2">
-          <button
-            onClick={() => router.back()}
-            className="flex-shrink-0 text-sm px-2 py-1 rounded"
-            style={{ color: 'var(--gold)' }}
-          >
+          <button onClick={() => router.back()} className="flex-shrink-0 text-sm px-2 py-1 rounded" style={{ color: 'var(--gold)' }}>
             ← Back
           </button>
-          <h1
-            className="flex-1 text-sm font-bold truncate"
-            style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }}
-            title={course.name}
-          >
+          <h1 className="flex-1 text-sm font-bold truncate" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }} title={course.name}>
             {course.name}
           </h1>
           <button
@@ -299,13 +398,8 @@ export default function CoursePage() {
             {sidebarOpen ? '▶' : '◀'} Panel
           </button>
         </div>
-
-        {/* Row 2: mode selector */}
-        <div
-          className="flex gap-1.5 px-3 pb-2"
-          style={{ overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
-        >
-          {MODES.map((mode) => (
+        <div className="flex gap-1.5 px-3 pb-2" style={{ overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+          {MODES.map(mode => (
             <button
               key={mode.id}
               onClick={() => setActiveMode(mode.id)}
@@ -314,12 +408,10 @@ export default function CoursePage() {
               style={{
                 background: activeMode === mode.id ? 'var(--gold)' : 'var(--navy-card)',
                 color: activeMode === mode.id ? 'var(--navy)' : 'var(--text-secondary)',
-                border: '1px solid var(--border)',
-                whiteSpace: 'nowrap',
+                border: '1px solid var(--border)', whiteSpace: 'nowrap',
               }}
             >
-              <span>{mode.icon}</span>
-              <span>{mode.label}</span>
+              <span>{mode.icon}</span><span>{mode.label}</span>
             </button>
           ))}
         </div>
@@ -337,45 +429,53 @@ export default function CoursePage() {
             {isEmpty && (
               <div style={{ height: '32vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div className="text-center max-w-sm px-4">
-                  <p style={{ fontSize: '2.4rem', marginBottom: '8px' }}>
-                    {MODES.find(m => m.id === activeMode)?.icon}
-                  </p>
-                  <p className="font-semibold mb-1" style={{ color: 'var(--gold)', fontSize: '1rem' }}>
-                    {MODES.find(m => m.id === activeMode)?.label}
-                  </p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                    {MODES.find(m => m.id === activeMode)?.description}
-                  </p>
+                  <p style={{ fontSize: '2.4rem', marginBottom: '8px' }}>{MODES.find(m => m.id === activeMode)?.icon}</p>
+                  <p className="font-semibold mb-1" style={{ color: 'var(--gold)', fontSize: '1rem' }}>{MODES.find(m => m.id === activeMode)?.label}</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{MODES.find(m => m.id === activeMode)?.description}</p>
                 </div>
               </div>
             )}
 
             {chatHistory.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className="rounded-2xl px-4 py-2.5"
-                  style={{
-                    maxWidth: '85%',
-                    fontSize: 'var(--ai-font-size, 18px)',
-                    background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy-card)',
-                    color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
-                    border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
-                  }}
-                >
-                  {msg.role === 'assistant' ? <MarkdownRenderer content={msg.content} /> : msg.content}
+              <div key={i}>
+                <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className="rounded-2xl px-4 py-2.5"
+                    style={{
+                      maxWidth: '85%',
+                      fontSize: 'var(--ai-font-size, 18px)',
+                      background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy-card)',
+                      color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
+                      border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
+                    }}
+                  >
+                    {msg.role === 'assistant' ? <MarkdownRenderer content={msg.content} /> : msg.content}
+                  </div>
                 </div>
+
+                {/* Action buttons — only on completed assistant messages */}
+                {msg.role === 'assistant' && (
+                  <div className="flex justify-start">
+                    <MessageActions
+                      message={msg}
+                      messageIndex={i}
+                      courseId={courseId}
+                      userId={firebaseUser?.uid ?? ''}
+                      onRegenerate={() => regenerate(i)}
+                    />
+                  </div>
+                )}
               </div>
             ))}
 
+            {/* Streaming bubble — no actions yet, still generating */}
             {streamingMessage && (
               <div className="flex justify-start">
                 <div
                   className="rounded-2xl px-4 py-2.5"
                   style={{
-                    maxWidth: '85%',
-                    fontSize: 'var(--ai-font-size, 18px)',
-                    background: 'var(--navy-card)',
-                    color: 'var(--text-primary)',
+                    maxWidth: '85%', fontSize: 'var(--ai-font-size, 18px)',
+                    background: 'var(--navy-card)', color: 'var(--text-primary)',
                     border: '1px solid var(--border)',
                   }}
                 >
@@ -388,12 +488,11 @@ export default function CoursePage() {
             <div ref={bottomRef} />
           </div>
 
-          {/* ── INPUT — pinned at bottom ── */}
+          {/* ── INPUT — position driven by settings ── */}
           <div
             className="flex-shrink-0 px-3 md:px-5 py-2 border-t"
             style={{ borderColor: 'var(--border)' }}
           >
-            {/* Mobile only: drawer trigger */}
             <div className="flex md:hidden justify-end mb-1.5">
               <button
                 onClick={() => setDrawerOpen(true)}
@@ -403,29 +502,19 @@ export default function CoursePage() {
                 📚 Past Q · AOC · Memory
               </button>
             </div>
-
             <div className="flex gap-2 items-end">
               <textarea
                 ref={textareaRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                  }
-                }}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder={PLACEHOLDERS[activeMode]}
                 rows={1}
                 className="flex-1 rounded-xl p-2.5 resize-none"
                 style={{
-                  background: 'var(--navy-card)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-primary)',
-                  fontSize: 'var(--ui-font-size, 20px)',
-                  minWidth: 0,
-                  minHeight: '48px',
-                  maxHeight: '140px',
+                  background: 'var(--navy-card)', border: '1px solid var(--border)',
+                  color: 'var(--text-primary)', fontSize: 'var(--ui-font-size, 20px)',
+                  minWidth: 0, minHeight: '48px', maxHeight: '140px',
                 }}
               />
               <button
@@ -433,8 +522,7 @@ export default function CoursePage() {
                 disabled={isStreaming || !input.trim()}
                 className="flex-shrink-0 px-4 py-2.5 rounded-xl font-medium"
                 style={{
-                  background: 'var(--gold)',
-                  color: 'var(--navy)',
+                  background: 'var(--gold)', color: 'var(--navy)',
                   fontSize: 'var(--ui-font-size, 20px)',
                   opacity: isStreaming || !input.trim() ? 0.5 : 1,
                 }}
@@ -447,12 +535,9 @@ export default function CoursePage() {
 
         {/* ── DESKTOP SIDE PANEL ── */}
         {sidebarOpen && (
-          <div
-            className="hidden md:flex flex-col flex-shrink-0 border-l"
-            style={{ width: '272px', borderColor: 'var(--border)', background: 'var(--navy-card)' }}
-          >
+          <div className="hidden md:flex flex-col flex-shrink-0 border-l" style={{ width: '272px', borderColor: 'var(--border)', background: 'var(--navy-card)' }}>
             <div className="flex border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
-              {sideTabs.map((tab) => (
+              {sideTabs.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveSideTab(tab.id)}
@@ -468,8 +553,8 @@ export default function CoursePage() {
               ))}
             </div>
             <div className="flex-1 overflow-y-auto p-3">
-              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={(text) => sendMessage(text)} />}
-              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={(text) => sendMessage(text)} />}
+              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
+              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
               {activeSideTab === 'memory' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} />}
             </div>
           </div>
@@ -481,15 +566,12 @@ export default function CoursePage() {
         <div
           className="md:hidden fixed inset-0 z-50 flex flex-col justify-end"
           style={{ background: 'rgba(0,0,0,0.6)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setDrawerOpen(false); }}
+          onClick={e => { if (e.target === e.currentTarget) setDrawerOpen(false); }}
         >
-          <div
-            className="flex flex-col rounded-t-2xl"
-            style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', maxHeight: '75vh' }}
-          >
+          <div className="flex flex-col rounded-t-2xl" style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', maxHeight: '75vh' }}>
             <div className="flex items-center justify-between px-4 py-2.5 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
               <div className="flex gap-2">
-                {sideTabs.map((tab) => (
+                {sideTabs.map(tab => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveSideTab(tab.id)}
@@ -507,8 +589,8 @@ export default function CoursePage() {
               <button onClick={() => setDrawerOpen(false)} style={{ color: 'var(--text-muted)' }} className="text-lg px-2">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
-              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={(text) => sendMessage(text)} />}
-              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={(text) => sendMessage(text)} />}
+              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
+              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
               {activeSideTab === 'memory' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} />}
             </div>
           </div>
@@ -516,26 +598,20 @@ export default function CoursePage() {
       )}
 
       {/* ── DRAGGABLE FLOATING SETTINGS BUTTON ── */}
-      <DraggableSettingsButton onClick={() => setSettingsOpen(true)} />
+      <DraggableSettingsButton
+        onClick={() => setSettingsOpen(true)}
+        topOverride={settings.settingsBtnTop}
+      />
 
-      {/* Settings modal */}
+      {/* ── SETTINGS MODAL — now wired to real SettingsPanel ── */}
       {settingsOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
+          className="fixed inset-0 z-[300] flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.7)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}
+          onClick={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}
         >
-          <div
-            className="rounded-2xl p-6 flex flex-col gap-4"
-            style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', minWidth: '280px' }}
-          >
-            <div className="flex items-center justify-between">
-              <h2 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontWeight: 'bold' }}>Settings</h2>
-              <button onClick={() => setSettingsOpen(false)} style={{ color: 'var(--text-muted)' }}>✕</button>
-            </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-              Settings panel — connect your existing SettingsPanel component here.
-            </p>
+          <div style={{ position: 'relative' }}>
+            <SettingsPanel />
           </div>
         </div>
       )}
