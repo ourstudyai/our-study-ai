@@ -64,9 +64,9 @@ function DraggableSettingsButton({ onClick }: { onClick: () => void }) {
   const didDrag = useRef(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Initialise position after mount so window is defined
+  // Initial position: above the Past Questions / AOC / Memory panel
   useEffect(() => {
-    setPos({ x: window.innerWidth - 64, y: window.innerHeight - 140 });
+    setPos({ x: window.innerWidth - 310, y: 80 });
   }, []);
 
   const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
@@ -334,7 +334,6 @@ export default function CoursePage() {
           {/* Messages — scrollable */}
           <div className="flex-1 overflow-y-auto px-3 md:px-5 py-3 space-y-3">
 
-            {/* Empty state: mode card sits in the upper portion, leaving room for input below */}
             {isEmpty && (
               <div style={{ height: '32vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div className="text-center max-w-sm px-4">
@@ -519,7 +518,7 @@ export default function CoursePage() {
       {/* ── DRAGGABLE FLOATING SETTINGS BUTTON ── */}
       <DraggableSettingsButton onClick={() => setSettingsOpen(true)} />
 
-      {/* Settings modal placeholder — wire to your existing SettingsPanel */}
+      {/* Settings modal */}
       {settingsOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"

@@ -1,0 +1,5 @@
+[33mc749360[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m fix: correct JSX syntax in AppShell SettingsContext.Provider
+[33m155d2f9[m feat: draggable settings icon, raised input, ui font 20 ai font 18
+[33mb432be5[m fix: chat input positioned just below screen centre on empty state
+[33mad101aa[m fix: raise chat input to prominent position when empty
+[33mba8fea0[m fix: replace corrupted PWA icons with proper Bigard logo icons
