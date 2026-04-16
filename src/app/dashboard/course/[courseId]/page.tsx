@@ -66,7 +66,7 @@ function DraggableSettingsButton({ onClick }: { onClick: () => void }) {
 
   // Initial position: above the Past Questions / AOC / Memory panel
   useEffect(() => {
-    setPos({ x: window.innerWidth - 310, y: 80 });
+    setPos({ x: window.innerWidth - 310, y: 167 });
   }, []);
 
   const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
