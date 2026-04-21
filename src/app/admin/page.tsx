@@ -943,56 +943,54 @@ function UploadModal({ course, uploadedBy, uploadedByRole, uploaderEmail, onClos
   };
 
   const uploadFile = async (file: File, category: UploadCategory) => {
-    const path = `materials/${course.department}/year${course.year}/sem${course.semester}/${course.id}/${category}/${file.name}`;
-    const storageRef = ref(storage, path);
-    const task = uploadBytesResumable(storageRef, file);
     setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "uploading" } }));
 
-    return new Promise<void>((resolve) => {
-      task.on("state_changed",
-        (snap) => {
-          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-          setFileProgresses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: pct } }));
-        },
-        () => {
-          setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "error" } }));
-          resolve();
-        },
-        async () => {
-          const url = await getDownloadURL(task.snapshot.ref);
-          await updateDoc(doc(db, "courses", course.id), { [`materials.${category}.${file.name}`]: url });
-          if (readiness === "empty") {
-            await updateDoc(doc(db, "courses", course.id), { readiness: "partial" });
-            setReadiness("partial");
-            onReadinessChange("partial");
-          }
-          setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "done" } }));
-          setExistingFiles((p) => ({ ...p, [category]: [...(p[category] || []), { name: file.name, url }] }));
-          try {
-            setProcessingStatus((p) => ({ ...p, [file.name]: "processing" }));
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("fileUrl", url);
-            formData.append("uploadedBy", uploadedBy);
-            formData.append("uploadedByRole", uploadedByRole);
-            formData.append("uploaderEmail", uploaderEmail);
-            formData.append("suggestedCourseId", course.id);
-            formData.append("suggestedCourseName", course.name);
-            const res = await fetch("/api/process-upload", { method: "POST", body: formData });
-            if (res.ok) {
-              const result = await res.json();
-              setProcessingStatus((p) => ({ ...p, [file.name]: result.status }));
-            } else {
-              setProcessingStatus((p) => ({ ...p, [file.name]: "processing_error" }));
-            }
-          } catch (err) {
-            console.error("[admin] process-upload failed:", err);
-            setProcessingStatus((p) => ({ ...p, [file.name]: "processing_error" }));
-          }
-          resolve();
-        }
-      );
-    });
+    let fakeProgress = 0;
+    const progressInterval = setInterval(() => {
+      fakeProgress = Math.min(fakeProgress + 8, 85);
+      setFileProgresses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: fakeProgress } }));
+    }, 300);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("uploadedBy", uploadedBy);
+      formData.append("uploadedByRole", uploadedByRole);
+      formData.append("uploaderEmail", uploaderEmail);
+      formData.append("suggestedCourseId", course.id);
+      formData.append("suggestedCourseName", course.name);
+      formData.append("category", category);
+
+      const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+      clearInterval(progressInterval);
+      setFileProgresses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: 100 } }));
+
+      if (!res.ok) {
+        setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "error" } }));
+        setProcessingStatus((p) => ({ ...p, [file.name]: "processing_error" }));
+        return;
+      }
+
+      const result = await res.json();
+      const url = result.fileUrl ?? "";
+
+      await updateDoc(doc(db, "courses", course.id), { [`materials.${category}.${file.name}`]: url });
+      if (readiness === "empty") {
+        await updateDoc(doc(db, "courses", course.id), { readiness: "partial" });
+        setReadiness("partial");
+        onReadinessChange("partial");
+      }
+
+      setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "done" } }));
+      setExistingFiles((p) => ({ ...p, [category]: [...(p[category] || []), { name: file.name, url }] }));
+      setProcessingStatus((p) => ({ ...p, [file.name]: result.status }));
+
+    } catch (err) {
+      clearInterval(progressInterval);
+      console.error("[admin] uploadFile failed:", err);
+      setFileStatuses((p) => ({ ...p, [category]: { ...(p[category] || {}), [file.name]: "error" } }));
+      setProcessingStatus((p) => ({ ...p, [file.name]: "processing_error" }));
+    }
   };
 
   const handleUploadCategory = async (category: UploadCategory) => {
@@ -1013,64 +1011,45 @@ function UploadModal({ course, uploadedBy, uploadedByRole, uploaderEmail, onClos
     setDetectUploading(true);
 
     const initialStatuses: Record<string, FileStatus> = {};
-    detectFiles.forEach((f) => { initialStatuses[f.name] = { status: "idle", progress: 0 }; });
+    detectFiles.forEach((f) => { initialStatuses[f.name] = { status: "uploading", progress: 0 }; });
     setDetectStatuses(initialStatuses);
 
     for (const file of detectFiles) {
       try {
-        setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: 0 } }));
-        const storageRef = ref(storage, `auto-detect/admin/${uploadedBy}/${Date.now()}_${file.name}`);
-        const task = uploadBytesResumable(storageRef, file);
+        let fakeProgress = 0;
+        const progressInterval = setInterval(() => {
+          fakeProgress = Math.min(fakeProgress + 7, 80);
+          setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: fakeProgress } }));
+        }, 350);
 
-        await new Promise<void>((resolve) => {
-          task.on("state_changed",
-            (snap) => {
-              const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-              setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: pct } }));
-            },
-            () => {
-              setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 0, error: `Upload failed for ${file.name}. Check connection or file size.` } }));
-              resolve();
-            },
-            async () => {
-              try {
-                const url = await getDownloadURL(task.snapshot.ref);
-                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "extracting", progress: 100 } }));
-                const formData = new FormData();
-                formData.append("file", file);
-                formData.append("fileUrl", url);
-                formData.append("uploadedBy", uploadedBy);
-                formData.append("uploadedByRole", uploadedByRole);
-                formData.append("uploaderEmail", uploaderEmail);
-                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "classifying", progress: 100 } }));
-                const res = await fetch("/api/process-upload", { method: "POST", body: formData });
-                if (!res.ok) {
-                  setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 100, error: `Processing failed for ${file.name}. Check the review queue.` } }));
-                } else {
-                  const result = await res.json();
-                  setDetectStatuses((p) => ({
-                    ...p, [file.name]: {
-                      status: "done", progress: 100,
-                      result: {
-                        materialId: result.materialId,
-                        detectedStatus: result.status,
-                        category: result.category,
-                        suggestedCourseName: result.suggestedCourseName,
-                        detectedCourseName: result.detectedCourseName,
-                        confidence: result.confidence,
-                        wordCount: result.wordCount,
-                      }
-                    }
-                  }));
-                }
-                resolve();
-              } catch {
-                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 100, error: `Processing failed for ${file.name}. It may still appear in the review queue.` } }));
-                resolve();
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("uploadedBy", uploadedBy);
+        formData.append("uploadedByRole", uploadedByRole);
+        formData.append("uploaderEmail", uploaderEmail);
+
+        const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+        clearInterval(progressInterval);
+
+        if (!res.ok) {
+          setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 100, error: `Processing failed for ${file.name}. Check the review queue.` } }));
+        } else {
+          const result = await res.json();
+          setDetectStatuses((p) => ({
+            ...p, [file.name]: {
+              status: "done", progress: 100,
+              result: {
+                materialId: result.materialId,
+                detectedStatus: result.status,
+                category: result.category,
+                suggestedCourseName: result.suggestedCourseName,
+                detectedCourseName: result.detectedCourseName,
+                confidence: result.confidence,
+                wordCount: result.wordCount,
               }
             }
-          );
-        });
+          }));
+        }
       } catch {
         setDetectStatuses((p) => ({ ...p, [file.name]: { status: "error", progress: 0, error: `Failed to process ${file.name}.` } }));
       }
