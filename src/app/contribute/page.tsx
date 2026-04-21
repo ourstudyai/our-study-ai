@@ -124,15 +124,19 @@ export default function ContributePage() {
         const courseId = courseNotListed ? null : selectedCourseId;
 
         const initialStatuses: Record<string, FileStatus> = {};
-        carefulFiles.forEach((f) => { initialStatuses[f.name] = { status: "idle", progress: 0 }; });
+        carefulFiles.forEach((f) => { initialStatuses[f.name] = { status: "uploading", progress: 0 }; });
         setCarefulStatuses(initialStatuses);
 
         let anyFailed = false;
 
         for (const file of carefulFiles) {
             try {
-                // Show uploading state immediately
-                setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: 0 } }));
+                // Animate progress bar while fetch is in flight
+                let fakeProgress = 0;
+                const progressInterval = setInterval(() => {
+                    fakeProgress = Math.min(fakeProgress + 8, 85);
+                    setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: fakeProgress } }));
+                }, 300);
 
                 const formData = new FormData();
                 formData.append("file", file);
@@ -142,15 +146,6 @@ export default function ContributePage() {
                 formData.append("suggestedCourseName", courseName);
                 if (courseId) formData.append("suggestedCourseId", courseId);
                 formData.append("category", selectedCategory);
-
-                // Simulate progress since fetch doesn't expose upload progress
-                let fakeProgress = 0;
-                const progressInterval = setInterval(() => {
-                    fakeProgress = Math.min(fakeProgress + 12, 85);
-                    setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: fakeProgress } }));
-                }, 300);
-
-                setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "extracting", progress: 90 } }));
 
                 const res = await fetch("/api/process-upload", { method: "POST", body: formData });
                 clearInterval(progressInterval);
@@ -205,26 +200,22 @@ export default function ContributePage() {
 
         const uploaderEmail = firebaseUser.email ?? "unknown";
         const initialStatuses: Record<string, FileStatus> = {};
-        detectFiles.forEach((f) => { initialStatuses[f.name] = { status: "idle", progress: 0 }; });
+        detectFiles.forEach((f) => { initialStatuses[f.name] = { status: "uploading", progress: 0 }; });
         setDetectStatuses(initialStatuses);
 
         for (const file of detectFiles) {
             try {
-                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: 0 } }));
+                let fakeProgress = 0;
+                const progressInterval = setInterval(() => {
+                    fakeProgress = Math.min(fakeProgress + 7, 80);
+                    setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: fakeProgress } }));
+                }, 350);
 
                 const formData = new FormData();
                 formData.append("file", file);
                 formData.append("uploadedBy", firebaseUser.uid);
                 formData.append("uploadedByRole", "student");
                 formData.append("uploaderEmail", uploaderEmail);
-
-                let fakeProgress = 0;
-                const progressInterval = setInterval(() => {
-                    fakeProgress = Math.min(fakeProgress + 10, 80);
-                    setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: fakeProgress } }));
-                }, 350);
-
-                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "classifying", progress: 90 } }));
 
                 const res = await fetch("/api/process-upload", { method: "POST", body: formData });
                 clearInterval(progressInterval);
