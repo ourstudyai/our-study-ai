@@ -1,27 +1,68 @@
 // src/app/api/process-upload/route.ts
-// API endpoint called after a file is uploaded to Firebase Storage
-// Extracts text, classifies the material, saves to Firestore
+// 1. Receives file from contribute page
+// 2. Uploads to Cloudinary (replaces Firebase Storage)
+// 3. Extracts text (pdf-parse / mammoth / Mistral OCR via Cloudinary URL)
+// 4. Classifies material
+// 5. Saves to Firestore
 
 import { NextRequest, NextResponse } from "next/server";
+import { v2 as cloudinary } from "cloudinary";
 import { extractText } from "@/lib/processing/extractor";
 import { classifyMaterial, MaterialCategory } from "@/lib/processing/classifier";
 import { saveMaterial } from "@/lib/firestore/materials";
 import type { MaterialStatus } from "@/lib/firestore/materials";
 
+// ─── Configure Cloudinary ─────────────────────────────────────────────────────
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+    api_key: process.env.CLOUDINARY_API_KEY!,
+    api_secret: process.env.CLOUDINARY_API_SECRET!,
+});
+
+// ─── Upload buffer to Cloudinary ──────────────────────────────────────────────
+async function uploadToCloudinary(
+    buffer: Buffer,
+    fileName: string,
+    folder: string
+): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const sanitized = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const publicId = `${folder}/${Date.now()}_${sanitized}`;
+
+        const stream = cloudinary.uploader.upload_stream(
+            {
+                public_id: publicId,
+                resource_type: "raw",   // PDFs, DOCX, etc.
+                overwrite: false,
+            },
+            (error, result) => {
+                if (error || !result) return reject(error ?? new Error("Cloudinary upload failed"));
+                resolve(result.secure_url);
+            }
+        );
+
+        stream.end(buffer);
+    });
+}
+
 export async function POST(req: NextRequest) {
     try {
-        // ── 1. Parse request ────────────────────────────────────────────────────
+        // ── 1. Parse request ────────────────────────────────────────────────
         const formData = await req.formData();
 
         const file = formData.get("file") as File | null;
-        const fileUrl = formData.get("fileUrl") as string | null;
         const uploadedBy = formData.get("uploadedBy") as string | null;
         const uploadedByRole = formData.get("uploadedByRole") as string | null;
         const uploaderEmail = formData.get("uploaderEmail") as string | null;
 
-        if (!file || !fileUrl || !uploadedBy || !uploadedByRole || !uploaderEmail) {
+        // Optional fields from careful-upload flow
+        const suggestedCourseName = formData.get("suggestedCourseName") as string | null;
+        const suggestedCourseId = formData.get("suggestedCourseId") as string | null;
+        const category = formData.get("category") as string | null;
+
+        if (!file || !uploadedBy || !uploadedByRole || !uploaderEmail) {
             return NextResponse.json(
-                { error: "Missing required fields: file, fileUrl, uploadedBy, uploadedByRole, uploaderEmail" },
+                { error: "Missing required fields: file, uploadedBy, uploadedByRole, uploaderEmail" },
                 { status: 400 }
             );
         }
@@ -29,28 +70,52 @@ export async function POST(req: NextRequest) {
         const fileName = file.name;
         const mimeType = file.type;
 
-        // ── 2. Convert file to buffer ───────────────────────────────────────────
+        // ── 2. Convert to buffer ─────────────────────────────────────────────
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        // ── 3. Extract text ─────────────────────────────────────────────────────
-        const extraction = await extractText(buffer, mimeType, fileName);
+        // ── 3. Upload to Cloudinary ──────────────────────────────────────────
+        // Build a folder path similar to the old Firebase Storage path
+        const folder = suggestedCourseId
+            ? `contributions/${suggestedCourseId}`
+            : "contributions/auto-detect";
 
-        // ── 4. Classify material ────────────────────────────────────────────────
+        let cloudinaryUrl: string;
+        try {
+            cloudinaryUrl = await uploadToCloudinary(buffer, fileName, folder);
+        } catch (err) {
+            console.error("[process-upload] Cloudinary upload failed:", err);
+            return NextResponse.json(
+                { error: "File storage failed. Please try again." },
+                { status: 500 }
+            );
+        }
+
+        // ── 4. Extract text (passes Cloudinary URL for OCR fallback) ─────────
+        const extraction = await extractText(buffer, mimeType, fileName, cloudinaryUrl);
+
+        // ── 5. Classify material ─────────────────────────────────────────────
         let classification = {
-            category: "other" as MaterialCategory,
-            suggestedCourseId: null as string | null,
-            suggestedCourseName: null as string | null,
+            category: (category ?? "other") as MaterialCategory,
+            suggestedCourseId: suggestedCourseId ?? null,
+            suggestedCourseName: suggestedCourseName ?? null,
             detectedCourseName: null as string | null,
             confidence: "low" as "high" | "medium" | "low",
             reason: "Scanned file — OCR pending.",
         };
 
         if (extraction.method !== "ocr_pending" && extraction.text) {
-            classification = await classifyMaterial(extraction.text, fileName);
+            const autoClass = await classifyMaterial(extraction.text, fileName);
+            // If a course was manually specified, keep it — override only category and confidence
+            classification = {
+                ...autoClass,
+                suggestedCourseId: suggestedCourseId ?? autoClass.suggestedCourseId,
+                suggestedCourseName: suggestedCourseName ?? autoClass.suggestedCourseName,
+                category: (category as MaterialCategory) ?? autoClass.category,
+            };
         }
 
-        // ── 5. Determine status ─────────────────────────────────────────────────
+        // ── 6. Determine status ──────────────────────────────────────────────
         let status: MaterialStatus = "pending_review";
 
         if (extraction.method === "ocr_pending") {
@@ -63,10 +128,10 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // ── 6. Save to Firestore ────────────────────────────────────────────────
+        // ── 7. Save to Firestore ─────────────────────────────────────────────
         const materialId = await saveMaterial({
             fileName,
-            fileUrl,
+            fileUrl: cloudinaryUrl,   // Cloudinary URL stored here
             mimeType,
             uploadedBy,
             uploadedByRole,
@@ -87,7 +152,7 @@ export async function POST(req: NextRequest) {
             status,
         });
 
-        // ── 7. Return result ────────────────────────────────────────────────────
+        // ── 8. Return result ─────────────────────────────────────────────────
         return NextResponse.json({
             success: true,
             materialId,
@@ -99,6 +164,7 @@ export async function POST(req: NextRequest) {
             confidence: classification.confidence,
             wordCount: extraction.wordCount,
             extractionMethod: extraction.method,
+            fileUrl: cloudinaryUrl,
         });
 
     } catch (err) {

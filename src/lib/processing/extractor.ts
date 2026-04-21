@@ -1,30 +1,54 @@
 // src/lib/processing/extractor.ts
-// Extracts raw text from uploaded files (PDF, DOCX, TXT)
-// 
-// ⭐ GOOGLE CLOUD OCR SLOT (20%) — DO NOT BUILD YET
-// When Google Cloud billing is activated and Blaze plan is enabled:
-// - Replace the "ocr_pending" return block below with Google Cloud Vision API call
-// - Or use Document AI for higher accuracy on scanned theology texts
-// - Search for "GOOGLE_CLOUD_OCR_SLOT" in this file to find exact insertion point
+// Extracts text from uploaded files.
+// Text PDFs → pdf-parse
+// DOCX → mammoth
+// Scanned PDFs, images, DOCX failures → Mistral OCR 3 (mistral-ocr-latest)
 
 import mammoth from "mammoth";
+import { Mistral } from "@mistralai/mistralai";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ExtractionResult = {
     text: string;
-    method: "pdf-parse" | "mammoth" | "plain-text" | "ocr_pending";
+    method: "pdf-parse" | "mammoth" | "plain-text" | "mistral-ocr" | "ocr_pending";
     pageCount?: number;
     wordCount: number;
     isScanned: boolean;
 };
+
+// ─── Mistral OCR ──────────────────────────────────────────────────────────────
+
+async function runMistralOCR(cloudinaryUrl: string): Promise<string> {
+    const apiKey = process.env.MISTRAL_API_KEY;
+    if (!apiKey) throw new Error("MISTRAL_API_KEY not set");
+
+    const client = new Mistral({ apiKey });
+
+    const response = await client.ocr.process({
+        model: "mistral-ocr-latest",
+        document: {
+            type: "document_url",
+            documentUrl: cloudinaryUrl,
+        },
+    });
+
+    // Concatenate all page texts
+    const text = response.pages
+        ?.map((p: { markdown?: string }) => p.markdown ?? "")
+        .join("\n\n")
+        .trim() ?? "";
+
+    return text;
+}
 
 // ─── Main Extractor ───────────────────────────────────────────────────────────
 
 export async function extractText(
     buffer: Buffer,
     mimeType: string,
-    fileName: string
+    fileName: string,
+    cloudinaryUrl?: string   // passed in for OCR fallback
 ): Promise<ExtractionResult> {
 
     // ── PDF ──────────────────────────────────────────────────────────────────
@@ -37,92 +61,92 @@ export async function extractText(
             const wordCount = countWords(text);
             const pageCount = result.numpages ?? 1;
 
-            // If very little text extracted, likely a scanned PDF
-            // ── GOOGLE_CLOUD_OCR_SLOT ─────────────────────────────────────────────
-            // Replace this block when Google Cloud Vision is ready:
-            // if (wordCount < 50) {
-            //   const ocrText = await callGoogleCloudVision(buffer);
-            //   return { text: ocrText, method: "ocr_pending", pageCount, wordCount: countWords(ocrText), isScanned: true };
-            // }
-            // ─────────────────────────────────────────────────────────────────────
-            if (wordCount < 50) {
-                return {
-                    text: "",
-                    method: "ocr_pending",
-                    pageCount,
-                    wordCount: 0,
-                    isScanned: true,
-                };
+            // Enough text extracted — use it directly
+            if (wordCount >= 50) {
+                return { text, method: "pdf-parse", pageCount, wordCount, isScanned: false };
             }
 
-            return {
-                text,
-                method: "pdf-parse",
-                pageCount,
-                wordCount,
-                isScanned: false,
-            };
-
+            // Scanned PDF — fall through to Mistral OCR
         } catch (err) {
-            console.error("[extractor] PDF parse failed:", err);
-            return {
-                text: "",
-                method: "ocr_pending",
-                pageCount: 1,
-                wordCount: 0,
-                isScanned: true,
-            };
+            console.error("[extractor] PDF parse failed, falling back to OCR:", err);
+            // Fall through to Mistral OCR
         }
+
+        // Mistral OCR fallback for scanned PDFs
+        if (cloudinaryUrl) {
+            try {
+                const ocrText = await runMistralOCR(cloudinaryUrl);
+                return {
+                    text: ocrText,
+                    method: "mistral-ocr",
+                    wordCount: countWords(ocrText),
+                    isScanned: true,
+                };
+            } catch (err) {
+                console.error("[extractor] Mistral OCR failed for PDF:", err);
+            }
+        }
+
+        // No URL available or OCR failed — return pending
+        return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
 
     // ── DOCX ─────────────────────────────────────────────────────────────────
     if (
-        mimeType ===
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
         fileName.endsWith(".docx")
     ) {
         try {
             const { value: text } = await mammoth.extractRawText({ buffer });
             const cleaned = text?.trim() ?? "";
-            return {
-                text: cleaned,
-                method: "mammoth",
-                wordCount: countWords(cleaned),
-                isScanned: false,
-            };
+            if (countWords(cleaned) >= 10) {
+                return { text: cleaned, method: "mammoth", wordCount: countWords(cleaned), isScanned: false };
+            }
         } catch (err) {
-            console.error("[extractor] DOCX parse failed:", err);
-            return {
-                text: "",
-                method: "ocr_pending",
-                wordCount: 0,
-                isScanned: true,
-            };
+            console.error("[extractor] DOCX mammoth failed:", err);
         }
+
+        // DOCX with no extractable text — try Mistral OCR
+        if (cloudinaryUrl) {
+            try {
+                const ocrText = await runMistralOCR(cloudinaryUrl);
+                return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
+            } catch (err) {
+                console.error("[extractor] Mistral OCR failed for DOCX:", err);
+            }
+        }
+
+        return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
 
     // ── Plain Text ────────────────────────────────────────────────────────────
     if (mimeType === "text/plain" || fileName.endsWith(".txt")) {
         const text = buffer.toString("utf-8").trim();
-        return {
-            text,
-            method: "plain-text",
-            wordCount: countWords(text),
-            isScanned: false,
-        };
+        return { text, method: "plain-text", wordCount: countWords(text), isScanned: false };
     }
 
-    // ── Unsupported / Image-only files ────────────────────────────────────────
-    // ── GOOGLE_CLOUD_OCR_SLOT ─────────────────────────────────────────────────
-    // Images (.jpg, .png, .jpeg) will land here.
-    // When Google Cloud Vision is ready, add a handler above this return.
-    // ─────────────────────────────────────────────────────────────────────────
-    return {
-        text: "",
-        method: "ocr_pending",
-        wordCount: 0,
-        isScanned: true,
-    };
+    // ── Images (JPG, PNG, JPEG) ───────────────────────────────────────────────
+    if (
+        mimeType === "image/jpeg" ||
+        mimeType === "image/png" ||
+        mimeType === "image/jpg" ||
+        fileName.endsWith(".jpg") ||
+        fileName.endsWith(".jpeg") ||
+        fileName.endsWith(".png")
+    ) {
+        if (cloudinaryUrl) {
+            try {
+                const ocrText = await runMistralOCR(cloudinaryUrl);
+                return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
+            } catch (err) {
+                console.error("[extractor] Mistral OCR failed for image:", err);
+            }
+        }
+        return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
+    }
+
+    // ── Unknown / Unsupported ─────────────────────────────────────────────────
+    return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -131,4 +155,3 @@ function countWords(text: string): number {
     if (!text) return 0;
     return text.split(/\s+/).filter(Boolean).length;
 }
-

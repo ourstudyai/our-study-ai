@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
-import { auth, db, storage } from "@/lib/firebase/config";
+import { auth, db } from "@/lib/firebase/config";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { saveReport } from "@/lib/firestore/materials";
 
 interface Course {
@@ -55,7 +54,6 @@ export default function ContributePage() {
     const [step, setStep] = useState<Step>("auth");
     const [signingIn, setSigningIn] = useState(false);
 
-    // Careful upload state
     const [department, setDepartment] = useState("");
     const [year, setYear] = useState<number | "">("");
     const [semester, setSemester] = useState<number | "">("");
@@ -70,7 +68,6 @@ export default function ContributePage() {
     const [carefulStatuses, setCarefulStatuses] = useState<Record<string, FileStatus>>({});
     const [carefulDone, setCarefulDone] = useState(false);
 
-    // Auto-detect state
     const [detectFiles, setDetectFiles] = useState<File[]>([]);
     const [detectStatuses, setDetectStatuses] = useState<Record<string, FileStatus>>({});
     const [detectUploading, setDetectUploading] = useState(false);
@@ -125,7 +122,6 @@ export default function ContributePage() {
             ? manualCourseName.trim()
             : allCourses.find((c) => c.id === selectedCourseId)?.name ?? "";
         const courseId = courseNotListed ? null : selectedCourseId;
-        const storagePath = `contributions/${department}/year${year}/sem${semester}/${courseId ?? "unlisted"}/${selectedCategory}`;
 
         const initialStatuses: Record<string, FileStatus> = {};
         carefulFiles.forEach((f) => { initialStatuses[f.name] = { status: "idle", progress: 0 }; });
@@ -135,70 +131,48 @@ export default function ContributePage() {
 
         for (const file of carefulFiles) {
             try {
+                // Show uploading state immediately
                 setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: 0 } }));
-                const storageRef = ref(storage, `${storagePath}/${file.name}`);
-                const task = uploadBytesResumable(storageRef, file);
 
-                await new Promise<void>((resolve, reject) => {
-                    task.on("state_changed",
-                        (snap) => {
-                            const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-                            setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: pct } }));
-                        },
-                        (err) => {
-                            setCarefulStatuses((p) => ({
-                                ...p, [file.name]: {
-                                    status: "error", progress: 0,
-                                    error: `Upload failed for ${file.name}. This is usually a connection issue or a file that is too large. Check your internet and try again. If it keeps happening, note the file name and report it.`,
-                                }
-                            }));
-                            anyFailed = true;
-                            reject(err);
-                        },
-                        async () => {
-                            try {
-                                const url = await getDownloadURL(task.snapshot.ref);
-                                setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "extracting", progress: 100 } }));
+                const formData = new FormData();
+                formData.append("file", file);
+                formData.append("uploadedBy", firebaseUser.uid);
+                formData.append("uploadedByRole", "student");
+                formData.append("uploaderEmail", uploaderEmail);
+                formData.append("suggestedCourseName", courseName);
+                if (courseId) formData.append("suggestedCourseId", courseId);
+                formData.append("category", selectedCategory);
 
-                                const formData = new FormData();
-                                formData.append("file", file);
-                                formData.append("fileUrl", url);
-                                formData.append("uploadedBy", firebaseUser.uid);
-                                formData.append("uploadedByRole", "student");
-                                formData.append("uploaderEmail", uploaderEmail);
-                                formData.append("suggestedCourseName", courseName);
-                                if (courseId) formData.append("suggestedCourseId", courseId);
-                                formData.append("category", selectedCategory);
+                // Simulate progress since fetch doesn't expose upload progress
+                let fakeProgress = 0;
+                const progressInterval = setInterval(() => {
+                    fakeProgress = Math.min(fakeProgress + 12, 85);
+                    setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: fakeProgress } }));
+                }, 300);
 
-                                setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "classifying", progress: 100 } }));
-                                const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+                setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "extracting", progress: 90 } }));
 
-                                if (!res.ok) {
-                                    setCarefulStatuses((p) => ({
-                                        ...p, [file.name]: {
-                                            status: "error", progress: 100,
-                                            error: `Your file uploaded successfully but something went wrong during processing. It may still appear in the admin review queue. If not, report this with the file name: ${file.name} and the time of upload.`,
-                                        }
-                                    }));
-                                    anyFailed = true;
-                                } else {
-                                    setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "done", progress: 100 } }));
-                                }
-                                resolve();
-                            } catch {
-                                setCarefulStatuses((p) => ({
-                                    ...p, [file.name]: {
-                                        status: "error", progress: 100,
-                                        error: `Your file uploaded successfully but something went wrong during processing. It may still appear in the admin review queue. If not, report this with the file name: ${file.name} and the time of upload.`,
-                                    }
-                                }));
-                                anyFailed = true;
-                                resolve();
-                            }
+                const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+                clearInterval(progressInterval);
+
+                if (!res.ok) {
+                    setCarefulStatuses((p) => ({
+                        ...p, [file.name]: {
+                            status: "error", progress: 100,
+                            error: `Your file uploaded successfully but something went wrong during processing. It may still appear in the admin review queue. If not, report this with the file name: ${file.name} and the time of upload.`,
                         }
-                    );
-                });
+                    }));
+                    anyFailed = true;
+                } else {
+                    setCarefulStatuses((p) => ({ ...p, [file.name]: { status: "done", progress: 100 } }));
+                }
             } catch {
+                setCarefulStatuses((p) => ({
+                    ...p, [file.name]: {
+                        status: "error", progress: 0,
+                        error: `Upload failed for ${file.name}. This is usually a connection issue or a file that is too large. Check your internet and try again.`,
+                    }
+                }));
                 anyFailed = true;
             }
         }
@@ -237,76 +211,48 @@ export default function ContributePage() {
         for (const file of detectFiles) {
             try {
                 setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: 0 } }));
-                const storageRef = ref(storage, `auto-detect/${firebaseUser.uid}/${Date.now()}_${file.name}`);
-                const task = uploadBytesResumable(storageRef, file);
 
-                await new Promise<void>((resolve) => {
-                    task.on("state_changed",
-                        (snap) => {
-                            const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-                            setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: pct } }));
-                        },
-                        () => {
-                            setDetectStatuses((p) => ({
-                                ...p, [file.name]: {
-                                    status: "error", progress: 0,
-                                    error: `Upload failed for ${file.name}. Likely a connection issue or file size problem. Try again or use the course selector above.`,
-                                }
-                            }));
-                            resolve();
-                        },
-                        async () => {
-                            try {
-                                const url = await getDownloadURL(task.snapshot.ref);
-                                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "extracting", progress: 100 } }));
+                const formData = new FormData();
+                formData.append("file", file);
+                formData.append("uploadedBy", firebaseUser.uid);
+                formData.append("uploadedByRole", "student");
+                formData.append("uploaderEmail", uploaderEmail);
 
-                                const formData = new FormData();
-                                formData.append("file", file);
-                                formData.append("fileUrl", url);
-                                formData.append("uploadedBy", firebaseUser.uid);
-                                formData.append("uploadedByRole", "student");
-                                formData.append("uploaderEmail", uploaderEmail);
+                let fakeProgress = 0;
+                const progressInterval = setInterval(() => {
+                    fakeProgress = Math.min(fakeProgress + 10, 80);
+                    setDetectStatuses((p) => ({ ...p, [file.name]: { status: "uploading", progress: fakeProgress } }));
+                }, 350);
 
-                                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "classifying", progress: 100 } }));
-                                const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+                setDetectStatuses((p) => ({ ...p, [file.name]: { status: "classifying", progress: 90 } }));
 
-                                if (!res.ok) {
-                                    setDetectStatuses((p) => ({
-                                        ...p, [file.name]: {
-                                            status: "error", progress: 100,
-                                            error: `Your file reached us but processing failed. It may appear in the admin queue as unprocessed. Report this with ${file.name} if it doesn&apos;t show up within a few minutes.`,
-                                        }
-                                    }));
-                                } else {
-                                    const result = await res.json();
-                                    setDetectStatuses((p) => ({
-                                        ...p, [file.name]: {
-                                            status: "done", progress: 100,
-                                            result: {
-                                                materialId: result.materialId,
-                                                detectedStatus: result.status,
-                                                category: result.category,
-                                                suggestedCourseName: result.suggestedCourseName,
-                                                detectedCourseName: result.detectedCourseName,
-                                                confidence: result.confidence,
-                                                wordCount: result.wordCount,
-                                            }
-                                        }
-                                    }));
-                                }
-                                resolve();
-                            } catch {
-                                setDetectStatuses((p) => ({
-                                    ...p, [file.name]: {
-                                        status: "error", progress: 100,
-                                        error: `Your file reached us but processing failed. Report this with file name: ${file.name} if it doesn&apos;t show up in the review queue within a few minutes.`,
-                                    }
-                                }));
-                                resolve();
+                const res = await fetch("/api/process-upload", { method: "POST", body: formData });
+                clearInterval(progressInterval);
+
+                if (!res.ok) {
+                    setDetectStatuses((p) => ({
+                        ...p, [file.name]: {
+                            status: "error", progress: 100,
+                            error: `Your file reached us but processing failed. It may appear in the admin queue as unprocessed. Report this with ${file.name} if it doesn't show up within a few minutes.`,
+                        }
+                    }));
+                } else {
+                    const result = await res.json();
+                    setDetectStatuses((p) => ({
+                        ...p, [file.name]: {
+                            status: "done", progress: 100,
+                            result: {
+                                materialId: result.materialId,
+                                detectedStatus: result.status,
+                                category: result.category,
+                                suggestedCourseName: result.suggestedCourseName,
+                                detectedCourseName: result.detectedCourseName,
+                                confidence: result.confidence,
+                                wordCount: result.wordCount,
                             }
                         }
-                    );
-                });
+                    }));
+                }
             } catch {
                 setDetectStatuses((p) => ({
                     ...p, [file.name]: {
@@ -397,7 +343,7 @@ export default function ContributePage() {
                             <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
                             <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
                             <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
-                            <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                            <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84z" />
                         </svg>
                         {signingIn ? "Signing in..." : "Continue with Google"}
                     </button>
@@ -459,8 +405,6 @@ export default function ContributePage() {
     return (
         <div className="min-h-screen px-4 py-8" style={{ background: "var(--navy)", color: "var(--text-primary)" }}>
             <div className="max-w-lg mx-auto space-y-6">
-
-                {/* Header */}
                 <div>
                     <button onClick={() => router.push("/dashboard")} className="text-sm mb-4 block" style={{ color: "var(--text-muted)" }}>
                         ← Back to dashboard
@@ -485,7 +429,6 @@ export default function ContributePage() {
                         </p>
                     </div>
 
-                    {/* Department */}
                     <div className="space-y-1">
                         <label className="text-xs" style={{ color: "var(--text-secondary)" }}>Department</label>
                         <select value={department} onChange={(e) => setDepartment(e.target.value)}
