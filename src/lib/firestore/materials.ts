@@ -7,6 +7,7 @@ import {
 import { MaterialCategory } from "@/lib/processing/classifier";
 
 export type MaterialStatus =
+    | "processing"
     | "pending_review"
     | "quarantined"
     | "awaiting_course"
@@ -117,6 +118,17 @@ export async function getMaterial(materialId: string): Promise<Material | null> 
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
     return { id: snap.id, ...snap.data() } as Material;
+}
+
+export async function updateMaterial(
+    materialId: string,
+    data: Partial<Omit<Material, "id" | "createdAt">>
+): Promise<void> {
+    const ref = doc(db, MATERIALS_COL, materialId);
+    await updateDoc(ref, {
+        ...data,
+        updatedAt: serverTimestamp(),
+    });
 }
 
 export async function saveChunks(
