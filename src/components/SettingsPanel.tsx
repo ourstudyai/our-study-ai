@@ -11,7 +11,7 @@ const THEMES: { id: Theme; label: string; description: string }[] = [
     { id: 'system', label: '💻 System', description: 'Follows your device setting' },
 ];
 
-export default function SettingsPanel() {
+export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: boolean }) {
     const { settings, update } = useSettings();
     const [open, setOpen] = useState(false);
 
@@ -22,7 +22,7 @@ export default function SettingsPanel() {
                 onClick={() => setOpen(true)}
                 title="Appearance settings"
                 style={{
-                    position: 'fixed', bottom: '20px', right: '20px', zIndex: 90,
+                    position: 'fixed', bottom: '80px', right: '12px', zIndex: 90,
                     width: '40px', height: '40px', borderRadius: '50%',
                     background: 'var(--navy-card)', border: '1px solid var(--border)',
                     color: 'var(--gold)', fontSize: '1.1rem', cursor: 'pointer',

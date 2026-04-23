@@ -22,10 +22,9 @@ export default function LoginPage() {
     }
   }, [firebaseUser, userProfile, loading, router]);
 
-  const handleGoogleSignIn = async () => {
+    const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setError(null);
-
     try {
       const user = await signInWithGoogle();
       await getOrCreateUserProfile(
@@ -34,11 +33,9 @@ export default function LoginPage() {
         user.displayName || '',
         user.photoURL || undefined
       );
-      // Auth state change will trigger redirect
     } catch (err: any) {
       console.error('Sign-in error:', err);
       setError(err.message || 'Failed to sign in. Please try again.');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -82,7 +79,7 @@ export default function LoginPage() {
             Our Study AI
           </h1>
           <p className="text-base" style={{ color: 'var(--text-secondary)' }}>
-            Seminary Academic Study Platform
+            St. Jerome&apos;s Formation House
           </p>
           <div className="mt-3 flex items-center justify-center gap-2">
             <div className="w-8 h-px" style={{ background: 'var(--color-gold)' }} />

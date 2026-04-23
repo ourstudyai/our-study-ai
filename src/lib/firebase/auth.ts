@@ -9,17 +9,12 @@ import { auth, googleProvider } from './config';
 
 export async function signInWithGoogle(): Promise<User> {
   const result = await signInWithPopup(auth, googleProvider);
-  
-  // Get the ID token to send to the server
   const idToken = await result.user.getIdToken();
-  
-  // Create server-side session
   await fetch('/api/auth/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ idToken }),
   });
-
   return result.user;
 }
 
@@ -41,3 +36,4 @@ export async function getIdToken(): Promise<string | null> {
   if (!user) return null;
   return user.getIdToken();
 }
+

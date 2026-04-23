@@ -11,10 +11,10 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages, courseId, courseName, courseDescription, mode } = body;
+    const { message, courseId, courseName, courseDescription, mode, conversationHistory } = body;
 
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json({ error: "Missing messages array." }, { status: 400 });
+    if (!message) {
+      return new Response(JSON.stringify({ error: "Missing message." }), { status: 400 });
     }
 
     // ── RAG: fetch relevant chunks for this course ──────────────────────────
@@ -56,7 +56,8 @@ export async function POST(req: NextRequest) {
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: systemPrompt },
-        ...messages,
+        ...(Array.isArray(conversationHistory) ? conversationHistory : []),
+        { role: "user", content: message },
       ],
       stream: true,
       temperature: 0.7,
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
           for await (const chunk of stream) {
             const delta = chunk.choices[0]?.delta?.content;
             if (delta) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`));
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", content: delta })}\n\n`));
             }
           }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));

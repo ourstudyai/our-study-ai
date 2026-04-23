@@ -14,15 +14,13 @@ import { useSettings } from '@/components/AppShell';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 
-type StudyMode = 'plain_explainer' | 'practice_questions' | 'exam_preparation' | 'progress_check' | 'research' | 'readiness_assessment';
+type StudyMode = 'plain_explainer' | 'practice_questions' | 'exam_preparation' | 'research';
 
 const MODES: { id: StudyMode; label: string; icon: string; description: string }[] = [
   { id: 'plain_explainer', label: 'Plain Explainer', icon: '💡', description: 'Understand any concept in plain language' },
   { id: 'practice_questions', label: 'Practice Questions', icon: '❓', description: 'Test yourself with course-based questions' },
   { id: 'exam_preparation', label: 'Exam Prep', icon: '📝', description: 'Write and review full exam answers' },
-  { id: 'progress_check', label: 'Progress Check', icon: '📊', description: 'Assess your understanding of a topic' },
   { id: 'research', label: 'Research', icon: '🔬', description: 'Deep answers with full citations' },
-  { id: 'readiness_assessment', label: 'Exam Readiness', icon: '🎯', description: 'Full assessment across all course topics' },
 ];
 
 type SideTab = 'past-questions' | 'aoc' | 'memory';
@@ -37,9 +35,7 @@ const PLACEHOLDERS: Record<string, string> = {
   plain_explainer: 'Ask about any concept or paste a confusing passage...',
   practice_questions: 'Ask for practice questions...',
   exam_preparation: 'Ask an exam question or paste your draft...',
-  progress_check: 'Explain a topic in your own words...',
   research: 'Ask any question for a sourced answer...',
-  readiness_assessment: 'Type "Start assessment" to begin...',
 };
 
 /* ── Markdown renderer ──────────────────────────────────────────────────── */
@@ -62,76 +58,6 @@ const MarkdownRenderer = ({ content }: { content: string }) => (
   </ReactMarkdown>
 );
 
-/* ── Draggable floating settings button ─────────────────────────────────── */
-function DraggableSettingsButton({ onClick, topOverride }: { onClick: () => void; topOverride: number }) {
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const dragging = useRef(false);
-  const offset = useRef({ x: 0, y: 0 });
-  const didDrag = useRef(false);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    setPos({ x: window.innerWidth - 310, y: topOverride });
-  }, [topOverride]);
-
-  const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
-
-  const startHold = (cx: number, cy: number) => {
-    if (!pos) return;
-    holdTimer.current = setTimeout(() => {
-      dragging.current = true;
-      didDrag.current = false;
-      offset.current = { x: cx - pos.x, y: cy - pos.y };
-    }, 300);
-  };
-
-  useEffect(() => {
-    const move = (e: MouseEvent) => {
-      if (!dragging.current) return;
-      didDrag.current = true;
-      setPos({ x: clamp(e.clientX - offset.current.x, 0, window.innerWidth - 56), y: clamp(e.clientY - offset.current.y, 0, window.innerHeight - 56) });
-    };
-    const up = () => { if (holdTimer.current) clearTimeout(holdTimer.current); dragging.current = false; };
-    const tmove = (e: TouchEvent) => {
-      if (!dragging.current) return;
-      didDrag.current = true;
-      const t = e.touches[0];
-      setPos({ x: clamp(t.clientX - offset.current.x, 0, window.innerWidth - 56), y: clamp(t.clientY - offset.current.y, 0, window.innerHeight - 56) });
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-    window.addEventListener('touchmove', tmove, { passive: true });
-    window.addEventListener('touchend', up);
-    return () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      window.removeEventListener('touchmove', tmove);
-      window.removeEventListener('touchend', up);
-    };
-  }, []);
-
-  if (!pos) return null;
-
-  return (
-    <button
-      onMouseDown={e => startHold(e.clientX, e.clientY)}
-      onTouchStart={e => { const t = e.touches[0]; startHold(t.clientX, t.clientY); }}
-      onClick={() => { if (!didDrag.current) onClick(); didDrag.current = false; }}
-      style={{
-        position: 'fixed', left: pos.x, top: pos.y, zIndex: 9999,
-        cursor: 'grab', touchAction: 'none', userSelect: 'none',
-        width: '44px', height: '44px', borderRadius: '50%',
-        background: 'var(--navy-card)', border: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '1.2rem', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-        transition: 'box-shadow 0.2s',
-      }}
-      title="Settings (hold to move)"
-    >
-      ⚙️
-    </button>
-  );
-}
 
 /* ── Per-message action bar ─────────────────────────────────────────────── */
 interface MessageActionsProps {
@@ -254,7 +180,6 @@ export default function CoursePage() {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [streamingMessage, setStreamingMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -379,7 +304,7 @@ export default function CoursePage() {
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
 
   return (
-    <div className="flex flex-col" style={{ height: '100vh', background: 'var(--navy)', color: 'var(--text-primary)' }}>
+    <div className="flex flex-col w-screen max-w-full" style={{ height: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', overflow: 'hidden' }}>
 
       {/* ── TOP BAR ── */}
       <div className="flex-shrink-0 border-b" style={{ borderColor: 'var(--border)' }}>
@@ -387,7 +312,7 @@ export default function CoursePage() {
           <button onClick={() => router.back()} className="flex-shrink-0 text-sm px-2 py-1 rounded" style={{ color: 'var(--gold)' }}>
             ← Back
           </button>
-          <h1 className="flex-1 text-sm font-bold truncate" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }} title={course.name}>
+          <h1 className="flex-1 text-sm font-bold truncate min-w-0" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }} title={course.name}>
             {course.name}
           </h1>
           <button
@@ -398,7 +323,7 @@ export default function CoursePage() {
             {sidebarOpen ? '▶' : '◀'} Panel
           </button>
         </div>
-        <div className="flex gap-1.5 px-3 pb-2" style={{ overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex gap-1.5 px-3 pb-2" style={{ overflowX: "auto", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", msOverflowStyle: "none", minWidth: 0 }}>
           {MODES.map(mode => (
             <button
               key={mode.id}
@@ -597,24 +522,7 @@ export default function CoursePage() {
         </div>
       )}
 
-      {/* ── DRAGGABLE FLOATING SETTINGS BUTTON ── */}
-      <DraggableSettingsButton
-        onClick={() => setSettingsOpen(true)}
-        topOverride={settings.settingsBtnTop}
-      />
-
-      {/* ── SETTINGS MODAL — now wired to real SettingsPanel ── */}
-      {settingsOpen && (
-        <div
-          className="fixed inset-0 z-[300] flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.7)' }}
-          onClick={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}
-        >
-          <div style={{ position: 'relative' }}>
-            <SettingsPanel />
-          </div>
-        </div>
-      )}
+      <SettingsPanel />
     </div>
   );
 }

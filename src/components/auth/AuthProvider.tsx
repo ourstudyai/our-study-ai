@@ -6,6 +6,8 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase/config';
 import { UserProfile } from '@/lib/types';
 import { getUserProfile } from '@/lib/firestore/users';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 
 interface AuthContextType {
   firebaseUser: User | null;
@@ -41,6 +43,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const profile = await getUserProfile(user.uid);
           setUserProfile(profile);
+
+          // Register FCM token for admins
+          if (profile?.role === 'admin' || profile?.role === 'chief_admin') {
+            try {
+              const { requestNotificationPermission } = await import('@/lib/firebase/messaging');
+              const token = await requestNotificationPermission();
+              if (token) {
+                await updateDoc(doc(db, 'users', user.uid), { fcmToken: token });
+              }
+            } catch (e) {
+              console.warn('[AuthProvider] FCM registration failed:', e);
+            }
+          }
         } catch (error) {
           console.error('Error fetching user profile:', error);
           setUserProfile(null);

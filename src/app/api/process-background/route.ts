@@ -82,6 +82,29 @@ export async function POST(req: NextRequest) {
             status: finalStatus as any,
         });
 
+        // ── Notify admins ──────────────────────────────────────────────────────
+        const statusLabels: Record<string, string> = {
+          pending_review: "ready for review",
+          ocr_pending: "awaiting OCR",
+          awaiting_course: "needs course assignment",
+          quarantined: "quarantined — no course match",
+        };
+        const label = statusLabels[finalStatus] ?? finalStatus;
+        try {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://ourstudyai-cd5ee.web.app";
+          await fetch(`${appUrl}/api/notify-admins`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "new_upload",
+              title: "📄 New Upload",
+              body: `${fileName} is ${label}`,
+              data: { materialId, status: finalStatus, fileName },
+            }),
+          });
+        } catch (notifyErr) {
+          console.error("[process-background] Notify failed:", notifyErr);
+        }
         console.log(`[process-background] Done for material ${materialId}, status: ${finalStatus}`);
         return NextResponse.json({ success: true, materialId, status: finalStatus });
 
