@@ -54,6 +54,10 @@ export async function extractText(
     // ── PDF ──────────────────────────────────────────────────────────────────
     if (mimeType === "application/pdf") {
         try {
+            // Polyfill DOMMatrix for Vercel/Node environment
+            if (typeof (globalThis as any).DOMMatrix === 'undefined') {
+                (globalThis as any).DOMMatrix = class { constructor() {} };
+            }
             const pdfParse = require("pdf-parse");
             const result = await pdfParse(buffer);
 
