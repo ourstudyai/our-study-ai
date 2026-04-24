@@ -69,7 +69,7 @@ export async function extractText(
     if (mimeType === "application/pdf") {
         if (cloudinaryUrl) {
             try {
-                const ocrText = await runMistralOCR(cloudinaryUrl);
+                const ocrText = await runMistralOCR(buffer, mimeType, fileName);
                 const wordCount = countWords(ocrText);
                 return {
                     text: ocrText,
@@ -103,7 +103,7 @@ export async function extractText(
         // DOCX with no extractable text — try Mistral OCR
         if (cloudinaryUrl) {
             try {
-                const ocrText = await runMistralOCR(cloudinaryUrl);
+                const ocrText = await runMistralOCR(buffer, mimeType, fileName);
                 return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
             } catch (err) {
                 console.error("[extractor] Mistral OCR failed for DOCX:", err);
@@ -130,7 +130,7 @@ export async function extractText(
     ) {
         if (cloudinaryUrl) {
             try {
-                const ocrText = await runMistralOCR(cloudinaryUrl);
+                const ocrText = await runMistralOCR(buffer, mimeType, fileName);
                 return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
             } catch (err) {
                 console.error("[extractor] Mistral OCR failed for image:", err);
