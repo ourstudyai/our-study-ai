@@ -18,7 +18,6 @@ export async function POST(req: NextRequest) {
         const {
             materialId,
             cloudinaryUrl,
-            fileBase64,
             mimeType,
             fileName,
             category,
