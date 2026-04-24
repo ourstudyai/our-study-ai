@@ -23,6 +23,9 @@ async function runMistralOCR(cloudinaryUrl: string): Promise<string> {
     const apiKey = process.env.MISTRAL_API_KEY;
     if (!apiKey) throw new Error("MISTRAL_API_KEY not set");
 
+    # Strip Cloudinary signature tokens (s--...--) — Mistral can't use signed URLs
+    const cleanUrl = cloudinaryUrl.replace(/\/s--[^-]+--(--)?\//, "/");
+
     const res = await fetch("https://api.mistral.ai/v1/ocr", {
         method: "POST",
         headers: {
@@ -33,7 +36,7 @@ async function runMistralOCR(cloudinaryUrl: string): Promise<string> {
             model: "mistral-ocr-latest",
             document: {
                 type: "document_url",
-                document_url: cloudinaryUrl,
+                document_url: cleanUrl,
             },
         }),
     });
