@@ -30,7 +30,7 @@ async function runMistralOCR(buffer: Buffer, mimeType: string = "application/pdf
         model: "mistral-ocr-latest",
         document: {
             type: "document_url",
-            documentUrl: `data:${mimeType};base64,${base64Data}`,
+            document_url: `data:${mimeType};base64,${base64Data}`,
         },
     });
 
