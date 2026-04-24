@@ -28,9 +28,13 @@ export async function POST(req: NextRequest) {
         // ── Fetch file from Cloudinary ────────────────────────────────────────
         let buffer = Buffer.alloc(0);
         try {
+            console.log("[process-background] Fetching from Cloudinary:", cloudinaryUrl);
             const fileRes = await fetch(cloudinaryUrl);
+            console.log("[process-background] Cloudinary response status:", fileRes.status, "ok:", fileRes.ok);
+            if (!fileRes.ok) throw new Error(`HTTP ${fileRes.status}`);
             const arrayBuffer = await fileRes.arrayBuffer();
             buffer = Buffer.from(arrayBuffer);
+            console.log("[process-background] Buffer size:", buffer.length);
         } catch (err) {
             console.error("[process-background] Failed to fetch file from Cloudinary:", err);
         }
