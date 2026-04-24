@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
 import { Client } from "@upstash/qstash";
-import { saveMaterial } from "@/lib/firestore/materials";
+import { adminDb } from "@/lib/firebase/admin";
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
@@ -64,7 +64,9 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Phase 1b: Save stub to Firestore ─────────────────────────────────
-        const materialId = await saveMaterial({
+        const matRef = adminDb.collection('materials').doc();
+        const materialId = matRef.id;
+        await matRef.set({
             fileName,
             fileUrl: cloudinaryUrl,
             mimeType,
@@ -84,7 +86,8 @@ export async function POST(req: NextRequest) {
             confirmedCourseName: null,
             confidence: "low",
             classifierReason: "Processing queued.",
-            status: "processing" as any,
+            status: "processing",
+            createdAt: new Date(),
         });
 
         // ── Phase 1c: Queue background processing via QStash ─────────────────
