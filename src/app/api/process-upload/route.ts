@@ -20,7 +20,7 @@ async function uploadToCloudinary(buffer: Buffer, fileName: string, folder: stri
         const sanitized = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
         const publicId = `${folder}/${Date.now()}_${sanitized}`;
         const stream = cloudinary.uploader.upload_stream(
-            { public_id: publicId, resource_type: "raw", overwrite: false },
+            { public_id: publicId, resource_type: "auto", access_mode: "public", overwrite: false },
             (error, result) => {
                 if (error || !result) return reject(error ?? new Error("Cloudinary upload failed"));
                 resolve(result.secure_url);

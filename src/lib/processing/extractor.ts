@@ -51,47 +51,23 @@ export async function extractText(
     cloudinaryUrl?: string   // passed in for OCR fallback
 ): Promise<ExtractionResult> {
 
-    // ── PDF ──────────────────────────────────────────────────────────────────
+    // ── PDF — use Mistral OCR for all PDFs (pdf-parse incompatible with Vercel) ──
     if (mimeType === "application/pdf") {
-        try {
-            // Polyfill DOMMatrix for Vercel/Node environment
-            if (typeof (globalThis as any).DOMMatrix === 'undefined') {
-                (globalThis as any).DOMMatrix = class { constructor() {} };
-            }
-            const pdfParse = require("pdf-parse");
-            const result = await pdfParse(buffer);
-
-            const text = result.text?.trim() ?? "";
-            const wordCount = countWords(text);
-            const pageCount = result.numpages ?? 1;
-
-            // Enough text extracted — use it directly
-            if (wordCount >= 50) {
-                return { text, method: "pdf-parse", pageCount, wordCount, isScanned: false };
-            }
-
-            // Scanned PDF — fall through to Mistral OCR
-        } catch (err) {
-            console.error("[extractor] PDF parse failed, falling back to OCR:", err);
-            // Fall through to Mistral OCR
-        }
-
-        // Mistral OCR fallback for scanned PDFs
         if (cloudinaryUrl) {
             try {
                 const ocrText = await runMistralOCR(cloudinaryUrl);
+                const wordCount = countWords(ocrText);
                 return {
                     text: ocrText,
                     method: "mistral-ocr",
-                    wordCount: countWords(ocrText),
-                    isScanned: true,
+                    wordCount,
+                    pageCount: 1,
+                    isScanned: wordCount < 50,
                 };
             } catch (err) {
                 console.error("[extractor] Mistral OCR failed for PDF:", err);
             }
         }
-
-        // No URL available or OCR failed — return pending
         return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
 
