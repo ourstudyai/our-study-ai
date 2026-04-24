@@ -19,18 +19,17 @@ export type ExtractionResult = {
 
 // ─── Mistral OCR ──────────────────────────────────────────────────────────────
 
-async function runMistralOCR(buffer: Buffer, mimeType: string = "application/pdf"): Promise<string> {
+async function runMistralOCR(cloudinaryUrl: string): Promise<string> {
     const apiKey = process.env.MISTRAL_API_KEY;
     if (!apiKey) throw new Error("MISTRAL_API_KEY not set");
 
     const client = new Mistral({ apiKey });
-    const base64Data = buffer.toString("base64");
 
     const response = await client.ocr.process({
         model: "mistral-ocr-latest",
         document: {
             type: "document_url",
-            document_url: `data:${mimeType};base64,${base64Data}`,
+            documentUrl: cloudinaryUrl,
         },
     });
 
@@ -56,7 +55,7 @@ export async function extractText(
     if (mimeType === "application/pdf") {
         if (cloudinaryUrl) {
             try {
-                const ocrText = await runMistralOCR(buffer, mimeType);
+                const ocrText = await runMistralOCR(cloudinaryUrl);
                 const wordCount = countWords(ocrText);
                 return {
                     text: ocrText,
@@ -90,7 +89,7 @@ export async function extractText(
         // DOCX with no extractable text — try Mistral OCR
         if (cloudinaryUrl) {
             try {
-                const ocrText = await runMistralOCR(buffer, mimeType);
+                const ocrText = await runMistralOCR(cloudinaryUrl);
                 return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
             } catch (err) {
                 console.error("[extractor] Mistral OCR failed for DOCX:", err);
@@ -117,7 +116,7 @@ export async function extractText(
     ) {
         if (cloudinaryUrl) {
             try {
-                const ocrText = await runMistralOCR(buffer, mimeType);
+                const ocrText = await runMistralOCR(cloudinaryUrl);
                 return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
             } catch (err) {
                 console.error("[extractor] Mistral OCR failed for image:", err);
