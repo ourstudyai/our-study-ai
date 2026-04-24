@@ -107,7 +107,6 @@ export async function POST(req: NextRequest) {
                 body: {
                     materialId,
                     cloudinaryUrl,
-                    fileBase64: buffer.toString("base64"),
                     mimeType,
                     fileName,
                     category: category ?? "other",
