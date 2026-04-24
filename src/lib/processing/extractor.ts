@@ -5,7 +5,7 @@
 // Scanned PDFs, images, DOCX failures → Mistral OCR 3 (mistral-ocr-latest)
 
 import mammoth from "mammoth";
-import { Mistral } from "@mistralai/mistralai";
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,19 +23,30 @@ async function runMistralOCR(cloudinaryUrl: string): Promise<string> {
     const apiKey = process.env.MISTRAL_API_KEY;
     if (!apiKey) throw new Error("MISTRAL_API_KEY not set");
 
-    const client = new Mistral({ apiKey });
-
-    const response = await client.ocr.process({
-        model: "mistral-ocr-latest",
-        document: {
-            type: "document_url",
-            documentUrl: cloudinaryUrl,
+    const res = await fetch("https://api.mistral.ai/v1/ocr", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
         },
+        body: JSON.stringify({
+            model: "mistral-ocr-latest",
+            document: {
+                type: "document_url",
+                document_url: cloudinaryUrl,
+            },
+        }),
     });
 
-    // Concatenate all page texts
-    const text = response.pages
-        ?.map((p: { markdown?: string }) => p.markdown ?? "")
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Mistral OCR HTTP ${res.status}: ${err}`);
+    }
+
+    const data = await res.json() as { pages?: { markdown?: string }[] };
+
+    const text = data.pages
+        ?.map((p) => p.markdown ?? "")
         .join("\n\n")
         .trim() ?? "";
 
