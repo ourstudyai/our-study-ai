@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractText } from "@/lib/processing/extractor";
 import { classifyMaterial, MaterialCategory } from "@/lib/processing/classifier";
-import { updateMaterial } from "@/lib/firestore/materials";
+import { adminDb } from "@/lib/firebase/admin";
 
 export async function POST(req: NextRequest) {
     try {
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Update Firestore ──────────────────────────────────────────────────
-        await updateMaterial(materialId, {
+        await adminDb.collection('materials').doc(materialId).update({
             extractedText: extraction.text,
             wordCount: extraction.wordCount,
             pageCount: extraction.pageCount ?? 0,
