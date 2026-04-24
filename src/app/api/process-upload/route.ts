@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
         let cloudinaryUrl: string;
         try {
-            const { url: cloudinaryUrl } = await uploadToCloudinary(buffer, fileName, folder);
+            ({ url: cloudinaryUrl } = await uploadToCloudinary(buffer, fileName, folder));
         } catch (err) {
             console.error("[process-upload] Cloudinary upload failed:", err);
             return NextResponse.json({ error: "File storage failed. Please try again." }, { status: 500 });
@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
                 body: {
                     materialId,
                     cloudinaryUrl,
+                    fileBase64: buffer.toString("base64"),
                     mimeType,
                     fileName,
                     category: category ?? "other",
