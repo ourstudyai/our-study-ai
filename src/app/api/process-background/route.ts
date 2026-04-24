@@ -6,12 +6,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { extractText } from "@/lib/processing/extractor";
 import { classifyMaterial, MaterialCategory } from "@/lib/processing/classifier";
 import { adminDb } from "@/lib/firebase/admin";
+import { Redis } from "@upstash/redis";
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
 export async function POST(req: NextRequest) {
     try {
         const {
             materialId,
             cloudinaryUrl,
+            fileBase64,
             mimeType,
             fileName,
             category,
@@ -25,18 +32,23 @@ export async function POST(req: NextRequest) {
 
         console.log(`[process-background] Starting for material ${materialId}`);
 
-        // ── Fetch file from Cloudinary ────────────────────────────────────────
+        // ── Fetch file from Redis ─────────────────────────────────────────────
         let buffer = Buffer.alloc(0);
         try {
-            console.log("[process-background] Fetching from Cloudinary:", cloudinaryUrl);
-            const fileRes = await fetch(cloudinaryUrl);
-            console.log("[process-background] Cloudinary response status:", fileRes.status, "ok:", fileRes.ok);
-            if (!fileRes.ok) throw new Error(`HTTP ${fileRes.status}`);
-            const arrayBuffer = await fileRes.arrayBuffer();
-            buffer = Buffer.from(arrayBuffer);
-            console.log("[process-background] Buffer size:", buffer.length);
+            const base64 = await redis.get<string>(`file:${materialId}`);
+            if (base64) {
+                buffer = Buffer.from(base64, "base64");
+                console.log("[process-background] Buffer from Redis, size:", buffer.length);
+                await redis.del(`file:${materialId}`);
+            } else {
+                console.warn("[process-background] No buffer in Redis, falling back to Cloudinary");
+                const fileRes = await fetch(cloudinaryUrl);
+                if (!fileRes.ok) throw new Error(`HTTP ${fileRes.status}`);
+                buffer = Buffer.from(await fileRes.arrayBuffer());
+                console.log("[process-background] Buffer from Cloudinary, size:", buffer.length);
+            }
         } catch (err) {
-            console.error("[process-background] Failed to fetch file from Cloudinary:", err);
+            console.error("[process-background] Failed to get buffer:", err);
         }
 
         // ── Extract text ──────────────────────────────────────────────────────
