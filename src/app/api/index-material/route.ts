@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import Groq from 'groq-sdk';
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
 export async function POST(req: NextRequest) {
+  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
   try {
     const { materialId, action = 'add' } = await req.json();
     if (!materialId) return NextResponse.json({ error: 'Missing materialId' }, { status: 400 });
