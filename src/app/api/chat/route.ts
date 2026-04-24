@@ -6,9 +6,8 @@ import Groq from "groq-sdk";
 import { getChunksByCourse } from "@/lib/firestore/materials";
 import { getSystemPrompt } from "@/lib/gemini/system-prompts";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
-
 export async function POST(req: NextRequest) {
+  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
   try {
     const body = await req.json();
     const { message, courseId, courseName, courseDescription, mode, conversationHistory } = body;
