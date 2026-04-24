@@ -15,15 +15,22 @@ cloudinary.config({
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN! });
 
-async function uploadToCloudinary(buffer: Buffer, fileName: string, folder: string): Promise<string> {
+async function uploadToCloudinary(buffer: Buffer, fileName: string, folder: string): Promise<{ url: string; publicId: string }> {
     return new Promise((resolve, reject) => {
         const sanitized = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
         const publicId = `${folder}/${Date.now()}_${sanitized}`;
         const stream = cloudinary.uploader.upload_stream(
-            { public_id: publicId, resource_type: "auto", access_mode: "public", overwrite: false },
+            { public_id: publicId, resource_type: "raw", overwrite: false },
             (error, result) => {
                 if (error || !result) return reject(error ?? new Error("Cloudinary upload failed"));
-                resolve(result.secure_url);
+                // Generate signed URL valid for 6 hours
+                const signedUrl = cloudinary.url(result.public_id, {
+                    resource_type: 'raw',
+                    type: 'upload',
+                    sign_url: true,
+                    expires_at: Math.floor(Date.now() / 1000) + 21600,
+                });
+                resolve({ url: signedUrl, publicId: result.public_id });
             }
         );
         stream.end(buffer);
@@ -57,7 +64,7 @@ export async function POST(req: NextRequest) {
 
         let cloudinaryUrl: string;
         try {
-            cloudinaryUrl = await uploadToCloudinary(buffer, fileName, folder);
+            const { url: cloudinaryUrl } = await uploadToCloudinary(buffer, fileName, folder);
         } catch (err) {
             console.error("[process-upload] Cloudinary upload failed:", err);
             return NextResponse.json({ error: "File storage failed. Please try again." }, { status: 500 });
