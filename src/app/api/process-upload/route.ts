@@ -7,9 +7,14 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
 import { Client } from "@upstash/qstash";
+import { Redis } from "@upstash/redis";
 import { adminDb } from "@/lib/firebase/admin";
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN! });
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
 async function uploadToCloudinary(buffer: Buffer, fileName: string, folder: string): Promise<{ url: string; publicId: string }> {
     return new Promise((resolve, reject) => {
@@ -97,6 +102,15 @@ export async function POST(req: NextRequest) {
             status: "processing",
             createdAt: new Date(),
         });
+
+        // ── Phase 1b2: Store buffer in Redis for background job ────────────────
+        try {
+            const base64 = buffer.toString("base64");
+            await redis.set(`file:${materialId}`, base64, { ex: 3600 });
+            console.log("[process-upload] Buffer stored in Redis, size:", buffer.length);
+        } catch (err) {
+            console.error("[process-upload] Redis store failed:", err);
+        }
 
         // ── Phase 1c: Queue background processing via QStash ─────────────────
         const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? `https://${req.headers.get("host")}`;
