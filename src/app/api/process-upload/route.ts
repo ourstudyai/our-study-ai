@@ -7,12 +7,6 @@ import { v2 as cloudinary } from "cloudinary";
 import { Client } from "@upstash/qstash";
 import { adminDb } from "@/lib/firebase/admin";
 
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-    api_key: process.env.CLOUDINARY_API_KEY!,
-    api_secret: process.env.CLOUDINARY_API_SECRET!,
-});
-
 const qstash = new Client({ token: process.env.QSTASH_TOKEN! });
 
 async function uploadToCloudinary(buffer: Buffer, fileName: string, folder: string): Promise<{ url: string; publicId: string }> {
@@ -38,6 +32,11 @@ async function uploadToCloudinary(buffer: Buffer, fileName: string, folder: stri
 }
 
 export async function POST(req: NextRequest) {
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+        api_key: process.env.CLOUDINARY_API_KEY!,
+        api_secret: process.env.CLOUDINARY_API_SECRET!,
+    });
     try {
         const formData = await req.formData();
         const file = formData.get("file") as File | null;
