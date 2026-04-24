@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 // src/app/api/process-background/route.ts
 // Phase 2: Called by QStash after upload completes.
 // Fetches file from Cloudinary, extracts text, classifies, updates Firestore.

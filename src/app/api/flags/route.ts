@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 // Flags API Route
 import { NextRequest, NextResponse } from 'next/server';
 

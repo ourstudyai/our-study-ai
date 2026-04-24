@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 // src/app/api/notify-admins/route.ts
 // Sends FCM push notifications to admins based on notification type
 

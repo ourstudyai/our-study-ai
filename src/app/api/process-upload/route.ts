@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 // src/app/api/process-upload/route.ts
 // Phase 1: Upload to Cloudinary + save stub to Firestore + queue background job via QStash
 // Returns materialId immediately (~3s), well within Vercel Hobby 10s limit

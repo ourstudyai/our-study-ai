@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 // src/app/api/chat/route.ts
 // Streaming chat endpoint — Groq LLM with RAG context from material_chunks
 

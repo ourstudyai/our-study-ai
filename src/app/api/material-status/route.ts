@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 // src/app/api/material-status/[materialId]/route.ts
 // Polling endpoint — client calls this every 3s to check if processing is done
 
