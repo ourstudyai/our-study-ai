@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 // Returns materialId immediately (~3s), well within Vercel Hobby 10s limit
 
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { v2 as cloudinary } from "cloudinary";
 import { Client } from "@upstash/qstash";
 import { Redis } from "@upstash/redis";
@@ -21,12 +22,12 @@ async function uploadToCloudinary(buffer: Buffer, fileName: string, folder: stri
         const sanitized = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
         const publicId = `${folder}/${Date.now()}_${sanitized}`;
         const stream = cloudinary.uploader.upload_stream(
-            { public_id: publicId, resource_type: "raw", overwrite: false },
+            { public_id: publicId, resource_type: "auto", overwrite: false },
             (error, result) => {
                 if (error || !result) return reject(error ?? new Error("Cloudinary upload failed"));
                 // Generate signed URL valid for 6 hours
                 const signedUrl = cloudinary.url(result.public_id, {
-                    resource_type: 'raw',
+                    resource_type: 'auto',
                     type: 'upload',
                     sign_url: true,
                     expires_at: Math.floor(Date.now() / 1000) + 21600,
@@ -63,14 +64,31 @@ export async function POST(req: NextRequest) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
+        // ── Duplicate check via file hash ──────────────────────────────────
+        const fileHash = crypto.createHash('md5').update(buffer).digest('hex');
+        const existingSnap = await adminDb.collection('materials')
+            .where('fileHash', '==', fileHash)
+            .limit(1)
+            .get();
+        if (!existingSnap.empty) {
+            const existing = existingSnap.docs[0].data();
+            return NextResponse.json({
+                duplicate: true,
+                existingId: existingSnap.docs[0].id,
+                existingFileName: existing.fileName,
+                existingStatus: existing.status,
+            }, { status: 409 });
+        }
+
         // ── Phase 1a: Upload to Cloudinary ───────────────────────────────────
         const folder = suggestedCourseId
             ? `contributions/${suggestedCourseId}`
             : "contributions/auto-detect";
 
         let cloudinaryUrl: string;
+        let publicId: string;
         try {
-            ({ url: cloudinaryUrl } = await uploadToCloudinary(buffer, fileName, folder));
+            ({ url: cloudinaryUrl, publicId } = await uploadToCloudinary(buffer, fileName, folder));
         } catch (err) {
             console.error("[process-upload] Cloudinary upload failed:", err);
             return NextResponse.json({ error: "File storage failed. Please try again." }, { status: 500 });
@@ -81,7 +99,9 @@ export async function POST(req: NextRequest) {
         const materialId = matRef.id;
         await matRef.set({
             fileName,
+            fileHash,
             fileUrl: cloudinaryUrl,
+            publicId: publicId ?? null,
             mimeType,
             uploadedBy,
             uploadedByRole,

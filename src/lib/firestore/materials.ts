@@ -106,11 +106,16 @@ export async function getMaterialsByStatus(
 ): Promise<Material[]> {
     const q = query(
         collection(db, MATERIALS_COL),
-        where("status", "==", status),
-        orderBy("createdAt", "desc")
+        where("status", "==", status)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Material));
+    return snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() } as Material))
+        .sort((a, b) => {
+            const aTime = a.createdAt?.toMillis() ?? 0;
+            const bTime = b.createdAt?.toMillis() ?? 0;
+            return bTime - aTime;
+        });
 }
 
 export async function getMaterial(materialId: string): Promise<Material | null> {

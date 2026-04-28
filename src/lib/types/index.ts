@@ -1,5 +1,5 @@
 // ============================================
-// Our Study AI — Core TypeScript Interfaces
+// Lux Studiorum — Core TypeScript Interfaces
 // ============================================
 
 // --- User & Auth ---
@@ -38,6 +38,45 @@ export interface Course {
   courseLibraryId?: string;
   readinessPercentage?: number;
   createdAt: string;
+  published?: boolean;
+  sharedWith?: string[];
+}
+
+export interface Timetable {
+  id: string;
+  department: Department;
+  year: number;
+  type: 'regular' | 'bphil' | 'bth';
+  fileUrl: string;
+  publicId: string;
+  extractedText: string;
+  examDates: ExamDate[];
+  uploadedBy: string;
+  uploadedAt: string;
+}
+
+export interface ExamDate {
+  courseCode?: string;
+  courseName: string;
+  date: string;
+  startTime?: string;
+  endTime?: string;
+  venue?: string;
+}
+
+export interface MaterialRating {
+  id: string;
+  materialId: string;
+  userId: string;
+  rating: number;
+  createdAt: string;
+}
+
+export interface StudyHistory {
+  id: string;
+  materialId: string;
+  userId: string;
+  studiedAt: string;
 }
 
 // --- Study Modes ---

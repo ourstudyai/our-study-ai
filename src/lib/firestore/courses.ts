@@ -46,6 +46,35 @@ export async function getCourseById(courseId: string): Promise<Course | null> {
 }
 
 /**
+ * Get all courses (open access — no filtering).
+ * Only returns published courses for students.
+ */
+export async function getAllCourses(): Promise<Course[]> {
+  const q = query(
+    collection(db, COURSES_COLLECTION),
+    orderBy('department', 'asc'),
+    orderBy('year', 'asc'),
+    orderBy('semester', 'asc'),
+    orderBy('name', 'asc')
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Course));
+}
+
+/**
+ * Get courses by list of IDs (for shared course pools).
+ */
+export async function getCoursesByIds(ids: string[]): Promise<Course[]> {
+  if (!ids.length) return [];
+  const results: Course[] = [];
+  for (const id of ids) {
+    const c = await getCourseById(id);
+    if (c) results.push(c);
+  }
+  return results;
+}
+
+/**
  * Get all courses for a department (admin use).
  */
 export async function getCoursesByDepartment(

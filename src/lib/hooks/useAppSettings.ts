@@ -1,14 +1,22 @@
 // src/lib/hooks/useAppSettings.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { auth } from '@/lib/firebase/config';
+import { db } from '@/lib/firebase/config';
+import { onAuthStateChanged } from 'firebase/auth';
 
-export type Theme = 'sacred_academia' | 'dark' | 'light' | 'system';
+export type Theme = 'sacred_academia' | 'dark' | 'light' | 'system' | 'monastic_green' | 'midnight_indigo' | 'parchment_scroll' | 'high_contrast';
+export type UIFont = 'dm_sans' | 'inter' | 'lora' | 'system';
+export type AIFont = 'lora' | 'playfair' | 'georgia' | 'merriweather' | 'source_serif' | 'literata';
 
 export interface AppSettings {
     theme: Theme;
-    uiFontSize: number;       // 12–20, default 20
-    aiFontSize: number;       // 12–20, default 18
-    chatInputBottom: number;  // px from bottom of viewport, default 24
-    settingsBtnTop: number;   // px from top of viewport, default 167
+    uiFontSize: number;
+    aiFontSize: number;
+    chatInputBottom: number;
+    settingsBtnTop: number;
+    uiFont: UIFont;
+    aiFont: AIFont;
 }
 
 const DEFAULTS: AppSettings = {
@@ -17,14 +25,18 @@ const DEFAULTS: AppSettings = {
     aiFontSize: 18,
     chatInputBottom: 24,
     settingsBtnTop: 167,
+    uiFont: 'dm_sans',
+    aiFont: 'lora',
 };
 
-const KEY = 'ourstudyai_settings';
+const KEY = 'luxstudiorum_settings';
 
 export function useAppSettings() {
     const [settings, setSettings] = useState<AppSettings>(DEFAULTS);
     const [mounted, setMounted] = useState(false);
+    const [uid, setUid] = useState<string | null>(null);
 
+    // Load from localStorage first, then sync from Firestore
     useEffect(() => {
         try {
             const raw = localStorage.getItem(KEY);
@@ -33,13 +45,36 @@ export function useAppSettings() {
         setMounted(true);
     }, []);
 
-    const update = (patch: Partial<AppSettings>) => {
+    // Watch auth state and sync settings from Firestore
+    useEffect(() => {
+        const unsub = onAuthStateChanged(auth, async (user) => {
+            if (!user) { setUid(null); return; }
+            setUid(user.uid);
+            try {
+                const ref = doc(db, 'users', user.uid);
+                const snap = await getDoc(ref);
+                if (snap.exists() && snap.data().settings) {
+                    const cloudSettings = { ...DEFAULTS, ...snap.data().settings };
+                    setSettings(cloudSettings);
+                    try { localStorage.setItem(KEY, JSON.stringify(cloudSettings)); } catch { /* ignore */ }
+                }
+            } catch { /* ignore */ }
+        });
+        return unsub;
+    }, []);
+
+    const update = useCallback((patch: Partial<AppSettings>) => {
         setSettings(prev => {
             const next = { ...prev, ...patch };
             try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* ignore */ }
+            // Save to Firestore if signed in
+            if (uid) {
+                const ref = doc(db, 'users', uid);
+                updateDoc(ref, { settings: next }).catch(() => {});
+            }
             return next;
         });
-    };
+    }, [uid]);
 
     return { settings, update, mounted };
 }

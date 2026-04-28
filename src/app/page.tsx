@@ -25,10 +25,7 @@ export default function RootPage() {
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
       <div className="flex flex-col items-center gap-4">
         <div className="relative">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-seminary-gold to-seminary-burgundy flex items-center justify-center">
-            <span className="text-2xl font-bold text-white font-display">S</span>
-          </div>
-          <div className="absolute inset-0 rounded-2xl glow-gold animate-pulse-soft" />
+          <img src="https://i.imgur.com/MPk1vBA.png" alt="Lux Studiorum" style={{ width: '72px', height: '72px', objectFit: 'contain' }} />
         </div>
         <div className="flex items-center gap-2">
           <div className="pulse-dot" />

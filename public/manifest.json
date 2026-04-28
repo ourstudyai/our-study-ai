@@ -1,7 +1,7 @@
 {
-  "name": "OurStudyAI — Bigard Memorial Seminary",
-  "short_name": "OurStudyAI",
-  "description": "AI-powered academic study platform for Bigard seminary students.",
+  "name": "Lux Studiorum — Catholic Seminary",
+  "short_name": "Lux Studiorum",
+  "description": "AI-powered academic study platform for seminary students.",
   "start_url": "/dashboard",
   "display": "standalone",
   "orientation": "portrait",

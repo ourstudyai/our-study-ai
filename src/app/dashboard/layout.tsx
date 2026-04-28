@@ -27,7 +27,7 @@ export default function DashboardLayout({
   if (loading || !firebaseUser || !userProfile?.onboardingComplete) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
-        <div className="pulse-dot" />
+        <img src="https://i.imgur.com/MPk1vBA.png" alt="Loading" style={{ width: '64px', height: '64px', objectFit: 'contain', opacity: 0.8, animation: 'pulse 1.5s infinite' }} />
       </div>
     );
   }

@@ -5,7 +5,7 @@ import SettingsPanel from '@/components/SettingsPanel';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: "St. Jerome's AI",
+  title: "Lux Studiorum",
   description:
     'AI-powered study platform for St. Jerome\'s Formation House. Grounded in course materials, with structured responses and mastery tracking.',
   keywords: ['seminary', 'theology', 'philosophy', 'AI tutor', 'Catholic education'],
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: "St. Jerome's AI",
+    title: "Lux Studiorum",
   },
 };
 
@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="St. Jerome's AI" />
+        <meta name="apple-mobile-web-app-title" content="Lux Studiorum" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
         <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />

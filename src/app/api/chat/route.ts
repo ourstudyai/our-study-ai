@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
   try {
     const body = await req.json();
-    const { message, courseId, courseName, courseDescription, mode, conversationHistory } = body;
+    const { message, courseId, courseName, courseDescription, mode, conversationHistory, materialContext } = body;
 
     if (!message) {
       return new Response(JSON.stringify({ error: "Missing message." }), { status: 400 });
@@ -43,6 +43,11 @@ export async function POST(req: NextRequest) {
       semesterSummary = "Note: No course materials have been uploaded for this course yet. Let the student know naturally.";
     } else {
       semesterSummary = `Relevant course material excerpts:\n\n${ragContext}`;
+    }
+
+    if (materialContext) {
+      semesterSummary = (semesterSummary ? semesterSummary + '\n\n' : '') +
+        `ACTIVE STUDY MATERIAL (student has loaded this for focused study — answer questions with this as primary reference):\n\n${materialContext}`;
     }
 
     const systemPrompt = getSystemPrompt(

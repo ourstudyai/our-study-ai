@@ -2,13 +2,11 @@
 // Extracts text from uploaded files.
 // Text PDFs → pdf-parse
 // DOCX → mammoth
-// Scanned PDFs, images, DOCX failures → Mistral OCR 3 (mistral-ocr-latest)
+// Scanned PDFs, images, DOCX failures → Mistral OCR (mistral-ocr-latest)
 
 import mammoth from "mammoth";
 
-
 // ─── Types ────────────────────────────────────────────────────────────────────
-
 export type ExtractionResult = {
     text: string;
     method: "pdf-parse" | "mammoth" | "plain-text" | "mistral-ocr" | "ocr_pending";
@@ -18,74 +16,98 @@ export type ExtractionResult = {
 };
 
 // ─── Mistral OCR ──────────────────────────────────────────────────────────────
-
-async function runMistralOCR(cloudinaryUrl: string): Promise<string> {
+async function runMistralOCR(buffer: Buffer, mimeType: string, fileName: string): Promise<string> {
     const apiKey = process.env.MISTRAL_API_KEY;
     if (!apiKey) throw new Error("MISTRAL_API_KEY not set");
 
-    # Strip Cloudinary signature tokens (s--...--) — Mistral can't use signed URLs
-    const cleanUrl = cloudinaryUrl.replace(/\/s--[^-]+--(--)?\//, "/");
+    // Step 1: Upload buffer to Mistral files API
+    const formData = new FormData();
+    const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
+    formData.append("file", blob, fileName);
+    formData.append("purpose", "ocr");
 
-    const res = await fetch("https://api.mistral.ai/v1/ocr", {
+    const uploadRes = await fetch("https://api.mistral.ai/v1/files", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model: "mistral-ocr-latest",
-            document: {
-                type: "document_url",
-                document_url: cleanUrl,
-            },
-        }),
+        headers: { "Authorization": `Bearer ${apiKey}` },
+        body: formData,
     });
-
-    if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Mistral OCR HTTP ${res.status}: ${err}`);
+    if (!uploadRes.ok) {
+        const err = await uploadRes.text();
+        throw new Error(`Mistral file upload HTTP ${uploadRes.status}: ${err}`);
     }
+    const uploadData = await uploadRes.json() as { id: string };
+    const fileId = uploadData.id;
 
-    const data = await res.json() as { pages?: { markdown?: string }[] };
+    try {
+        // Step 2: Get signed URL
+        const urlRes = await fetch(`https://api.mistral.ai/v1/files/${fileId}/url`, {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+        });
+        if (!urlRes.ok) {
+            const err = await urlRes.text();
+            throw new Error(`Mistral signed URL HTTP ${urlRes.status}: ${err}`);
+        }
+        const urlData = await urlRes.json() as { url: string };
+        const signedUrl = urlData.url;
 
-    const text = data.pages
-        ?.map((p) => p.markdown ?? "")
-        .join("\n\n")
-        .trim() ?? "";
+        // Step 3: Run OCR
+        const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "mistral-ocr-latest",
+                document: {
+                    type: "document_url",
+                    document_url: signedUrl,
+                },
+            }),
+        });
+        if (!ocrRes.ok) {
+            const err = await ocrRes.text();
+            throw new Error(`Mistral OCR HTTP ${ocrRes.status}: ${err}`);
+        }
+        const ocrData = await ocrRes.json() as { pages?: { markdown?: string }[] };
+        return ocrData.pages?.map((p) => p.markdown ?? "").join("\n\n").trim() ?? "";
 
-    return text;
+    } finally {
+        // Cleanup: delete file from Mistral (fire and forget)
+        fetch(`https://api.mistral.ai/v1/files/${fileId}`, {
+            method: "DELETE",
+            headers: { "Authorization": `Bearer ${apiKey}` },
+        }).catch(() => {});
+    }
 }
 
 // ─── Main Extractor ───────────────────────────────────────────────────────────
-
 export async function extractText(
     buffer: Buffer,
     mimeType: string,
     fileName: string,
-    cloudinaryUrl?: string   // passed in for OCR fallback
+    cloudinaryUrl?: string
 ): Promise<ExtractionResult> {
 
-    // ── PDF — use Mistral OCR for all PDFs (pdf-parse incompatible with Vercel) ──
+    // ── PDF ───────────────────────────────────────────────────────────────────
     if (mimeType === "application/pdf") {
-        if (cloudinaryUrl) {
-            try {
-                const ocrText = await runMistralOCR(buffer, mimeType, fileName);
-                const wordCount = countWords(ocrText);
-                return {
-                    text: ocrText,
-                    method: "mistral-ocr",
-                    wordCount,
-                    pageCount: 1,
-                    isScanned: wordCount < 50,
-                };
-            } catch (err) {
-                console.error("[extractor] Mistral OCR failed for PDF:", err);
-            }
+        try {
+            const ocrText = await runMistralOCR(buffer, mimeType, fileName);
+            const wordCount = countWords(ocrText);
+            return {
+                text: ocrText,
+                method: "mistral-ocr",
+                wordCount,
+                pageCount: 1,
+                isScanned: wordCount < 50,
+            };
+        } catch (err) {
+            console.error("[extractor] Mistral OCR failed for PDF:", err);
         }
         return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
 
-    // ── DOCX ─────────────────────────────────────────────────────────────────
+    // ── DOCX ──────────────────────────────────────────────────────────────────
     if (
         mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
         fileName.endsWith(".docx")
@@ -99,17 +121,12 @@ export async function extractText(
         } catch (err) {
             console.error("[extractor] DOCX mammoth failed:", err);
         }
-
-        // DOCX with no extractable text — try Mistral OCR
-        if (cloudinaryUrl) {
-            try {
-                const ocrText = await runMistralOCR(buffer, mimeType, fileName);
-                return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
-            } catch (err) {
-                console.error("[extractor] Mistral OCR failed for DOCX:", err);
-            }
+        try {
+            const ocrText = await runMistralOCR(buffer, mimeType, fileName);
+            return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
+        } catch (err) {
+            console.error("[extractor] Mistral OCR failed for DOCX:", err);
         }
-
         return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
 
@@ -119,7 +136,7 @@ export async function extractText(
         return { text, method: "plain-text", wordCount: countWords(text), isScanned: false };
     }
 
-    // ── Images (JPG, PNG, JPEG) ───────────────────────────────────────────────
+    // ── Images ────────────────────────────────────────────────────────────────
     if (
         mimeType === "image/jpeg" ||
         mimeType === "image/png" ||
@@ -128,13 +145,11 @@ export async function extractText(
         fileName.endsWith(".jpeg") ||
         fileName.endsWith(".png")
     ) {
-        if (cloudinaryUrl) {
-            try {
-                const ocrText = await runMistralOCR(buffer, mimeType, fileName);
-                return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
-            } catch (err) {
-                console.error("[extractor] Mistral OCR failed for image:", err);
-            }
+        try {
+            const ocrText = await runMistralOCR(buffer, mimeType, fileName);
+            return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
+        } catch (err) {
+            console.error("[extractor] Mistral OCR failed for image:", err);
         }
         return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
@@ -144,7 +159,6 @@ export async function extractText(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function countWords(text: string): number {
     if (!text) return 0;
     return text.split(/\s+/).filter(Boolean).length;

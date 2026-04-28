@@ -13,7 +13,7 @@ const FAQ_CONTENT: Record<string, { title: string; content: string }> = {
   '/admin': { title: 'Admin Guide', content: `**Admin Panel**\n\nFor administrators only.\n\n**Approve** — Makes material available in the AI system.\n**Quarantine** — Flags problematic content.\n**Add to Index** — Adds approved material to the Library with AI topic generation.\n\nYou can remove materials from the index at any time without deleting them.` },
 };
 
-const DEFAULT_FAQ = { title: 'Help & Guide', content: `**St. Jerome's AI**\n\nA study platform for seminary students.\n\n**AI Chat modes**\n- Plain Explainer\n- Practice Questions\n- Exam Prep\n- Research\n\n**Privacy**\nConversations are private. AI does not train on your data.` };
+const DEFAULT_FAQ = { title: 'Help & Guide', content: `**Lux Studiorum**\n\nA study platform for seminary students.\n\n**AI Chat modes**\n- Plain Explainer\n- Practice Questions\n- Exam Prep\n- Research\n\n**Privacy**\nConversations are private. AI does not train on your data.` };
 
 interface AppNavProps { children: React.ReactNode; }
 
@@ -23,6 +23,7 @@ interface AdminNotification {
   title: string;
   body: string;
   read: boolean;
+  attendedBy?: string[];
   createdAt: any;
   data?: Record<string, string>;
   targetRole?: string;
@@ -85,6 +86,22 @@ export default function AppNav({ children }: AppNavProps) {
 
   async function markOneRead(id: string) {
     await updateDoc(doc(db, 'admin_notifications', id), { read: true });
+  }
+
+  async function markOneUnread(id: string) {
+    await updateDoc(doc(db, 'admin_notifications', id), { read: false });
+  }
+
+  async function markAttended(id: string) {
+    const userEmail = firebaseUser?.email ?? 'unknown';
+    const n = notifications.find(n => n.id === id);
+    if (!n) return;
+    const already = n.attendedBy ?? [];
+    if (already.includes(userEmail)) return;
+    await updateDoc(doc(db, 'admin_notifications', id), {
+      attendedBy: [...already, userEmail],
+      read: true,
+    });
   }
 
   function timeAgo(ts: any) {
@@ -171,52 +188,82 @@ export default function AppNav({ children }: AppNavProps) {
         </button>
 
         {notifOpen && (
-          <div style={{
-            position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-            width: '320px', maxHeight: '420px', overflowY: 'auto',
+          <div onMouseDown={e => e.stopPropagation()} style={{
+            position: 'fixed', top: '60px', right: '12px', left: 'auto',
+            width: '360px', maxWidth: 'calc(100vw - 24px)',
+            maxHeight: '480px', overflowY: 'auto',
             background: 'var(--navy-card)', border: '1px solid var(--border)',
-            borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 100,
+            borderRadius: '16px', boxShadow: '0 12px 48px rgba(0,0,0,0.5)', zIndex: 100,
           }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }}>Notifications</span>
+            {/* Header */}
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--navy-soft)', borderRadius: '16px 16px 0 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1rem' }}>🔔</span>
+                <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--gold)', fontFamily: 'Playfair Display, serif', letterSpacing: '0.02em' }}>Notifications</span>
+                {unreadCount > 0 && <span style={{ background: '#ef4444', color: '#fff', borderRadius: '999px', fontSize: '0.6rem', fontWeight: 700, minWidth: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{unreadCount}</span>}
+              </div>
               {notifications.some(n => !n.read) && (
-                <button onClick={markAllRead} style={{ fontSize: '0.7rem', color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                <button onClick={markAllRead} style={{ fontSize: '0.7rem', color: 'var(--gold)', background: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', padding: '3px 8px', cursor: 'pointer' }}>
                   Mark all read
                 </button>
               )}
             </div>
 
             {notifications.length === 0 ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                No notifications yet
+              <div style={{ padding: '32px 24px', textAlign: 'center' }}>
+                <p style={{ fontSize: '1.8rem', marginBottom: '8px' }}>🕊️</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontFamily: 'Lora, serif' }}>All quiet. No notifications yet.</p>
               </div>
             ) : (
-              notifications.map(n => (
-                <div
-                  key={n.id}
-                  onClick={() => { markOneRead(n.id); router.push(n.type === 'role_change' ? '/admin?tab=users' : '/admin'); setNotifOpen(false); }}
-                  style={{
+              notifications.map(n => {
+                const isAttended = (n.attendedBy ?? []).includes(firebaseUser?.email ?? '');
+                const actionUrl = n.type === 'role_change' ? '/admin?tab=users' : n.data?.materialId ? `/admin?material=${n.data.materialId}` : '/admin';
+                const typeIcon = n.type === 'role_change' ? '👤' : n.type === 'admin_action' ? '🛡️' : '📄';
+                const typeColor = n.type === 'role_change' ? '#ef4444' : n.type === 'admin_action' ? '#f59e0b' : 'var(--gold)';
+                return (
+                  <div key={n.id} style={{
                     padding: '12px 16px', borderBottom: '1px solid var(--border)',
-                    cursor: 'pointer', background: n.read ? 'transparent' : notifBg(n.type),
-                    transition: 'background 0.15s',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                    <div style={{ flex: 1 }}>
-                      <p style={{
-                        fontSize: '0.8rem', fontWeight: n.read ? 500 : 700,
-                        color: n.type === 'role_change' ? '#ef4444' : 'var(--text-primary)',
-                        marginBottom: '2px',
-                      }}>{n.title}</p>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.body}</p>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
-                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{timeAgo(n.createdAt)}</span>
-                      {!n.read && <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: n.type === 'role_change' ? '#ef4444' : 'var(--gold)', display: 'block' }} />}
+                    background: n.read ? 'transparent' : notifBg(n.type),
+                    opacity: isAttended ? 0.6 : 1,
+                    transition: 'all 0.15s',
+                  }}>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                      {/* Icon */}
+                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: `${typeColor}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.9rem' }}>
+                        {typeIcon}
+                      </div>
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
+                          <p style={{ fontSize: '0.82rem', fontWeight: n.read ? 500 : 700, color: typeColor, fontFamily: 'Playfair Display, serif', lineHeight: 1.3, marginBottom: '2px' }}>{n.title}</p>
+                          <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{timeAgo(n.createdAt)}</span>
+                        </div>
+                        <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.5, fontFamily: 'Lora, serif', marginBottom: '8px' }}>{n.body}</p>
+                        {isAttended && <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '6px' }}>✓ Attended to</p>}
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <button onClick={() => { markAttended(n.id); router.push(actionUrl); setNotifOpen(false); }}
+                            style={{ fontSize: '0.7rem', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', border: 'none', background: typeColor, color: '#fff', cursor: 'pointer' }}>
+                            {n.type === 'new_upload' ? 'Review' : n.type === 'role_change' ? 'View Users' : 'View'}
+                          </button>
+                          {n.read ? (
+                            <button onClick={() => markOneUnread(n.id)}
+                              style={{ fontSize: '0.7rem', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                              Mark unread
+                            </button>
+                          ) : (
+                            <button onClick={() => markOneRead(n.id)}
+                              style={{ fontSize: '0.7rem', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                              Mark read
+                            </button>
+                          )}
+                          {!n.read && <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: typeColor, display: 'inline-block', alignSelf: 'center' }} />}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
@@ -226,10 +273,10 @@ export default function AppNav({ children }: AppNavProps) {
 
   const Logo = () => (
     <button onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', background: 'transparent', border: 'none', padding: '0' }}>
-      <img src="https://www.retedeldono.it/sites/default/files/images/foto-onlus/Logo_SGE_Bianco.png" alt="St. Jerome's" style={{ width: '32px', height: '32px', objectFit: 'contain', flexShrink: 0 }} />
+      <img src="https://i.imgur.com/MPk1vBA.png" alt="Onus Meum Leve" style={{ width: '32px', height: '32px', objectFit: 'contain', flexShrink: 0 }} />
       <div style={{ textAlign: 'left' }}>
-        <div style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', lineHeight: 1.2 }}>St. Jerome's</div>
-        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>AI Study</div>
+        <div style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', lineHeight: 1.2 }}>Lux Studiorum</div>
+        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>Lux in Tenebris</div>
       </div>
     </button>
   );

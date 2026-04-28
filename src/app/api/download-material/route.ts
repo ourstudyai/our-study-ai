@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     // Generate signed URL valid for 15 minutes
     const signedUrl = cloudinary.url(publicId, {
-      resource_type: 'raw',
+      resource_type: 'auto',
       type: 'upload',
       sign_url: true,
       expires_at: Math.floor(Date.now() / 1000) + 900,

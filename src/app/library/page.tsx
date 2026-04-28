@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import AppNav from '@/components/AppNav';
@@ -69,7 +70,8 @@ export default function LibraryPage() {
 
   // Access gate
   useEffect(() => {
-    if (authLoading || !firebaseUser) return;
+    if (authLoading) return;
+    if (!firebaseUser) { router.replace('/login'); return; }
     async function checkAccess() {
       if (isAdmin) { setHasAccess(true); setAccessChecked(true); return; }
       const snap = await getDocs(
@@ -142,6 +144,76 @@ export default function LibraryPage() {
     } else {
       await addDoc(collection(db, 'bookmarks'), { userId: firebaseUser.uid, materialId: m.id, type: 'library', savedAt: serverTimestamp() });
       setBookmarks(b => new Set(b).add(m.id));
+    }
+  }
+
+  async function handleCopyText(m: IndexedMaterial) {
+    if (!m.extractedText) return;
+    try {
+      await navigator.clipboard.writeText(m.extractedText);
+      alert('Text copied to clipboard!');
+    } catch { alert('Copy failed — try selecting the text manually.'); }
+  }
+
+  function handleDownloadTxt(m: IndexedMaterial) {
+    if (!m.extractedText) return;
+    const blob = new Blob([m.extractedText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (m.indexDisplayName || m.fileName).replace(/\.[^/.]+$/, '') + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleDownloadPdf(m: IndexedMaterial) {
+    if (!m.extractedText) return;
+    try {
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const title = m.indexDisplayName || m.fileName;
+      const margin = 15;
+      const pageWidth = 210 - margin * 2;
+      const lineHeight = 6;
+      let y = 20;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.setTextColor(40, 40, 40);
+      const titleLines = pdf.splitTextToSize(title, pageWidth);
+      pdf.text(titleLines, margin, y);
+      y += titleLines.length * 8 + 6;
+
+      if (m.confirmedCourseName) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(10);
+        pdf.setTextColor(100, 100, 100);
+        pdf.text(m.confirmedCourseName, margin, y);
+        y += 8;
+      }
+
+      pdf.setDrawColor(196, 160, 80);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, y, 210 - margin, y);
+      y += 8;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.setTextColor(40, 40, 40);
+
+      const lines = pdf.splitTextToSize(m.extractedText, pageWidth);
+      for (const line of lines) {
+        if (y > 270) {
+          pdf.addPage();
+          y = 20;
+        }
+        pdf.text(line, margin, y);
+        y += lineHeight;
+      }
+
+      pdf.save((m.indexDisplayName || m.fileName).replace(/\.[^/.]+$/, '') + '.pdf');
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('PDF generation failed. Try downloading as text instead.');
     }
   }
 
@@ -242,7 +314,7 @@ export default function LibraryPage() {
         <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
           <div>
             <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '4px' }}>
-              St. Jerome's AI
+              Lux Studiorum
             </p>
             <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '2px' }}>
               Materials Library
@@ -261,7 +333,7 @@ export default function LibraryPage() {
         {/* ── Permanent disclaimer ────────────────────────────────────── */}
         <div style={{ borderLeft: '3px solid var(--gold)', background: 'rgba(196,160,80,0.06)', borderRadius: '0 10px 10px 0', padding: '12px 16px', marginBottom: '20px' }}>
           <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-            This library is intended exclusively for members of St Jerome's Formation House. All materials contained here are freely distributed lecture notes and student study aids. No commercial or restricted materials are indexed here. Unauthorised access or redistribution is not permitted.
+            This library is intended exclusively for Catholic seminarians. All materials contained here are freely distributed lecture notes and student study aids. No commercial or restricted materials are indexed here. Unauthorised access or redistribution is not permitted.
           </p>
         </div>
 
@@ -288,7 +360,7 @@ export default function LibraryPage() {
           ].map(f => (
             <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
               style={{ background: f.value ? 'rgba(196,160,80,0.12)' : 'var(--navy-card)', border: `1px solid ${f.value ? 'rgba(196,160,80,0.4)' : 'var(--border)'}`, borderRadius: '99px', padding: '5px 12px', color: f.value ? 'var(--gold)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>
-              <option value="">All {f.label}s</option>
+              <option value="">All {f.label === 'Category' ? 'Categories' : f.label + 's'}</option>
               {f.options.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
           ))}

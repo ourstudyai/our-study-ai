@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getFilteredCourses } from '@/lib/firestore/courses';
 import { Course, Department } from '@/lib/types';
+import { db } from '@/lib/firebase/config';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 
 const DEPARTMENTS: { id: Department; label: string }[] = [
   { id: 'theology', label: '✝️ Theology' },
@@ -28,6 +30,8 @@ export default function DashboardPage() {
   const [activeSemester, setActiveSemester] = useState<number>(userProfile?.currentSemester ?? 1);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [timetable, setTimetable] = useState<any>(null);
 
   // Year access logic per handoff doc:
   // Theology students: all 4 philosophy years + theology years up to current
@@ -67,6 +71,44 @@ export default function DashboardPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [activeDept, activeYear, activeSemester]);
+
+  // Load assignments for this user's courses
+  useEffect(() => {
+    if (!userProfile?.department || !userProfile?.year) return;
+    const load = async () => {
+      try {
+        const now = new Date().toISOString();
+        const snap = await getDocs(query(
+          collection(db, 'assignments'),
+          where('status', '==', 'active'),
+          where('department', '==', userProfile.department),
+          where('year', '==', userProfile.year),
+          orderBy('dueDate', 'asc')
+        ));
+        const active = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter((a: any) => a.dueDate >= now);
+        setAssignments(active);
+      } catch {}
+    };
+    load();
+  }, [userProfile]);
+
+  // Load timetable
+  useEffect(() => {
+    if (!userProfile?.department) return;
+    const load = async () => {
+      try {
+        const snap = await getDocs(query(
+          collection(db, 'timetables'),
+          where('department', '==', userProfile.department),
+          where('type', '==', 'regular')
+        ));
+        if (!snap.empty) setTimetable({ id: snap.docs[0].id, ...snap.docs[0].data() });
+      } catch {}
+    };
+    load();
+  }, [userProfile]);
 
   // Hide theology tab entirely for philosophy students
   const visibleDepts = userDepartment === 'philosophy'

@@ -76,10 +76,10 @@ export default function LoginPage() {
           </div>
           <h1 className="text-3xl font-bold font-display tracking-tight mb-2"
             style={{ color: 'var(--text-primary)' }}>
-            Our Study AI
+            Lux Studiorum
           </h1>
           <p className="text-base" style={{ color: 'var(--text-secondary)' }}>
-            St. Jerome&apos;s Formation House
+            a Catholic seminary study platform
           </p>
           <div className="mt-3 flex items-center justify-center gap-2">
             <div className="w-8 h-px" style={{ background: 'var(--color-gold)' }} />
@@ -149,7 +149,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs mt-8" style={{ color: 'var(--text-muted)' }}>
-          © {new Date().getFullYear()} Our Study AI · A Catholic seminary learning tool
+          © {new Date().getFullYear()} Lux Studiorum · A Catholic seminary learning tool
         </p>
       </div>
     </div>

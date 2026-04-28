@@ -2,8 +2,7 @@
 // Analyses extracted text and suggests: category, courseId, confidence level
 // Used by /api/process-upload to auto-classify uploaded materials
 
-import { db } from "@/lib/firebase/config";
-import { collection, getDocs } from "firebase/firestore";
+import { adminDb } from "@/lib/firebase/admin";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +29,8 @@ type CourseRecord = {
     department?: string;
     year?: number;
     semester?: number;
+    sharedWith?: string[];
+    published?: boolean;
 };
 
 // ─── Category Keywords ────────────────────────────────────────────────────────
@@ -152,7 +153,7 @@ async function matchCourse(
     reason: string;
 }> {
     try {
-        const snapshot = await getDocs(collection(db, "courses"));
+        const snapshot = await adminDb.collection("courses").get();
         const courses: CourseRecord[] = snapshot.docs.map((doc) => ({
             id: doc.id,
             ...(doc.data() as Omit<CourseRecord, "id">),

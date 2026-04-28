@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
       body,
       data: data ?? {},
       read: false,
+      attendedBy: [],
       createdAt: new Date(),
       targetRole: type === 'new_upload' ? 'all_admins' : 'supreme',
     });

@@ -220,10 +220,10 @@ export default function ContributePage() {
     <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', background: 'var(--navy)' }}>
       <div style={{ width: '100%', maxWidth: '360px', textAlign: 'center' }}>
         <p style={{ fontSize: '3rem', marginBottom: '12px' }}>📚</p>
-        <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '6px' }}>St. Jerome's AI</p>
+        <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '6px' }}>Lux Studiorum</p>
         <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '10px' }}>Contribute Materials</h1>
         <p style={{ fontSize: '0.84rem', lineHeight: 1.7, color: 'var(--text-secondary)', marginBottom: '24px' }}>
-          Every note, past question, and handout you share makes St. Jerome's AI stronger. Sign in to get started.
+          Every note, past question, and handout you share makes Lux Studiorum stronger. Sign in to get started.
         </p>
         <button onClick={handleGoogleSignIn} disabled={signingIn}
           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '12px 20px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', opacity: signingIn ? 0.6 : 1 }}>
@@ -243,7 +243,14 @@ export default function ContributePage() {
         <p style={{ fontSize: '0.85rem', lineHeight: 1.7, color: 'var(--text-secondary)', marginBottom: '6px' }}>Your files have been received. Our team will review and make them available soon.</p>
         <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--gold)', marginBottom: '24px' }}>Every past question, every handout helps. Keep them coming. 🔥</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <button onClick={() => { setCarefulFiles([]); setCarefulStatuses({}); setCarefulDone(false); setSelectedCourseId(''); setCourseNotListed(false); setManualCourseName(''); setStep('form'); }}
+          <button onClick={() => {
+              setCarefulFiles([]); setCarefulStatuses({}); setCarefulDone(false);
+              setSelectedCourseId(''); setCourseNotListed(false); setManualCourseName('');
+              setDepartment(''); setYear(''); setSemester('');
+              setDetectFiles([]); setDetectStatuses({});
+              setActiveMode('careful');
+              setStep('form');
+            }}
             style={{ width: '100%', padding: '12px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}>
             Upload more materials →
           </button>
@@ -263,7 +270,7 @@ export default function ContributePage() {
 
           {/* Header */}
           <button onClick={() => router.push('/dashboard')} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', marginBottom: '16px', padding: 0 }}>← Back to dashboard</button>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.5, marginBottom: '4px' }}>St. Jerome's AI</p>
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.5, marginBottom: '4px' }}>Lux Studiorum</p>
           <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '4px' }}>Contribute Materials</h1>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '24px' }}>
             Signed in as <span style={{ color: 'var(--gold)' }}>{firebaseUser?.email}</span>

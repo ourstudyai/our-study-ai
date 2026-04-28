@@ -3,773 +3,924 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import AppNav from '@/components/AppNav';
 import {
   getMaterialsByStatus,
   updateMaterialStatus,
-  saveChunks,
-  getReports,
-  markReportRead,
-  Material,
-  UploadReport,
+  updateMaterial,
 } from '@/lib/firestore/materials';
 import { db } from '@/lib/firebase/config';
 import {
-  collection, getDocs, query, orderBy, addDoc, serverTimestamp,
-  where, doc, updateDoc,
+  collection, getDocs, query, orderBy, where,
+  addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
-import { Course } from '@/lib/types';
+import { Material } from '@/lib/firestore/materials';
+import AppNav from '@/components/AppNav';
+import ApprovalModal from '@/components/admin/ApprovalModal';
 
 const SUPREME = 'ourstudyai@gmail.com';
 
-type Tab = 'pending' | 'approved' | 'quarantined' | 'resurrection' | 'users' | 'reports';
-type SortKey = 'newest' | 'oldest' | 'confidence' | 'category';
+type Tab = 'pending' | 'approved' | 'quarantined' | 'resurrection' |
+           'users' | 'reports' | 'courses' | 'timetables' | 'assignments';
 
-const CONFIDENCE_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
-const CONF_COLOR: Record<string, string> = {
-  high: '#22c55e', medium: '#eab308', low: '#ef4444',
-};
-const CONF_ICON: Record<string, string> = { high: '🟢', medium: '🟡', low: '🔴' };
-const CAT_COLORS: Record<string, string> = {
-  lecture_notes: 'rgba(196,160,80,0.15)',
-  past_questions: 'rgba(99,102,241,0.15)',
-  aoc: 'rgba(236,72,153,0.15)',
-  syllabus: 'rgba(20,184,166,0.15)',
-};
-const CAT_TEXT: Record<string, string> = {
-  lecture_notes: '#c4a050', past_questions: '#818cf8', aoc: '#f472b6', syllabus: '#2dd4bf',
-};
+const TABS: { key: Tab; label: string; icon: string }[] = [
+  { key: 'pending',      label: 'Pending',     icon: '⏳' },
+  { key: 'approved',     label: 'Approved',    icon: '✓' },
+  { key: 'quarantined',  label: 'Quarantined', icon: '⚠' },
+  { key: 'resurrection', label: 'Resurrection',icon: '↺' },
+  { key: 'courses',      label: 'Courses',     icon: '📚' },
+  { key: 'assignments',  label: 'Assignments', icon: '📋' },
+  { key: 'timetables',   label: 'Timetables',  icon: '🗓' },
+  { key: 'users',        label: 'Users',       icon: '👥' },
+  { key: 'reports',      label: 'Reports',     icon: '📊' },
+];
 
-interface UserDoc {
-  uid: string; email: string; displayName: string; role: string;
-}
-
-interface IndexedMaterial extends Material {
-  indexed?: boolean;
-  contentList?: string[];
-  aiSummary?: string;
-  indexDisplayName?: string;
-  indexedAt?: unknown;
-}
-
-function notifySupreme(action: string, fileName: string, adminEmail: string, extra?: string) {
-  const labels: Record<string, string> = {
-    approve: '✅ Material Approved',
-    quarantine: '🔒 Material Quarantined',
-    delete: '🗑️ Material Deleted',
-    index: '📚 Material Indexed',
-    bulk_approve: '✅ Bulk Approval',
-    resurrect: '♻️ Material Resurrected',
-  };
-  const title = labels[action] ?? `🔔 Admin Action: ${action}`;
-  const body = extra ? `${adminEmail}: ${fileName} — ${extra}` : `${adminEmail}: ${fileName}`;
-  fetch('/api/notify-admins', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'admin_action', title, body, data: { action, fileName, adminEmail } }),
-  }).catch(() => {});
-}
-
-function logActivity(action: string, materialId: string, fileName: string, adminEmail: string) {
-  addDoc(collection(db, 'admin_activity'), {
-    action, materialId, fileName, adminEmail, timestamp: serverTimestamp(),
-  }).catch(() => {});
-}
+type Course = { id: string; name: string; code?: string; department: string; year: number; semester: number; description?: string };
 
 export default function AdminPage() {
-  const { userProfile, firebaseUser } = useAuth();
+  const { userProfile, firebaseUser, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'chief_admin';
+  const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
   const isChiefAdmin = userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
-  const isSupreme = firebaseUser?.email === SUPREME;
 
   const [tab, setTab] = useState<Tab>('pending');
-  const [sort, setSort] = useState<SortKey>('newest');
-  const [search, setSearch] = useState('');
-
-  const [pending, setPending] = useState<Material[]>([]);
-  const [approved, setApproved] = useState<Material[]>([]);
+  const [pending, setPending]       = useState<Material[]>([]);
+  const [approved, setApproved]     = useState<Material[]>([]);
   const [quarantined, setQuarantined] = useState<Material[]>([]);
   const [resurrection, setResurrection] = useState<Material[]>([]);
-  const [reports, setReports] = useState<UploadReport[]>([]);
-  const [users, setUsers] = useState<UserDoc[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-
-  const [loading, setLoading] = useState(true);
-  const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
-  const [editedText, setEditedText] = useState('');
-  const [selectedCourseId, setSelectedCourseId] = useState('');
-  const [categoryOverride, setCategoryOverride] = useState('');
-  const [modalAction, setModalAction] = useState<'idle' | 'approving' | 'quarantining' | 'deleting' | 'indexing'>('idle');
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [indexSuccess, setIndexSuccess] = useState<string | null>(null);
-
+  const [users, setUsers]           = useState<never[]>([]);
+  const [courses, setCourses]       = useState<Course[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [selected, setSelected]     = useState<Material | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [search, setSearch]         = useState('');
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
-  const [bulkApproving, setBulkApproving] = useState(false);
 
-  const [statsOpen, setStatsOpen] = useState(false);
-  const [activityLog, setActivityLog] = useState<unknown[]>([]);
-  const [activityOpen, setActivityOpen] = useState(false);
-
-  const [userSearch, setUserSearch] = useState('');
-  const [roleActionLoading, setRoleActionLoading] = useState<string | null>(null);
-
-  // ── Resurrection state ──────────────────────────────────────────────────
-  const [resurrectCourses, setResurrectCourses] = useState<Record<string, string>>({});
-  const [resurrectLoading, setResurrectLoading] = useState<Record<string, boolean>>({});
-
-  const adminEmail = firebaseUser?.email ?? 'unknown';
-
-  const loadData = useCallback(async () => {
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
     setLoading(true);
     try {
-      const [p, a, q, r, proc, ocr, rpts] = await Promise.all([
+      const [p, a, q, r] = await Promise.all([
         getMaterialsByStatus('pending_review'),
         getMaterialsByStatus('approved'),
         getMaterialsByStatus('quarantined'),
-        getMaterialsByStatus('awaiting_course'),
-        getMaterialsByStatus('processing'),
         getMaterialsByStatus('ocr_pending'),
-        getReports(),
       ]);
-      setPending([...p, ...proc, ...ocr]); setApproved(a); setQuarantined(q); setResurrection(r); setReports(rpts);
-
-      const coursesSnap = await getDocs(query(collection(db, 'courses'), orderBy('department'), orderBy('year'), orderBy('name')));
-      setCourses(coursesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Course)));
-
-      const actSnap = await getDocs(query(collection(db, 'admin_activity'), orderBy('timestamp', 'desc')));
-      setActivityLog(actSnap.docs.slice(0, 20).map(d => ({ id: d.id, ...d.data() })));
-
-      if (isChiefAdmin) {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        setUsers(usersSnap.docs.map(d => ({ uid: d.id, ...d.data() } as UserDoc)));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [isChiefAdmin]);
+      setPending(p); setApproved(a); setQuarantined(q); setResurrection(r);
+      const cSnap = await getDocs(query(collection(db, 'courses'), orderBy('name')));
+      setCourses(cSnap.docs.map(d => ({ id: d.id, ...d.data() } as Course)));
+    } finally { setLoading(false); }
+  }, [isAdmin]);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!firebaseUser) { router.replace('/login'); return; }
     if (!isAdmin) { router.replace('/dashboard'); return; }
-    loadData();
-  }, [isAdmin, loadData, router]);
+    load();
+  }, [authLoading, firebaseUser, isAdmin, load, router]);
 
-  // ── Filtering + sorting ──────────────────────────────────────────────────
   function filterAndSort(list: Material[]) {
+    if (!search) return list;
     const q = search.toLowerCase();
-    let filtered = q
-      ? list.filter(m =>
-          m.fileName?.toLowerCase().includes(q) ||
-          m.confirmedCourseName?.toLowerCase().includes(q) ||
-          m.suggestedCourseName?.toLowerCase().includes(q) ||
-          m.uploaderEmail?.toLowerCase().includes(q)
-        )
-      : list;
-
-    return [...filtered].sort((a, b) => {
-      if (sort === 'newest') return (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0);
-      if (sort === 'oldest') return (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0);
-      if (sort === 'confidence') return (CONFIDENCE_ORDER[a.confidence] ?? 2) - (CONFIDENCE_ORDER[b.confidence] ?? 2);
-      if (sort === 'category') return (a.category ?? '').localeCompare(b.category ?? '');
-      return 0;
-    });
+    return list.filter(m =>
+      m.fileName?.toLowerCase().includes(q) ||
+      m.uploaderEmail?.toLowerCase().includes(q) ||
+      m.suggestedCourseName?.toLowerCase().includes(q) ||
+      m.detectedCourseName?.toLowerCase().includes(q)
+    );
   }
 
-  const listMap: Record<Tab, Material[]> = {
+  const listMap: Partial<Record<Tab, Material[]>> = {
     pending: filterAndSort(pending),
     approved: filterAndSort(approved),
     quarantined: filterAndSort(quarantined),
     resurrection: filterAndSort(resurrection),
-    users: [],
-    reports: [],
   };
 
-  // ── Modal open ──────────────────────────────────────────────────────────
-  function openModal(m: Material) {
-    setSelectedMaterial(m);
-    setEditedText(m.extractedText ?? '');
-    setSelectedCourseId(m.confirmedCourseId ?? '');
-    setCategoryOverride(m.category ?? '');
-    setDeleteConfirm(false);
-    setIndexSuccess(null);
-    setModalAction('idle');
-  }
+  const counts: Partial<Record<Tab, number>> = {
+    pending: pending.length,
+    approved: approved.length,
+    quarantined: quarantined.length,
+    resurrection: resurrection.length,
+    courses: courses.length,
+  };
 
-  function closeModal() {
-    setSelectedMaterial(null);
-    setDeleteConfirm(false);
-    setIndexSuccess(null);
-  }
-
-  // ── Approve ─────────────────────────────────────────────────────────────
-  async function handleApprove() {
-    if (!selectedMaterial) return;
-    const courseId = selectedCourseId || selectedMaterial.confirmedCourseId;
-    if (!courseId) { alert('Please select a course before approving.'); return; }
-    setModalAction('approving');
+  async function handleApprove(m: Material, courseId?: string, courseName?: string) {
+    setActionLoading(true);
     try {
-      // Save edited text back to material
-      await updateDoc(doc(db, 'materials', selectedMaterial.id), {
-        extractedText: editedText,
-        ...(categoryOverride ? { category: categoryOverride } : {}),
-      });
-      const course = courses.find(c => c.id === courseId);
-      await saveChunks(selectedMaterial.id, courseId, categoryOverride as never || selectedMaterial.category, editedText);
-      await updateMaterialStatus(selectedMaterial.id, 'approved', courseId, course?.name ?? selectedMaterial.confirmedCourseName ?? '');
-      logActivity('approve', selectedMaterial.id, selectedMaterial.fileName, adminEmail);
-      notifySupreme('approve', selectedMaterial.fileName, adminEmail, courseId ? 'assigned to course' : undefined);
-      setPending(p => p.filter(m => m.id !== selectedMaterial.id));
-      setQuarantined(q => q.filter(m => m.id !== selectedMaterial.id));
-      setResurrection(r => r.filter(m => m.id !== selectedMaterial.id));
-      closeModal();
-      await loadData();
-    } finally {
-      setModalAction('idle');
-    }
+      await updateMaterial(m.id, { status: 'approved', confirmedCourseId: courseId ?? m.suggestedCourseId ?? '', confirmedCourseName: courseName ?? m.suggestedCourseName ?? '' });
+      await load();
+      setDrawerOpen(false); setSelected(null);
+    } finally { setActionLoading(false); }
   }
 
-  // ── Quarantine ──────────────────────────────────────────────────────────
-  async function handleQuarantine() {
-    if (!selectedMaterial) return;
-    setModalAction('quarantining');
+  async function handleReject(m: Material) {
+    setActionLoading(true);
     try {
-      await updateMaterialStatus(selectedMaterial.id, 'quarantined');
-      logActivity('quarantine', selectedMaterial.id, selectedMaterial.fileName, adminEmail);
-      notifySupreme('quarantine', selectedMaterial.fileName, adminEmail);
-      await loadData();
-      closeModal();
-    } finally {
-      setModalAction('idle');
-    }
+      await updateMaterialStatus(m.id, 'ocr_pending');
+      await load();
+      setDrawerOpen(false); setSelected(null);
+    } finally { setActionLoading(false); }
   }
 
-  // ── Delete ──────────────────────────────────────────────────────────────
-  async function handleDelete() {
-    if (!selectedMaterial) return;
-    setModalAction('deleting');
+  async function handleDelete(m: Material) {
+    if (!window.confirm('Permanently delete this material?')) return;
+    setActionLoading(true);
     try {
-      const res = await fetch('/api/delete-material', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ materialId: selectedMaterial.id }),
-      });
-      if (!res.ok) throw new Error('Delete failed');
-      logActivity('delete', selectedMaterial.id, selectedMaterial.fileName, adminEmail);
-      notifySupreme('delete', selectedMaterial.fileName, adminEmail);
-      await loadData();
-      closeModal();
-    } catch {
-      alert('Delete failed. Please try again.');
-    } finally {
-      setModalAction('idle');
-    }
+      await updateMaterialStatus(m.id, 'quarantined');
+      await load();
+      setDrawerOpen(false); setSelected(null);
+    } finally { setActionLoading(false); }
   }
 
-  // ── Index ───────────────────────────────────────────────────────────────
-  async function handleIndex() {
-    if (!selectedMaterial) return;
-    setModalAction('indexing');
-    setIndexSuccess(null);
+  async function handleQuarantine(m: Material) {
+    setActionLoading(true);
     try {
-      const res = await fetch('/api/index-material', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ materialId: selectedMaterial.id }),
-      });
-      if (!res.ok) throw new Error('Index failed');
-      logActivity('index', selectedMaterial.id, selectedMaterial.fileName, adminEmail);
-      notifySupreme('index', selectedMaterial.fileName, adminEmail);
-      setIndexSuccess('Added to Library ✓');
-      await loadData();
-    } catch {
-      setIndexSuccess('Failed — please try again');
-    } finally {
-      setModalAction('idle');
-    }
+      await updateDoc(doc(db, 'materials', m.id), { status: 'quarantined' });
+      await load();
+      setDrawerOpen(false); setSelected(null);
+    } finally { setActionLoading(false); }
   }
 
-  // ── Bulk approve ─────────────────────────────────────────────────────────
-  async function handleBulkApprove() {
-    if (bulkSelected.size === 0) return;
-    setBulkApproving(true);
-    for (const id of Array.from(bulkSelected)) {
-      const m = pending.find(x => x.id === id);
-      if (!m || !m.confirmedCourseId) continue;
-      try {
-        await saveChunks(m.id, m.confirmedCourseId, m.category, m.extractedText);
-        await updateMaterialStatus(m.id, 'approved', m.confirmedCourseId, m.confirmedCourseName ?? '');
-        logActivity('bulk_approve', m.id, m.fileName, adminEmail);
-        notifySupreme('bulk_approve', m.fileName, adminEmail);
-      } catch {}
-    }
-    setBulkSelected(new Set());
-    setBulkApproving(false);
-    await loadData();
-  }
+  function openDetail(m: Material) { setSelected(m); if (m.status === 'pending_review' || m.status === 'ocr_pending') { setApprovalOpen(true); } else { setDrawerOpen(true); } }
 
-  // ── Resurrection ─────────────────────────────────────────────────────────
-  async function handleResurrectOne(m: Material) {
-    const courseId = resurrectCourses[m.id];
-    if (!courseId) return;
-    setResurrectLoading(l => ({ ...l, [m.id]: true }));
-    try {
-      const course = courses.find(c => c.id === courseId);
-      await saveChunks(m.id, courseId, m.category, m.extractedText);
-      await updateMaterialStatus(m.id, 'approved', courseId, course?.name ?? '');
-      logActivity('resurrect', m.id, m.fileName, adminEmail);
-      notifySupreme('resurrect', m.fileName, adminEmail);
-      await loadData();
-    } finally {
-      setResurrectLoading(l => ({ ...l, [m.id]: false }));
-    }
-  }
-
-  // ── Role management ──────────────────────────────────────────────────────
-  async function setRole(uid: string, role: string) {
-    setRoleActionLoading(uid);
-    try {
-      const res = await fetch('/api/admin/set-role', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, role }),
-      });
-      if (!res.ok) throw new Error('Role change failed');
-      setUsers(u => u.map(x => x.uid === uid ? { ...x, role } : x));
-    } catch { alert('Role change failed.'); }
-    finally { setRoleActionLoading(null); }
-  }
-
-  // ── Stats ────────────────────────────────────────────────────────────────
-  const thisWeek = approved.filter(m => {
-    if (!m.createdAt) return false;
-    const d = (m.createdAt as { toDate: () => Date }).toDate();
-    return Date.now() - d.getTime() < 7 * 24 * 60 * 60 * 1000;
-  }).length;
-
-  // ── Grouped courses for dropdown ─────────────────────────────────────────
-  const groupedCourses = courses.reduce<Record<string, Course[]>>((acc, c) => {
-    const key = `${c.department.charAt(0).toUpperCase() + c.department.slice(1)} · Year ${c.year} · Sem ${c.semester}`;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(c);
-    return acc;
-  }, {});
-
-  if (!isAdmin) return null;
-
-  const tabs: { key: Tab; label: string; count?: number }[] = [
-    { key: 'pending', label: 'Pending', count: pending.length },
-    { key: 'approved', label: 'Approved', count: approved.length },
-    { key: 'quarantined', label: 'Quarantined', count: quarantined.length },
-    { key: 'resurrection', label: 'Resurrection', count: resurrection.length },
-    ...(isChiefAdmin ? [{ key: 'users' as Tab, label: 'Users' }] : []),
-    { key: 'reports', label: 'Reports', count: reports.filter(r => !r.read).length || undefined },
-  ];
+  if (authLoading || loading) return (
+    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: 32, height: 32, border: '2px solid var(--gold)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+        <p style={{ color: 'var(--gold)', fontSize: '0.8rem', opacity: 0.7 }}>Loading</p>
+      </div>
+    </div>
+  );
 
   const currentList = listMap[tab] ?? [];
 
-  return (
-    <AppNav>
-      <div style={{ minHeight: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', padding: '24px 16px', maxWidth: '900px', margin: '0 auto' }}>
-
-        {/* ── Header ─────────────────────────────────────────────────── */}
-        <div style={{ marginBottom: '20px' }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '4px' }}>
-            St. Jerome's AI
-          </p>
-          <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '4px' }}>
-            Admin Panel
-          </h1>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            {isSupreme ? '⭐ Supreme Chief Admin' : isChiefAdmin ? '🔑 Chief Admin' : '🛡️ Admin'} · {adminEmail}
-          </p>
-        </div>
-
-        {/* ── Stats strip ────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
-          {[
-            { label: 'Pending', value: pending.length, color: '#eab308' },
-            { label: 'Approved this week', value: thisWeek, color: '#22c55e' },
-            { label: 'Quarantined', value: quarantined.length, color: '#ef4444' },
-            { label: 'Awaiting course', value: resurrection.length, color: '#a78bfa' },
-          ].map(s => (
-            <div key={s.label} style={{ flex: '1 1 120px', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px 14px' }}>
-              <p style={{ fontSize: '1.2rem', fontWeight: 700, color: s.color }}>{s.value}</p>
-              <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Tabs ───────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '16px', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '4px' }}>
-          {tabs.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              style={{
-                flex: '1 1 80px', padding: '8px 10px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: tab === t.key ? 700 : 500,
-                background: tab === t.key ? 'rgba(196,160,80,0.15)' : 'transparent',
-                color: tab === t.key ? 'var(--gold)' : 'var(--text-secondary)',
-                transition: 'all 0.15s',
-              }}>
-              {t.label}{t.count !== undefined ? ` (${t.count})` : ''}
-            </button>
-          ))}
-        </div>
-
-        {/* ── Search + sort (for material tabs) ──────────────────────── */}
-        {['pending', 'approved', 'quarantined', 'resurrection'].includes(tab) && (
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search filename, course, email..."
-              style={{ flex: '1 1 200px', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '0.82rem' }} />
-            <select value={sort} onChange={e => setSort(e.target.value as SortKey)}
-              style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 10px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="confidence">By confidence</option>
-              <option value="category">By category</option>
-            </select>
+  function MainContent() {
+    return (
+      <div>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 10 }}>
+          <div>
+            <p style={{ fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.5, marginBottom: 2 }}>
+              {TABS.find(t => t.key === tab)?.icon} {TABS.find(t => t.key === tab)?.label}
+            </p>
+            <h1 style={{ fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '1.3rem', fontWeight: 700 }}>Admin Panel</h1>
           </div>
-        )}
-
-        {/* ── Bulk approve bar ────────────────────────────────────────── */}
-        {tab === 'pending' && bulkSelected.size > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(196,160,80,0.1)', border: '1px solid rgba(196,160,80,0.3)', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px' }}>
-            <span style={{ fontSize: '0.82rem', color: 'var(--gold)', flex: 1 }}>{bulkSelected.size} selected</span>
-            <button onClick={handleBulkApprove} disabled={bulkApproving}
-              style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: '8px', padding: '6px 14px', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', opacity: bulkApproving ? 0.6 : 1 }}>
-              {bulkApproving ? 'Approving...' : 'Approve all selected'}
-            </button>
-            <button onClick={() => setBulkSelected(new Set())}
-              style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '6px 10px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.78rem' }}>
-              Clear
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isChiefAdmin && <span style={{ fontSize: '0.65rem', background: 'rgba(196,160,80,0.1)', border: '1px solid rgba(196,160,80,0.2)', borderRadius: 99, padding: '3px 9px', color: 'var(--gold)' }}>★ Chief</span>}
           </div>
+        </div>
+
+        {/* Search */}
+        {['pending','approved','quarantined','resurrection'].includes(tab) && (
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search filename, course, email…"
+            style={{ width: '100%', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 14px', color: 'var(--text-primary)', fontSize: '0.82rem', marginBottom: 14, boxSizing: 'border-box' as const }}
+          />
         )}
 
-        {/* ── Loading ─────────────────────────────────────────────────── */}
-        {loading && (
-          <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.85rem' }}>Loading...</p>
-        )}
-
-        {/* ── Material cards ──────────────────────────────────────────── */}
-        {!loading && ['pending', 'approved', 'quarantined'].includes(tab) && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {currentList.length === 0 && (
-              <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.85rem' }}>
-                Nothing here{search ? ' matching your search' : ''}.
-              </p>
-            )}
-            {currentList.map(m => {
-              const isHighConf = m.confidence === 'high' && !!m.confirmedCourseId;
-              const isChecked = bulkSelected.has(m.id);
+        {/* Material list */}
+        {['pending','approved','quarantined','resurrection'].includes(tab) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {currentList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                <p style={{ fontSize: '2rem', marginBottom: 8 }}>✓</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>All clear — nothing {tab === 'pending' ? 'pending review' : tab}.</p>
+              </div>
+            ) : currentList.map(m => {
+              const isHighConf = m.confidence === 'high' && m.suggestedCourseId;
               return (
-                <div key={m.id}
-                  onClick={() => openModal(m)}
-                  style={{ background: 'var(--navy-card)', border: `1px solid ${isChecked ? 'var(--gold)' : 'var(--border)'}`, borderRadius: '12px', padding: '14px 16px', cursor: 'pointer', transition: 'border-color 0.15s', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                  {/* Bulk checkbox */}
-                  {tab === 'pending' && isHighConf && (
-                    <div onClick={e => { e.stopPropagation(); setBulkSelected(s => { const n = new Set(s); isChecked ? n.delete(m.id) : n.add(m.id); return n; }); }}
-                      style={{ width: '18px', height: '18px', borderRadius: '5px', border: `2px solid ${isChecked ? 'var(--gold)' : 'var(--border)'}`, background: isChecked ? 'var(--gold)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px', cursor: 'pointer' }}>
-                      {isChecked && <span style={{ color: 'var(--navy)', fontSize: '10px', fontWeight: 900 }}>✓</span>}
+                <div key={m.id} className="card-hover" onClick={() => openDetail(m)} style={{
+                  background: 'var(--navy-card)', border: '1px solid var(--border)',
+                  borderRadius: 12, padding: '12px 14px', cursor: 'pointer',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{m.fileName}</p>
+                      <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 4 }}>{m.uploaderEmail}</p>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {m.category && <span style={{ fontSize: '0.62rem', background: 'rgba(196,160,80,0.08)', color: 'var(--gold)', borderRadius: 99, padding: '1px 7px' }}>{m.category.replace('_',' ')}</span>}
+                        {m.confidence && <span style={{ fontSize: '0.62rem', color: m.confidence === 'high' ? '#22c55e' : '#eab308' }}>● {m.confidence}</span>}
+                        {m.wordCount ? <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span> : null}
+                      </div>
+                      {(m.suggestedCourseName || m.detectedCourseName) && (
+                        <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                          📖 {m.suggestedCourseName || m.detectedCourseName}
+                        </p>
+                      )}
                     </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px', alignItems: 'center' }}>
-                      <span style={{ background: CAT_COLORS[m.category] || 'rgba(196,160,80,0.1)', color: CAT_TEXT[m.category] || 'var(--gold)', fontSize: '0.65rem', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        {m.category?.replace('_', ' ') || 'unknown'}
-                      </span>
-                      <span style={{ fontSize: '0.72rem', color: CONF_COLOR[m.confidence] }}>
-                        {CONF_ICON[m.confidence]} {m.confidence}
-                      </span>
-                    </div>
-                    <p style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>
-                      {m.fileName}
-                    </p>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>
-                      {m.confirmedCourseName || m.suggestedCourseName || m.detectedCourseName || 'Course undetected'}
-                    </p>
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.uploaderEmail}</span>
-                      {m.wordCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span>}
-                      {m.pageCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.pageCount} pages</span>}
-                      {m.createdAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{(m.createdAt as { toDate: () => Date }).toDate().toLocaleDateString()}</span>}
+                    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                      {isHighConf && <span style={{ fontSize: '0.6rem', background: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: 99, padding: '1px 6px' }}>Auto-ready</span>}
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>→</span>
                     </div>
                   </div>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', flexShrink: 0 }}>›</span>
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* ── Resurrection tab ────────────────────────────────────────── */}
-        {!loading && tab === 'resurrection' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {currentList.length === 0 && (
-              <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.85rem' }}>No materials awaiting course assignment.</p>
-            )}
-            {currentList.map(m => (
-              <div key={m.id} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px 16px' }}>
-                <p style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: '4px' }}>{m.fileName}</p>
-                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                  Detected: "{m.detectedCourseName || 'none'}" · Suggested: "{m.suggestedCourseName || 'none'}" · {CONF_ICON[m.confidence]} {m.confidence}
-                </p>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <select value={resurrectCourses[m.id] ?? ''} onChange={e => setResurrectCourses(r => ({ ...r, [m.id]: e.target.value }))}
-                    style={{ flex: 1, background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: '8px', padding: '7px 10px', color: 'var(--text-primary)', fontSize: '0.8rem' }}>
-                    <option value="">— Assign course —</option>
-                    {Object.entries(groupedCourses).map(([group, cs]) => (
-                      <optgroup key={group} label={group}>
-                        {cs.map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <button onClick={() => handleResurrectOne(m)} disabled={!resurrectCourses[m.id] || resurrectLoading[m.id]}
-                    style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: '8px', padding: '7px 14px', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer', opacity: (!resurrectCourses[m.id] || resurrectLoading[m.id]) ? 0.5 : 1 }}>
-                    {resurrectLoading[m.id] ? 'Approving...' : 'Approve →'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Courses tab */}
+        {tab === 'courses' && <CoursesPanel courses={courses} onRefresh={load} />}
 
-        {/* ── Reports tab ─────────────────────────────────────────────── */}
-        {!loading && tab === 'reports' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {reports.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.85rem' }}>No reports.</p>}
-            {reports.map(r => (
-              <div key={r.id} style={{ background: 'var(--navy-card)', border: `1px solid ${r.read ? 'var(--border)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '12px', padding: '14px 16px', opacity: r.read ? 0.6 : 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                  <div>
-                    <p style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', marginBottom: '2px' }}>{r.fileName}</p>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>{r.uploaderEmail} · {r.errorType}</p>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{r.description}</p>
-                  </div>
-                  {!r.read && (
-                    <button onClick={() => markReportRead(r.id).then(loadData)}
-                      style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '7px', padding: '4px 10px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.72rem', flexShrink: 0 }}>
-                      Mark read
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Assignments tab */}
+        {tab === 'assignments' && <AssignmentsPanel courses={courses} />}
 
-        {/* ── User management tab ─────────────────────────────────────── */}
-        {!loading && tab === 'users' && isChiefAdmin && (
-          <div>
-            <input value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Search by email or name..."
-              style={{ width: '100%', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '0.82rem', marginBottom: '12px', boxSizing: 'border-box' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {users
-                .filter(u => !userSearch || u.email?.toLowerCase().includes(userSearch.toLowerCase()) || u.displayName?.toLowerCase().includes(userSearch.toLowerCase()))
-                .map(u => {
-                  const isThisSupreme = u.email === SUPREME;
-                  const loading = roleActionLoading === u.uid;
-                  return (
-                    <div key={u.uid} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.displayName || u.email}</p>
-                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{u.email}</p>
-                        <p style={{ fontSize: '0.68rem', color: isThisSupreme ? 'var(--gold)' : 'var(--text-muted)', marginTop: '2px' }}>
-                          {isThisSupreme ? '⭐ Supreme' : u.role}
-                        </p>
-                      </div>
-                      {!isThisSupreme && !loading && (
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                          {u.role === 'student' && (
-                            <button onClick={() => setRole(u.uid, 'admin')}
-                              style={{ background: 'rgba(196,160,80,0.1)', border: '1px solid rgba(196,160,80,0.3)', borderRadius: '7px', padding: '4px 10px', color: 'var(--gold)', cursor: 'pointer', fontSize: '0.72rem' }}>
-                              → Admin
-                            </button>
-                          )}
-                          {u.role === 'student' && isSupreme && (
-                            <button onClick={() => setRole(u.uid, 'chief_admin')}
-                              style={{ background: 'rgba(196,160,80,0.15)', border: '1px solid rgba(196,160,80,0.4)', borderRadius: '7px', padding: '4px 10px', color: 'var(--gold)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
-                              → Chief Admin
-                            </button>
-                          )}
-                          {u.role === 'admin' && (
-                            <button onClick={() => setRole(u.uid, 'student')}
-                              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '7px', padding: '4px 10px', color: '#fca5a5', cursor: 'pointer', fontSize: '0.72rem' }}>
-                              Remove admin
-                            </button>
-                          )}
-                          {u.role === 'chief_admin' && isSupreme && (
-                            <button onClick={() => setRole(u.uid, 'student')}
-                              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '7px', padding: '4px 10px', color: '#fca5a5', cursor: 'pointer', fontSize: '0.72rem' }}>
-                              Remove chief admin
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {loading && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Updating...</span>}
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        )}
+        {/* Users tab */}
+        {tab === 'users' && <UsersPanel currentUserEmail={firebaseUser?.email ?? ''} />}
 
-        {/* ── Collapsible stats ───────────────────────────────────────── */}
-        <div style={{ marginTop: '24px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
-          <button onClick={() => setStatsOpen(s => !s)}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            📊 Stats {statsOpen ? '▴' : '▾'}
+        {/* Reports tab */}
+        {tab === 'reports' && <div className="p-6" style={{color:'var(--text-muted)'}}>Reports coming soon.</div>}
+
+        {/* Timetables tab */}
+        {tab === 'timetables' && <TimetablesPanel courses={courses} />}
+      </div>
+    );
+  }
+
+
+  return (
+    <AppNav>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .tab-bar::-webkit-scrollbar { display: none; }
+        .tab-bar { -ms-overflow-style: none; scrollbar-width: none; }
+        .card-hover { transition: border-color 0.15s, background 0.15s; }
+        .card-hover:hover { border-color: rgba(196,160,80,0.4) !important; background: rgba(196,160,80,0.04) !important; }
+        @media (max-width: 899px) {
+          .main-content { padding-bottom: 80px !important; }
+        }
+      `}</style>
+      {/* ── Mobile Tab Bar ── */}
+      <div className="md:hidden tab-bar" style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+        background: 'var(--navy-card)', borderTop: '1px solid var(--border)',
+        display: 'flex', overflowX: 'auto', padding: '8px 0 12px',
+      }}>
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            padding: '4px 14px', background: 'transparent', border: 'none',
+            color: tab === t.key ? 'var(--gold)' : 'var(--text-muted)',
+            fontSize: '0.6rem', fontWeight: tab === t.key ? 700 : 400,
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            borderTop: tab === t.key ? '2px solid var(--gold)' : '2px solid transparent',
+            transition: 'all 0.15s',
+          }}>
+            <span style={{ fontSize: '1rem' }}>{t.icon}</span>
+            {t.label}
+            {counts[t.key] ? (
+              <span style={{ fontSize: '0.58rem', fontWeight: 700,
+                color: t.key === 'quarantined' ? '#ef4444' : '#eab308' }}>
+                {counts[t.key]}
+              </span>
+            ) : null}
           </button>
-          {statsOpen && (
-            <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' }}>
-              {[
-                { label: 'Total materials', value: pending.length + approved.length + quarantined.length + resurrection.length },
-                { label: 'Pending review', value: pending.length },
-                { label: 'Approved', value: approved.length },
-                { label: 'Quarantined', value: quarantined.length },
-                { label: 'Awaiting course', value: resurrection.length },
-              ].map(s => (
-                <div key={s.label} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px 14px' }}>
-                  <p style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--gold)' }}>{s.value}</p>
-                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>{s.label}</p>
-                </div>
-              ))}
-            </div>
-          )}
+        ))}
+      </div>
+
+      {/* ── Desktop layout wrapper ── */}
+      <div className="hidden md:flex" style={{ flex: 1, minHeight: '100dvh' }}>
+
+        {/* Desktop admin tab sidebar */}
+        <div style={{
+          width: '200px', flexShrink: 0, display: 'flex', flexDirection: 'column',
+          background: 'var(--navy-card)', borderRight: '1px solid var(--border)',
+          padding: '20px 0', overflowY: 'auto',
+        }}>
+          <div style={{ padding: '0 16px 16px' }}>
+            <p style={{ fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.5, marginBottom: 4 }}>Admin Panel</p>
+            {isChiefAdmin && <span style={{ fontSize: '0.62rem', background: 'rgba(196,160,80,0.1)', border: '1px solid rgba(196,160,80,0.2)', borderRadius: 99, padding: '2px 8px', color: 'var(--gold)' }}>★ Chief Admin</span>}
+          </div>
+          <div style={{ padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 12 }}>
+            {[{ label: 'Pending', val: pending.length, color: '#eab308' }, { label: 'Quarantined', val: quarantined.length, color: '#ef4444' }].map(s => s.val > 0 ? (
+              <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(196,160,80,0.06)', borderRadius: 6, padding: '3px 10px' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{s.label}</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: s.color }}>{s.val}</span>
+              </div>
+            ) : null)}
+          </div>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px',
+              background: tab === t.key ? 'rgba(196,160,80,0.1)' : 'transparent',
+              border: 'none', borderLeft: tab === t.key ? '3px solid var(--gold)' : '3px solid transparent',
+              color: tab === t.key ? 'var(--gold)' : 'var(--text-muted)',
+              fontSize: '0.8rem', fontWeight: tab === t.key ? 700 : 400,
+              cursor: 'pointer', width: '100%', textAlign: 'left', transition: 'all 0.15s',
+            }}>
+              <span style={{ fontSize: '0.85rem' }}>{t.icon}</span>
+              {t.label}
+              {counts[t.key] ? (
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', fontWeight: 700,
+                  color: t.key === 'quarantined' ? '#ef4444' : t.key === 'pending' ? '#eab308' : 'var(--gold)',
+                  background: 'rgba(196,160,80,0.1)', borderRadius: 99, padding: '1px 6px' }}>
+                  {counts[t.key]}
+                </span>
+              ) : null}
+            </button>
+          ))}
         </div>
 
-        {/* ── Activity log ────────────────────────────────────────────── */}
-        <div style={{ marginTop: '12px' }}>
-          <button onClick={() => setActivityOpen(s => !s)}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            📋 Activity log {activityOpen ? '▴' : '▾'}
-          </button>
-          {activityOpen && (
-            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {(activityLog as Record<string, string>[]).map((a, i) => (
-                <div key={i} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', flexShrink: 0 }}>{a.action}</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.fileName}</span>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', flexShrink: 0 }}>{a.adminEmail}</span>
-                </div>
-              ))}
-              {activityLog.length === 0 && <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No activity yet.</p>}
-            </div>
-          )}
+        {/* Desktop main content */}
+        <div style={{ flex: 1, minHeight: '100dvh', background: 'var(--navy)', padding: '16px', overflowY: 'auto', minWidth: 0 }}>
+          <MainContent />
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          PREVIEW MODAL
-      ══════════════════════════════════════════════════════════════════ */}
-      {selectedMaterial && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.85)', display: 'flex', flexDirection: 'column' }}>
-          {/* Top bar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', background: 'var(--navy-card)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-            <p style={{ flex: 1, fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {selectedMaterial.fileName}
-            </p>
-            <span style={{ fontSize: '0.72rem', color: CONF_COLOR[selectedMaterial.confidence] }}>{CONF_ICON[selectedMaterial.confidence]} {selectedMaterial.confidence}</span>
-            <button onClick={closeModal} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 10px', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0 }}>✕ Close</button>
-          </div>
+      {/* Mobile main content */}
+      <div className="md:hidden" style={{ background: 'var(--navy)', padding: '16px', paddingBottom: '80px', minHeight: '100dvh' }}>
+        <MainContent />
+      </div>
 
-          {/* Body */}
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', flexDirection: 'column' }}>
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-              {/* Left — file preview */}
-              <div style={{ flex: 1, background: '#111', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {selectedMaterial.mimeType === 'application/pdf' || selectedMaterial.fileUrl?.toLowerCase().includes('.pdf') ? (
-                  <iframe src={selectedMaterial.fileUrl} style={{ width: '100%', height: '100%', border: 'none' }} title="PDF Preview" />
-                ) : selectedMaterial.mimeType?.startsWith('image/') ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={selectedMaterial.fileUrl} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                ) : (
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>No preview available for this file type.</p>
-                )}
-              </div>
-
-              {/* Right — edit panel */}
-              <div style={{ width: '380px', flexShrink: 0, background: 'var(--navy-card)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
-                <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                  <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Uploader</p>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>{selectedMaterial.uploaderEmail}</p>
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-                    {selectedMaterial.wordCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{selectedMaterial.wordCount.toLocaleString()} words</span>}
-                    {selectedMaterial.pageCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{selectedMaterial.pageCount} pages</span>}
-                  </div>
-                </div>
-
-                {/* Course assignment */}
-                {!selectedMaterial.confirmedCourseId && (
-                  <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 600 }}>Assign Course <span style={{ color: '#ef4444' }}>*</span></p>
-                    <select value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)}
-                      style={{ width: '100%', background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: '8px', padding: '7px 10px', color: 'var(--text-primary)', fontSize: '0.8rem' }}>
-                      <option value="">— Select course —</option>
-                      {Object.entries(groupedCourses).map(([group, cs]) => (
-                        <optgroup key={group} label={group}>
-                          {cs.map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Category override */}
-                <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 600 }}>Category</p>
-                  <select value={categoryOverride} onChange={e => setCategoryOverride(e.target.value)}
-                    style={{ width: '100%', background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: '8px', padding: '7px 10px', color: 'var(--text-primary)', fontSize: '0.8rem' }}>
-                    {['lecture_notes', 'past_questions', 'aoc', 'syllabus'].map(c => (
-                      <option key={c} value={c}>{c.replace('_', ' ')}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Extracted text editor */}
-                <div style={{ padding: '14px 16px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 600 }}>Extracted Text <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>(editable)</span></p>
-                  <div
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={e => setEditedText(e.currentTarget.innerText)}
-                    style={{ flex: 1, minHeight: '200px', background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', fontSize: '0.75rem', color: 'var(--text-primary)', lineHeight: 1.6, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
-                    {editedText}
-                  </div>
-                </div>
-              </div>
+      {/* Detail Drawer */}
+      {drawerOpen && selected && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)' }} onClick={() => setDrawerOpen(false)}>
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 70,
+            background: 'var(--navy-card)', borderTop: '1px solid var(--border)',
+            borderRadius: '20px 20px 0 0', maxHeight: '90dvh', overflowY: 'auto',
+            animation: 'slideUp 0.25s ease',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 4px' }}>
+              <div style={{ width: 36, height: 4, background: 'var(--border)', borderRadius: 99 }} />
             </div>
-
-            {/* Action bar */}
-            <div style={{ display: 'flex', gap: '8px', padding: '12px 16px', background: 'var(--navy-card)', borderTop: '1px solid var(--border)', flexShrink: 0, flexWrap: 'wrap' }}>
-              <button onClick={handleApprove} disabled={modalAction !== 'idle'}
-                style={{ flex: 1, padding: '10px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: '9px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', opacity: modalAction !== 'idle' ? 0.6 : 1 }}>
-                {modalAction === 'approving' ? 'Approving...' : '✅ Approve'}
-              </button>
-              <button onClick={handleQuarantine} disabled={modalAction !== 'idle'}
-                style={{ flex: 1, padding: '10px', background: 'rgba(234,179,8,0.1)', color: '#fde68a', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '9px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', opacity: modalAction !== 'idle' ? 0.6 : 1 }}>
-                {modalAction === 'quarantining' ? '...' : '🔒 Quarantine'}
-              </button>
-              {selectedMaterial.status === 'approved' && (
-                <button onClick={handleIndex} disabled={modalAction !== 'idle'}
-                  style={{ flex: 1, padding: '10px', background: 'rgba(99,102,241,0.1)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '9px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', opacity: modalAction !== 'idle' ? 0.6 : 1 }}>
-                  {modalAction === 'indexing' ? 'Indexing...' : indexSuccess ?? '📚 Add to Index'}
-                </button>
+            <div style={{ padding: '0 16px 32px' }}>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+                  <p style={{ fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 700, color: 'var(--gold)', flex: 1 }}>{selected.fileName}</p>
+                  <button onClick={() => setDrawerOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', padding: 0, flexShrink: 0 }}>✕</button>
+                </div>
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>{selected.uploaderEmail}</p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {selected.category && <span style={{ fontSize: '0.65rem', fontWeight: 700, background: 'rgba(196,160,80,0.1)', color: 'var(--gold)', borderRadius: 99, padding: '2px 8px' }}>{selected.category.replace('_',' ')}</span>}
+                  {selected.confidence && <span style={{ fontSize: '0.65rem', color: selected.confidence === 'high' ? '#22c55e' : '#eab308', background: 'rgba(34,197,94,0.08)', borderRadius: 99, padding: '2px 8px' }}>● {selected.confidence} confidence</span>}
+                  {selected.wordCount && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{selected.wordCount.toLocaleString()} words</span>}
+                </div>
+              </div>
+              {(selected.suggestedCourseName || selected.detectedCourseName) && (
+                <div style={{ background: 'rgba(196,160,80,0.06)', border: '1px solid rgba(196,160,80,0.15)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                  <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--gold)', opacity: 0.7, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Classifier Suggestion</p>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 600 }}>{selected.suggestedCourseName || selected.detectedCourseName}</p>
+                  {selected.classifierReason && <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2 }}>{selected.classifierReason}</p>}
+                </div>
               )}
-              {!deleteConfirm ? (
-                <button onClick={() => setDeleteConfirm(true)} disabled={modalAction !== 'idle'}
-                  style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.08)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '9px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', opacity: modalAction !== 'idle' ? 0.6 : 1 }}>
-                  🗑️
-                </button>
-              ) : (
-                <button onClick={handleDelete} disabled={modalAction !== 'idle'}
-                  style={{ padding: '10px 14px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '9px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer' }}>
-                  {modalAction === 'deleting' ? 'Deleting...' : 'Confirm delete'}
-                </button>
+              {selected.extractedText && (
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Extracted Text Preview</p>
+                  <div style={{ background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', maxHeight: 200, overflowY: 'auto', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                    {selected.extractedText.slice(0, 1200).replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/^-\s/gm, '• ')}{selected.extractedText.length > 1200 ? '…' : ''}
+                  </div>
+                </div>
               )}
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Assign to Course</p>
+                <CourseSelector
+                  courses={courses}
+                  defaultCourseId={selected.suggestedCourseId ?? ''}
+                  onSelect={(id, name) => handleApprove(selected, id, name)}
+                  loading={actionLoading}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {selected.status === 'pending_review' && (
+                  <button onClick={() => handleApprove(selected)} disabled={actionLoading} style={{
+                    width: '100%', padding: '12px', background: 'var(--gold)', color: 'var(--navy)',
+                    border: 'none', borderRadius: 10, fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
+                    opacity: actionLoading ? 0.6 : 1,
+                  }}>
+                    {actionLoading ? 'Approving…' : '✓ Approve'}
+                  </button>
+                )}
+                {selected.status !== 'quarantined' && (
+                  <button onClick={() => handleQuarantine(selected)} disabled={actionLoading} style={{
+                    width: '100%', padding: '10px', background: 'transparent',
+                    border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10,
+                    color: '#fca5a5', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
+                  }}>⚠ Quarantine</button>
+                )}
+                <button onClick={() => handleDelete(selected)} disabled={actionLoading} style={{
+                  width: '100%', padding: '10px', background: 'transparent',
+                  border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10,
+                  color: '#ef4444', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
+                }}>🗑 Delete</button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {approvalOpen && selected && (
+        <ApprovalModal
+          material={selected}
+          courses={courses}
+          onClose={() => { setApprovalOpen(false); setSelected(null); }}
+          onDone={() => { setApprovalOpen(false); setSelected(null); load(); }}
+        />
+      )}
     </AppNav>
+  );
+}
+
+
+// ── Course Selector ────────────────────────────────────────────────────────────
+function CourseSelector({ courses, defaultCourseId, onSelect, loading }: {
+  courses: Course[]; defaultCourseId: string;
+  onSelect: (id: string, name: string) => void; loading: boolean;
+}) {
+  const [selected, setSelected] = useState(defaultCourseId);
+  const grouped = courses.reduce<Record<string, Course[]>>((acc, c) => {
+    const key = `${c.department} · Year ${c.year} · Sem ${c.semester}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(c);
+    return acc;
+  }, {});
+
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      <select value={selected} onChange={e => setSelected(e.target.value)} style={{
+        flex: 1, background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 8,
+        padding: '8px 10px', color: 'var(--text-primary)', fontSize: '0.82rem'
+      }}>
+        <option value="">— No course —</option>
+        {Object.entries(grouped).map(([group, list]) => (
+          <optgroup key={group} label={group}>
+            {list.map(c => <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      <button
+        onClick={() => { const c = courses.find(x => x.id === selected); if (c) onSelect(c.id, c.name); }}
+        disabled={loading || !selected}
+        style={{ padding: '8px 14px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer', opacity: (!selected || loading) ? 0.5 : 1 }}>
+        Assign
+      </button>
+    </div>
+  );
+}
+
+// ── Courses Panel ──────────────────────────────────────────────────────────────
+function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: () => void }) {
+  const { userProfile, firebaseUser } = useAuth();
+  const isChiefAdmin = userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: '', code: '', department: 'philosophy', year: 1, semester: 1, description: '', sharedWith: '', published: true });
+
+  const grouped = courses.reduce<Record<string, Course[]>>((acc, c) => {
+    const key = `${c.department.charAt(0).toUpperCase() + c.department.slice(1)} · Year ${c.year} · Sem ${c.semester}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(c);
+    return acc;
+  }, {});
+
+  function openEdit(c: any) {
+    setEditId(c.id);
+    setForm({ name: c.name, code: c.code || '', department: c.department, year: c.year, semester: c.semester, description: c.description || '', sharedWith: (c.sharedWith || []).join(', '), published: c.published !== false });
+    setShowForm(true);
+  }
+
+  function openAdd() {
+    setEditId(null);
+    setForm({ name: '', code: '', department: 'philosophy', year: 1, semester: 1, description: '', sharedWith: '', published: true });
+    setShowForm(true);
+  }
+
+  async function handleSave() {
+    if (!form.name) return;
+    setSaving(true);
+    try {
+      const data = { name: form.name, code: form.code, department: form.department, year: Number(form.year), semester: Number(form.semester), description: form.description, published: form.published, sharedWith: form.sharedWith ? form.sharedWith.split(',').map((s: string) => s.trim()).filter(Boolean) : [] };
+      if (editId) {
+        await updateDoc(doc(db, 'courses', editId), data);
+      } else {
+        await addDoc(collection(db, 'courses'), { ...data, createdAt: serverTimestamp() });
+      }
+      setShowForm(false);
+      setEditId(null);
+      onRefresh();
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete(id: string) {
+    if (!isChiefAdmin) { alert('Only chief admin can delete courses. Please contact chief admin.'); return; }
+    if (!window.confirm('Delete this course permanently? All linked materials will lose their course assignment.')) return;
+    await deleteDoc(doc(db, 'courses', id));
+    onRefresh();
+  }
+
+  async function handleTogglePublish(c: any) {
+    await updateDoc(doc(db, 'courses', c.id), { published: !(c.published !== false) });
+    onRefresh();
+  }
+
+  const inputStyle: React.CSSProperties = { width: '100%', background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', color: 'var(--text-primary)', fontSize: '0.82rem', marginBottom: 8, boxSizing: 'border-box' as const };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{courses.length} course{courses.length !== 1 ? 's' : ''}</p>
+        <button onClick={openAdd} style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 8, padding: '8px 16px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer' }}>+ Add Course</button>
+      </div>
+
+      {showForm && (
+        <div style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <p style={{ fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '0.9rem', marginBottom: 12, fontWeight: 700 }}>{editId ? 'Edit Course' : 'New Course'}</p>
+          <input style={inputStyle} placeholder="Course name *" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} />
+          <input style={inputStyle} placeholder="Course code (e.g. PHI301)" value={form.code} onChange={e => setForm(f => ({...f, code: e.target.value}))} />
+          <input style={inputStyle} placeholder="Description (optional)" value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <select value={form.department} onChange={e => setForm(f => ({...f, department: e.target.value}))} style={{...inputStyle, marginBottom: 0, flex: 1}}>
+              <option value="philosophy">Philosophy</option>
+              <option value="theology">Theology</option>
+            </select>
+            <select value={form.year} onChange={e => setForm(f => ({...f, year: Number(e.target.value)}))} style={{...inputStyle, marginBottom: 0, flex: 1}}>
+              {[1,2,3,4].map(y => <option key={y} value={y}>Year {y}</option>)}
+            </select>
+            <select value={form.semester} onChange={e => setForm(f => ({...f, semester: Number(e.target.value)}))} style={{...inputStyle, marginBottom: 0, flex: 1}}>
+              <option value={1}>Sem 1</option>
+              <option value={2}>Sem 2</option>
+            </select>
+          </div>
+          <input style={inputStyle} placeholder="Shared with course IDs (comma-separated, optional)" value={form.sharedWith} onChange={e => setForm(f => ({...f, sharedWith: e.target.value}))} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 12, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.published} onChange={e => setForm(f => ({...f, published: e.target.checked}))} />
+            Published (visible to students)
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleSave} disabled={saving || !form.name} style={{ flex: 1, padding: '10px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', opacity: saving || !form.name ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => setShowForm(false)} style={{ padding: '10px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {Object.entries(grouped).sort().map(([group, list]) => (
+        <div key={group} style={{ marginBottom: 20 }}>
+          <p style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.5, marginBottom: 8 }}>{group}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {list.map((c: any) => (
+              <div key={c.id} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
+                    <p style={{ fontWeight: 600, fontSize: '0.85rem', color: c.published !== false ? 'var(--text-primary)' : 'var(--text-muted)' }}>{c.name}</p>
+                    <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 99, background: c.published !== false ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: c.published !== false ? '#22c55e' : '#ef4444' }}>{c.published !== false ? 'Live' : 'Hidden'}</span>
+                  </div>
+                  {c.code && <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{c.code}</p>}
+                </div>
+                <button onClick={() => handleTogglePublish(c)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.68rem', flexShrink: 0 }}>{c.published !== false ? 'Hide' : 'Publish'}</button>
+                <button onClick={() => openEdit(c)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', color: 'var(--gold)', cursor: 'pointer', fontSize: '0.68rem', flexShrink: 0 }}>Edit</button>
+                <button onClick={() => handleDelete(c.id)} style={{ background: 'transparent', border: 'none', color: isChiefAdmin ? 'rgba(239,68,68,0.6)' : 'rgba(255,255,255,0.15)', cursor: 'pointer', fontSize: '0.8rem', padding: '3px 6px', borderRadius: 6, flexShrink: 0 }} title={isChiefAdmin ? 'Delete' : 'Only chief admin can delete'}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {courses.length === 0 && !showForm && (
+        <div style={{ textAlign: 'center', padding: '60px 0' }}>
+          <p style={{ fontSize: '1.8rem', marginBottom: 8 }}>📚</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No courses yet. Add your first course above.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Assignments Panel ──────────────────────────────────────────────────────────
+function AssignmentsPanel({ courses }: { courses: Course[] }) {
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [extending, setExtending] = useState<string | null>(null);
+  const [extendDate, setExtendDate] = useState('');
+  const [form, setForm] = useState({ title: '', description: '', type: 'Essay', courseId: '', dueDate: '' });
+  const TYPES = ['Essay', 'Presentation', 'Test', 'Seminar paper', 'Report', 'Other'];
+
+  useEffect(() => { loadAssignments(); }, []);
+
+  async function loadAssignments() {
+    try {
+      const snap = await getDocs(query(collection(db, 'assignments'), where('status', '==', 'active'), orderBy('dueDate', 'asc')));
+      const now = new Date();
+      setAssignments(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter((a: any) => new Date(a.dueDate) >= now));
+    } catch {}
+  }
+
+  async function handleSave() {
+    if (!form.title || !form.dueDate || !form.courseId) return;
+    setSaving(true);
+    try {
+      const course = courses.find(c => c.id === form.courseId);
+      await addDoc(collection(db, 'assignments'), {
+        ...form, courseName: course?.name ?? '',
+        department: course?.department ?? '', year: course?.year ?? 1, semester: course?.semester ?? 1,
+        status: 'active', createdAt: new Date().toISOString(),
+      });
+      setShowForm(false);
+      setForm({ title: '', description: '', type: 'Essay', courseId: '', dueDate: '' });
+      await loadAssignments();
+    } catch { alert('Failed to save'); } finally { setSaving(false); }
+  }
+
+  async function handleCancel(id: string) {
+    if (!window.confirm('Cancel this assignment?')) return;
+    await updateDoc(doc(db, 'assignments', id), { status: 'cancelled', updatedAt: new Date().toISOString() });
+    await loadAssignments();
+  }
+
+  async function handleExtend(id: string) {
+    if (!extendDate) return;
+    await updateDoc(doc(db, 'assignments', id), { dueDate: extendDate, extended: true, updatedAt: new Date().toISOString() });
+    setExtending(null); setExtendDate('');
+    await loadAssignments();
+  }
+
+  const daysUntil = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+  const urgencyColor = (d: number) => d <= 1 ? '#ef4444' : d <= 3 ? '#eab308' : '#22c55e';
+
+  const inputStyle: React.CSSProperties = { width: '100%', background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', color: 'var(--text-primary)', fontSize: '0.82rem', marginBottom: 8, boxSizing: 'border-box' };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{assignments.length} active</p>
+        <button onClick={() => setShowForm(s => !s)} style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 8, padding: '8px 16px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer' }}>+ Add</button>
+      </div>
+
+      {showForm && (
+        <div style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <input style={inputStyle} placeholder="Title *" value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))} />
+          <input style={inputStyle} placeholder="Description (optional)" value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <select value={form.type} onChange={e => setForm(f => ({...f, type: e.target.value}))} style={{...inputStyle, marginBottom: 0, flex: 1}}>
+              {TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+            <input type="date" value={form.dueDate} onChange={e => setForm(f => ({...f, dueDate: e.target.value}))} style={{...inputStyle, marginBottom: 0, flex: 1}} />
+          </div>
+          <select value={form.courseId} onChange={e => setForm(f => ({...f, courseId: e.target.value}))} style={inputStyle}>
+            <option value="">Select course *</option>
+            {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleSave} disabled={saving || !form.title || !form.courseId || !form.dueDate} style={{ flex: 1, padding: '10px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={() => setShowForm(false)} style={{ padding: '10px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {assignments.length === 0 && !showForm && (
+        <div style={{ textAlign: 'center', padding: '60px 0' }}>
+          <p style={{ fontSize: '1.8rem', marginBottom: 8 }}>📋</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No active assignments.</p>
+        </div>
+      )}
+
+      {assignments.map((a: any) => {
+        const days = daysUntil(a.dueDate);
+        return (
+          <div key={a.id} style={{ background: 'var(--navy-card)', border: `1px solid ${days <= 3 ? urgencyColor(days) + '33' : 'var(--border)'}`, borderRadius: 12, padding: '12px 14px', marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                  <span style={{ fontSize: '0.6rem', fontWeight: 700, background: 'rgba(196,160,80,0.1)', color: 'var(--gold)', borderRadius: 99, padding: '2px 7px' }}>{a.type}</span>
+                  {a.extended && <span style={{ fontSize: '0.6rem', background: 'rgba(99,102,241,0.1)', color: '#a5b4fc', borderRadius: 99, padding: '2px 7px' }}>Extended</span>}
+                  <span style={{ fontSize: '0.6rem', fontWeight: 700, color: urgencyColor(days) }}>{days === 0 ? 'Due today' : days === 1 ? 'Tomorrow' : `${days}d left`}</span>
+                </div>
+                <p style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', marginBottom: 2 }}>{a.title}</p>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{a.courseName}</p>
+                {a.description && <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.5 }}>{a.description}</p>}
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 4 }}>Due: {new Date(a.dueDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+              </div>
+            </div>
+            {extending === a.id ? (
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <input type="date" value={extendDate} onChange={e => setExtendDate(e.target.value)} style={{ flex: 1, background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', color: 'var(--text-primary)', fontSize: '0.78rem' }} />
+                <button onClick={() => handleExtend(a.id)} style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 6, padding: '5px 12px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}>Save</button>
+                <button onClick={() => setExtending(null)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>✕</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <button onClick={() => { setExtending(a.id); setExtendDate(a.dueDate); }} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', color: 'var(--gold)', cursor: 'pointer', fontSize: '0.72rem' }}>Extend</button>
+                <button onClick={() => handleCancel(a.id)} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, padding: '4px 10px', color: '#fca5a5', cursor: 'pointer', fontSize: '0.72rem' }}>Cancel</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Users Panel ────────────────────────────────────────────────────────────────
+function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
+  const { userProfile, firebaseUser } = useAuth();
+  const isChiefAdmin = userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
+      .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function setRole(uid: string, role: string) {
+    if (!isChiefAdmin) { alert('Only chief admin can change roles.'); return; }
+    setActionLoading(uid);
+    try {
+      const res = await fetch('/api/admin/set-role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid, role }) });
+      if (res.ok) setUsers(u => u.map(x => x.uid === uid ? { ...x, role } : x));
+      else alert('Role change failed.');
+    } finally { setActionLoading(null); }
+  }
+
+  async function handleDeactivate(uid: string) {
+    if (!isChiefAdmin) { alert('Only chief admin can deactivate users.'); return; }
+    if (!window.confirm('Deactivate this user? They will not be able to log in.')) return;
+    setActionLoading(uid);
+    try {
+      await updateDoc(doc(db, 'users', uid), { isActive: false, updatedAt: new Date().toISOString() });
+      setUsers(u => u.map(x => x.uid === uid ? { ...x, isActive: false } : x));
+    } finally { setActionLoading(null); }
+  }
+
+  async function handleReactivate(uid: string) {
+    if (!isChiefAdmin) { alert('Only chief admin can reactivate users.'); return; }
+    setActionLoading(uid);
+    try {
+      await updateDoc(doc(db, 'users', uid), { isActive: true, updatedAt: new Date().toISOString() });
+      setUsers(u => u.map(x => x.uid === uid ? { ...x, isActive: true } : x));
+    } finally { setActionLoading(null); }
+  }
+
+  async function handleDelete(uid: string) {
+    if (!isChiefAdmin) { alert('Only chief admin can delete users. Please contact chief admin.'); return; }
+    setActionLoading(uid);
+    try {
+      await updateDoc(doc(db, 'users', uid), { isActive: false, deletedAt: new Date().toISOString(), fcmToken: null });
+      setConfirmDelete(null);
+      setUsers(u => u.filter(x => x.uid !== uid));
+    } catch { alert('Delete failed.'); }
+    finally { setActionLoading(null); }
+  }
+
+  const filtered = users.filter(u => !search || (u.email || '').toLowerCase().includes(search.toLowerCase()) || (u.displayName || '').toLowerCase().includes(search.toLowerCase()));
+
+  if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading…</p>;
+
+  const ROLE_COLORS: Record<string, string> = { chief_admin: 'var(--gold)', admin: '#a5b4fc', student: 'var(--text-muted)', class_rep: '#34d399' };
+
+  return (
+    <div>
+      {!isChiefAdmin && <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: '0.8rem', color: '#fca5a5' }}>⚠️ Full user management is restricted to chief admin. Contact chief admin for role changes or deletions.</div>}
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email…" style={{ width: '100%', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', color: 'var(--text-primary)', fontSize: '0.82rem', marginBottom: 12, boxSizing: 'border-box' as const }} />
+      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 8 }}>{filtered.length} user{filtered.length !== 1 ? 's' : ''}</p>
+      {filtered.map(u => {
+        const isThisSupreme = u.email === SUPREME;
+        const isBusy = actionLoading === u.uid;
+        return (
+          <div key={u.uid || u.id} style={{ background: 'var(--navy-card)', border: `1px solid ${u.isActive === false ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`, borderRadius: 10, padding: '12px 14px', marginBottom: 8, opacity: u.isActive === false ? 0.6 : 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.displayName || u.email}</p>
+                <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{u.email}</p>
+                {u.department && <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>{u.department} · Yr {u.year} · Sem {u.currentSemester}</p>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                <span style={{ fontSize: '0.6rem', fontWeight: 700, background: 'rgba(255,255,255,0.05)', color: ROLE_COLORS[u.role] || 'var(--text-muted)', borderRadius: 99, padding: '2px 8px' }}>{isThisSupreme ? '⭐ Supreme' : u.role || 'student'}</span>
+                {u.isActive === false && <span style={{ fontSize: '0.6rem', color: '#ef4444' }}>Inactive</span>}
+              </div>
+            </div>
+            {isChiefAdmin && !isThisSupreme && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {u.role === 'student' && <button onClick={() => setRole(u.uid, 'admin')} disabled={isBusy} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(165,180,252,0.3)', background: 'transparent', color: '#a5b4fc', cursor: 'pointer' }}>→ Admin</button>}
+                {u.role === 'student' && <button onClick={() => setRole(u.uid, 'chief_admin')} disabled={isBusy} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(196,160,80,0.3)', background: 'transparent', color: 'var(--gold)', cursor: 'pointer' }}>→ Chief</button>}
+                {(u.role === 'admin' || u.role === 'chief_admin') && <button onClick={() => setRole(u.uid, 'student')} disabled={isBusy} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'transparent', color: '#fca5a5', cursor: 'pointer' }}>Remove role</button>}
+                {u.isActive !== false ? <button onClick={() => handleDeactivate(u.uid)} disabled={isBusy} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>Deactivate</button>
+                : <button onClick={() => handleReactivate(u.uid)} disabled={isBusy} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.3)', background: 'transparent', color: '#22c55e', cursor: 'pointer' }}>Reactivate</button>}
+                {confirmDelete === u.uid ? (
+                  <>
+                    <button onClick={() => handleDelete(u.uid)} disabled={isBusy} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 6, border: 'none', background: '#ef4444', color: 'white', cursor: 'pointer', fontWeight: 700 }}>Confirm delete</button>
+                    <button onClick={() => setConfirmDelete(null)} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>Cancel</button>
+                  </>
+                ) : (
+                  <button onClick={() => setConfirmDelete(u.uid)} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.2)', background: 'transparent', color: 'rgba(239,68,68,0.6)', cursor: 'pointer' }}>Delete</button>
+                )}
+                {isBusy && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>…</span>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {filtered.length === 0 && <div style={{ textAlign: 'center', padding: '60px 0' }}><p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No users found.</p></div>}
+    </div>
+  );
+}
+
+// ── Timetables Panel ───────────────────────────────────────────────────────────
+function TimetablesPanel({ courses }: { courses: Course[] }) {
+  const [timetables, setTimetables] = useState<any[]>([]);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [result, setResult] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<Record<string, File | null>>({});
+
+  const SLOTS = [
+    { key: 'philosophy_normal', dept: 'philosophy', type: 'normal', label: 'Philosophy — General Timetable', desc: 'Daily/weekly schedule for Philosophy students' },
+    { key: 'philosophy_exam', dept: 'philosophy', type: 'exam', label: 'Philosophy — Exam Timetable', desc: 'Regular exam schedule for Philosophy' },
+    { key: 'philosophy_bphil', dept: 'philosophy', type: 'bphil', label: 'Philosophy — BPhil Exams (Year 4)', desc: 'Bachelor of Philosophy final exams' },
+    { key: 'theology_normal', dept: 'theology', type: 'normal', label: 'Theology — General Timetable', desc: 'Daily/weekly schedule for Theology students' },
+    { key: 'theology_exam', dept: 'theology', type: 'exam', label: 'Theology — Exam Timetable', desc: 'Regular exam schedule for Theology' },
+    { key: 'theology_bth', dept: 'theology', type: 'bth', label: 'Theology — BTh Exams (Year 3)', desc: 'Bachelor of Theology final exams' },
+  ];
+
+  useEffect(() => { loadTimetables(); }, []);
+
+  async function loadTimetables() {
+    try {
+      const snap = await getDocs(collection(db, 'timetables'));
+      setTimetables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch {}
+  }
+
+  function getExisting(dept: string, type: string) {
+    return timetables.find((t: any) => t.department === dept && t.type === type);
+  }
+
+  async function handleUpload(slot: typeof SLOTS[0]) {
+    const file = files[slot.key];
+    if (!file) return;
+    setUploading(slot.key);
+    setResult(r => ({ ...r, [slot.key]: '' }));
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('department', slot.dept);
+      formData.append('type', slot.type);
+      const res = await fetch('/api/upload-timetable', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        setResult(r => ({ ...r, [slot.key]: `✅ Uploaded. ${data.examDates?.length ?? 0} dates extracted.` }));
+        await loadTimetables();
+        setFiles(f => ({ ...f, [slot.key]: null }));
+      } else {
+        setResult(r => ({ ...r, [slot.key]: `❌ ${data.error}` }));
+      }
+    } catch { setResult(r => ({ ...r, [slot.key]: '❌ Upload failed' })); }
+    finally { setUploading(null); }
+  }
+
+  const inputStyle: React.CSSProperties = { background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', color: 'var(--text-primary)', fontSize: '0.82rem' };
+
+  return (
+    <div>
+      <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 20, lineHeight: 1.6 }}>Upload one timetable per slot. Re-uploading replaces the existing one. OCR automatically extracts exam dates.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {SLOTS.map(slot => {
+          const existing = getExisting(slot.dept, slot.type);
+          const isUploading = uploading === slot.key;
+          const msg = result[slot.key];
+          return (
+            <div key={slot.key} style={{ background: 'var(--navy-card)', border: `1px solid ${existing ? 'rgba(34,197,94,0.2)' : 'var(--border)'}`, borderRadius: 12, padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div>
+                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: 2 }}>{slot.label}</p>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{slot.desc}</p>
+                </div>
+                {existing && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                  <span style={{ fontSize: '0.62rem', color: '#22c55e' }}>✓ Uploaded</span>
+                  <a href={existing.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.72rem', color: 'var(--gold)', textDecoration: 'none' }}>View →</a>
+                </div>}
+              </div>
+              {existing?.examDates?.length > 0 && (
+                <div style={{ marginBottom: 8, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                  {existing.examDates.slice(0, 2).map((d: any, i: number) => (
+                    <p key={i} style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>📅 {d.date} — {(d.courseName || '').substring(0, 45)}</p>
+                  ))}
+                  {existing.examDates.length > 2 && <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>+{existing.examDates.length - 2} more dates</p>}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.docx" onChange={e => setFiles(f => ({ ...f, [slot.key]: e.target.files?.[0] ?? null }))} style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', flex: 1 }} />
+                <button onClick={() => handleUpload(slot)} disabled={!files[slot.key] || isUploading} style={{ ...inputStyle, background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontWeight: 700, cursor: 'pointer', opacity: (!files[slot.key] || isUploading) ? 0.6 : 1, padding: '7px 16px', flexShrink: 0 }}>
+                  {isUploading ? 'Uploading…' : existing ? 'Replace' : 'Upload'}
+                </button>
+              </div>
+              {msg && <p style={{ fontSize: '0.75rem', marginTop: 6, color: msg.startsWith('✅') ? '#22c55e' : '#ef4444' }}>{msg}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

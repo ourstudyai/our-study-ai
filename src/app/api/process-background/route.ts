@@ -79,8 +79,6 @@ export async function POST(req: NextRequest) {
 
         if (extraction.method === "ocr_pending") {
             finalStatus = "ocr_pending";
-        } else if (!classification.suggestedCourseId) {
-            finalStatus = classification.detectedCourseName ? "awaiting_course" : "quarantined";
         }
 
         // ── Update Firestore ──────────────────────────────────────────────────

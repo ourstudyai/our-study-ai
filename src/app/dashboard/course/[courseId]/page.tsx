@@ -1,35 +1,56 @@
 // src/app/dashboard/course/[courseId]/page.tsx
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getCourseById } from '@/lib/firestore/courses';
 import PastQuestionsPanel from '@/components/course/PastQuestionsPanel';
 import AOCPanel from '@/components/course/AOCPanel';
 import StudyMemoryPanel from '@/components/course/StudyMemoryPanel';
+import MaterialsPanel from '@/components/course/MaterialsPanel';
+import NotesPanel from '@/components/course/NotesPanel';
 import SettingsPanel from '@/components/SettingsPanel';
 import ReactMarkdown from 'react-markdown';
 import { useSettings } from '@/components/AppShell';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  collection, addDoc, serverTimestamp, getDocs, query, where,
+  doc, setDoc, getDoc, orderBy,
+} from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 
 type StudyMode = 'plain_explainer' | 'practice_questions' | 'exam_preparation' | 'research';
-
-const MODES: { id: StudyMode; label: string; icon: string; description: string }[] = [
-  { id: 'plain_explainer', label: 'Plain Explainer', icon: '💡', description: 'Understand any concept in plain language' },
-  { id: 'practice_questions', label: 'Practice Questions', icon: '❓', description: 'Test yourself with course-based questions' },
-  { id: 'exam_preparation', label: 'Exam Prep', icon: '📝', description: 'Write and review full exam answers' },
-  { id: 'research', label: 'Research', icon: '🔬', description: 'Deep answers with full citations' },
-];
-
-type SideTab = 'past-questions' | 'aoc' | 'memory';
+type SideTab = 'materials' | 'past-questions' | 'aoc' | 'memory' | 'notes';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
 }
+
+interface ChatSession {
+  messages: ChatMessage[];
+  updatedAt: string;
+  year: number;
+  semester: number;
+  mode: string;
+  archived: boolean;
+}
+
+interface ArchivedSession {
+  id: string;
+  messages: ChatMessage[];
+  archivedAt: string;
+  mode: string;
+  messageCount: number;
+}
+
+const MODES: { id: StudyMode; label: string; icon: string; description: string }[] = [
+  { id: 'plain_explainer', label: 'Plain Explainer', icon: '💡', description: 'Understand any concept in plain language' },
+  { id: 'practice_questions', label: 'Practice Q', icon: '❓', description: 'Test yourself with course-based questions' },
+  { id: 'exam_preparation', label: 'Exam Prep', icon: '📝', description: 'Write and review full exam answers' },
+  { id: 'research', label: 'Research', icon: '🔬', description: 'Deep answers with full citations' },
+];
 
 const PLACEHOLDERS: Record<string, string> = {
   plain_explainer: 'Ask about any concept or paste a confusing passage...',
@@ -38,28 +59,23 @@ const PLACEHOLDERS: Record<string, string> = {
   research: 'Ask any question for a sourced answer...',
 };
 
-/* ── Markdown renderer ──────────────────────────────────────────────────── */
 const MarkdownRenderer = ({ content }: { content: string }) => (
-  <ReactMarkdown
-    components={{
-      h1: ({ children }) => <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1.3rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{children}</h1>,
-      h2: ({ children }) => <h2 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.4rem', marginTop: '1rem' }}>{children}</h2>,
-      h3: ({ children }) => <h3 style={{ color: 'var(--gold)', fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.3rem', marginTop: '0.8rem' }}>{children}</h3>,
-      p: ({ children }) => <p style={{ marginBottom: '0.8rem', lineHeight: '1.8' }}>{children}</p>,
-      strong: ({ children }) => <strong style={{ color: 'var(--gold)', fontWeight: 'bold' }}>{children}</strong>,
-      em: ({ children }) => <em style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>{children}</em>,
-      ul: ({ children }) => <ul style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'disc' }}>{children}</ul>,
-      ol: ({ children }) => <ol style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'decimal' }}>{children}</ol>,
-      li: ({ children }) => <li style={{ marginBottom: '0.3rem', lineHeight: '1.7' }}>{children}</li>,
-      blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '1rem', margin: '0.8rem 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{children}</blockquote>,
-    }}
-  >
+  <ReactMarkdown components={{
+    h1: ({ children }) => <h1 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1.3rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{children}</h1>,
+    h2: ({ children }) => <h2 style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.4rem', marginTop: '1rem' }}>{children}</h2>,
+    h3: ({ children }) => <h3 style={{ color: 'var(--gold)', fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.3rem', marginTop: '0.8rem' }}>{children}</h3>,
+    p: ({ children }) => <p style={{ marginBottom: '0.8rem', lineHeight: '1.8' }}>{children}</p>,
+    strong: ({ children }) => <strong style={{ color: 'var(--gold)', fontWeight: 'bold' }}>{children}</strong>,
+    em: ({ children }) => <em style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>{children}</em>,
+    ul: ({ children }) => <ul style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'disc' }}>{children}</ul>,
+    ol: ({ children }) => <ol style={{ paddingLeft: '1.5rem', marginBottom: '0.8rem', listStyleType: 'decimal' }}>{children}</ol>,
+    li: ({ children }) => <li style={{ marginBottom: '0.3rem', lineHeight: '1.7' }}>{children}</li>,
+    blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '1rem', margin: '0.8rem 0', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{children}</blockquote>,
+  }}>
     {content}
   </ReactMarkdown>
 );
 
-
-/* ── Per-message action bar ─────────────────────────────────────────────── */
 interface MessageActionsProps {
   message: ChatMessage;
   messageIndex: number;
@@ -72,141 +88,206 @@ function MessageActions({ message, messageIndex, courseId, userId, onRegenerate 
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
   const [copied, setCopied] = useState(false);
-
   const btnStyle = (active = false): React.CSSProperties => ({
-    background: 'none',
-    border: `1px solid ${active ? 'var(--gold)' : 'var(--border)'}`,
-    borderRadius: '6px',
-    padding: '4px 8px',
-    cursor: 'pointer',
-    color: active ? 'var(--gold)' : 'var(--text-muted)',
-    fontSize: '0.78rem',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    transition: 'all 0.15s ease',
+    background: 'none', border: '1px solid ' + (active ? 'var(--gold)' : 'var(--border)'),
+    borderRadius: '6px', padding: '4px 8px', cursor: 'pointer',
+    color: active ? 'var(--gold)' : 'var(--text-muted)', fontSize: '0.78rem',
+    display: 'inline-flex', alignItems: 'center', gap: '4px', transition: 'all 0.15s ease',
   });
-
   const sendFeedback = async (type: 'like' | 'dislike') => {
-    try {
-      await addDoc(collection(db, 'feedback'), {
-        type,
-        messageContent: message.content,
-        courseId,
-        userId,
-        timestamp: serverTimestamp(),
-      });
-    } catch (err) {
-      console.error('Feedback write failed:', err);
-    }
+    try { await addDoc(collection(db, 'feedback'), { type, messageContent: message.content, courseId, userId, timestamp: serverTimestamp() }); }
+    catch { }
   };
-
-  const handleLike = async () => {
-    if (liked) return;
-    setLiked(true);
-    setDisliked(false);
-    await sendFeedback('like');
-  };
-
-  const handleDislike = async () => {
-    if (disliked) return;
-    setDisliked(true);
-    setLiked(false);
-    await sendFeedback('dislike');
-  };
-
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard unavailable */
-    }
+    try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { }
   };
-
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({ text: message.content });
-      } catch { /* user cancelled */ }
-    } else {
-      await handleCopy(); // fallback
-    }
-  };
-
   return (
     <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap', paddingLeft: '4px' }}>
-      {/* Like */}
-      <button style={btnStyle(liked)} onClick={handleLike} title="Helpful">
-        <i className="fa-regular fa-thumbs-up" />
+      <button style={btnStyle(liked)} onClick={() => { if (!liked) { setLiked(true); setDisliked(false); sendFeedback('like'); } }} title='Helpful'>
+        <i className='fa-regular fa-thumbs-up' />
       </button>
-
-      {/* Dislike */}
-      <button style={btnStyle(disliked)} onClick={handleDislike} title="Not helpful">
-        <i className="fa-regular fa-thumbs-down" />
+      <button style={btnStyle(disliked)} onClick={() => { if (!disliked) { setDisliked(true); setLiked(false); sendFeedback('dislike'); } }} title='Not helpful'>
+        <i className='fa-regular fa-thumbs-down' />
       </button>
-
-      {/* Copy */}
-      <button style={btnStyle(copied)} onClick={handleCopy} title="Copy to clipboard">
+      <button style={btnStyle(copied)} onClick={handleCopy} title='Copy'>
         <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'} />
         <span>{copied ? 'Copied' : 'Copy'}</span>
       </button>
-
-      {/* Regenerate */}
-      <button style={btnStyle()} onClick={onRegenerate} title="Regenerate response">
-        <i className="fa-solid fa-rotate-right" />
-        <span>Retry</span>
+      <button style={btnStyle()} onClick={onRegenerate} title='Retry'>
+        <i className='fa-solid fa-rotate-right' /><span>Retry</span>
       </button>
-
-      {/* Share */}
-      <button style={btnStyle()} onClick={handleShare} title="Share this response">
-        <i className="fa-solid fa-share-from-square" />
+      <button style={btnStyle()} onClick={async () => { if (navigator.share) { try { await navigator.share({ text: message.content }); } catch { } } else handleCopy(); }} title='Share'>
+        <i className='fa-solid fa-share-from-square' />
       </button>
     </div>
   );
 }
 
-/* ── Main page ──────────────────────────────────────────────────────────── */
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, userProfile } = useAuth();
   const { settings } = useSettings();
   const router = useRouter();
 
   const [course, setCourse] = useState<any>(null);
   const [activeMode, setActiveMode] = useState<StudyMode>('plain_explainer');
-  const [activeSideTab, setActiveSideTab] = useState<SideTab>('past-questions');
+  const [activeSideTab, setActiveSideTab] = useState<SideTab>('materials');
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [topicsOpen, setTopicsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [topics, setTopics] = useState<{ materialName: string; items: string[] }[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [archivedSessions, setArchivedSessions] = useState<ArchivedSession[]>([]);
+  const [viewingArchive, setViewingArchive] = useState<ArchivedSession | null>(null);
+
+  // Per-mode chat histories stored in memory
+  const [modeHistories, setModeHistories] = useState<Record<string, ChatMessage[]>>({});
   const [streamingMessage, setStreamingMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [input, setInput] = useState('');
+  const [sessionSaving, setSessionSaving] = useState(false);
+
+  // Active material context
+  const [activeContext, setActiveContext] = useState<{ fileName: string; extractedText: string } | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  /* Inject Font Awesome */
+  const chatHistory = modeHistories[activeMode] ?? [];
+  const year = userProfile?.year ?? 1;
+  const semester = userProfile?.currentSemester ?? 1;
+  const uid = firebaseUser?.uid ?? '';
+
+  const sessionKey = (mode: string) => courseId + '__' + mode + '__' + year + '__' + semester;
+
+  // Load session from Firestore for a given mode
+  const loadSession = async (mode: string) => {
+    if (!uid || !courseId) return;
+    try {
+      const ref = doc(db, 'users', uid, 'chatSessions', sessionKey(mode));
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data() as ChatSession;
+        setModeHistories(prev => ({ ...prev, [mode]: data.messages ?? [] }));
+      }
+    } catch { }
+  };
+
+  // Save session to Firestore
+  const saveSession = useCallback(async (mode: string, messages: ChatMessage[]) => {
+    if (!uid || !courseId) return;
+    try {
+      const ref = doc(db, 'users', uid, 'chatSessions', sessionKey(mode));
+      await setDoc(ref, {
+        messages,
+        updatedAt: new Date().toISOString(),
+        year, semester, mode, archived: false,
+      });
+    } catch { }
+  }, [uid, courseId, year, semester]);
+
+  // New chat — archive current, start fresh
+  const handleNewChat = async () => {
+    if (chatHistory.length === 0) return;
+    setSessionSaving(true);
+    try {
+      const archiveRef = doc(db, 'users', uid, 'chatArchive',
+        sessionKey(activeMode) + '__' + Date.now());
+      await setDoc(archiveRef, {
+        messages: chatHistory,
+        archivedAt: new Date().toISOString(),
+        mode: activeMode, year, semester,
+        messageCount: chatHistory.length,
+      });
+      const sessionRef = doc(db, 'users', uid, 'chatSessions', sessionKey(activeMode));
+      await setDoc(sessionRef, {
+        messages: [],
+        updatedAt: new Date().toISOString(),
+        year, semester, mode: activeMode, archived: false,
+      });
+      setModeHistories(prev => ({ ...prev, [activeMode]: [] }));
+    } catch { }
+    finally { setSessionSaving(false); }
+  };
+
+  // Load archived sessions for current mode
+  const loadArchives = async () => {
+    if (!uid || !courseId) return;
+    try {
+      const prefix = courseId + '__' + activeMode + '__';
+      const snap = await getDocs(
+        query(collection(db, 'users', uid, 'chatArchive'), orderBy('archivedAt', 'desc'))
+      );
+      const sessions = snap.docs
+        .filter(d => d.id.startsWith(prefix))
+        .map(d => ({ id: d.id, ...d.data() } as ArchivedSession));
+      setArchivedSessions(sessions);
+    } catch { }
+  };
+
+  // Topics loader
+  const loadTopics = async () => {
+    if (!courseId) return;
+    setTopicsLoading(true);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'materials'),
+        where('confirmedCourseId', '==', courseId),
+        where('status', '==', 'approved')
+      ));
+      const result: { materialName: string; items: string[] }[] = [];
+      snap.docs.forEach(d => {
+        const data = d.data();
+        const text: string = data.extractedText ?? '';
+        const name: string = data.indexDisplayName ?? data.fileName ?? 'Material';
+        const items: string[] = [];
+        text.split('\n').forEach(line => {
+          const t = line.trim();
+          if ((t.startsWith('## ') || t.startsWith('### ') || t.startsWith('# ') || t.startsWith('#### ')) && t.length < 120) {
+            const c = t.replace(/^#{1,4}\s+/, '').trim();
+            if (c.length > 2) items.push(c);
+          } else if (t.startsWith('**') && t.endsWith('**') && t.length > 4 && t.length < 120) {
+            const c = t.replace(/\*\*/g, '').trim();
+            if (c.length > 2) items.push(c);
+          }
+        });
+        if (items.length > 0) result.push({ materialName: name, items });
+      });
+      setTopics(result);
+    } catch { }
+    finally { setTopicsLoading(false); }
+  };
+
+  // Font Awesome
   useEffect(() => {
     const id = 'fa-cdn';
     if (document.getElementById(id)) return;
     const link = document.createElement('link');
-    link.id = id;
-    link.rel = 'stylesheet';
+    link.id = id; link.rel = 'stylesheet';
     link.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css';
     document.head.appendChild(link);
   }, []);
 
+  // Load course
   useEffect(() => {
     if (!firebaseUser || !courseId) return;
     getCourseById(courseId).then(data => { setCourse(data); setLoading(false); });
   }, [firebaseUser, courseId]);
 
+  // Load session when mode or user changes
+  useEffect(() => {
+    if (!uid || !courseId || !userProfile) return;
+    loadSession(activeMode);
+  }, [uid, courseId, activeMode, userProfile]);
+
+  // Scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, streamingMessage]);
 
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -214,34 +295,31 @@ export default function CoursePage() {
     }
   }, [input]);
 
-  /* ── Send / stream ── */
   const sendMessage = async (text?: string) => {
     const message = text || input;
     if (!message.trim() || isStreaming) return;
     setInput('');
     if (drawerOpen) setDrawerOpen(false);
-
     const userMsg: ChatMessage = { role: 'user', content: message, timestamp: new Date().toISOString() };
-    setChatHistory(prev => [...prev, userMsg]);
+    const newHistory = [...chatHistory, userMsg];
+    setModeHistories(prev => ({ ...prev, [activeMode]: newHistory }));
     setIsStreaming(true);
     setStreamingMessage('');
-
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message,
-          courseId,
-          mode: activeMode,
+          message, courseId, mode: activeMode,
+          courseName: course?.name,
+          courseDescription: course?.description,
           conversationHistory: chatHistory.map(m => ({ role: m.role, content: m.content })),
+          materialContext: activeContext?.extractedText ?? null,
         }),
       });
-
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = '', fullResponse = '';
-
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -260,43 +338,40 @@ export default function CoursePage() {
           }
         }
       }
-
       const aiMsg: ChatMessage = { role: 'assistant', content: fullResponse, timestamp: new Date().toISOString() };
-      setChatHistory(prev => [...prev, aiMsg]);
+      const finalHistory = [...newHistory, aiMsg];
+      setModeHistories(prev => ({ ...prev, [activeMode]: finalHistory }));
       setStreamingMessage('');
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsStreaming(false);
-    }
+      await saveSession(activeMode, finalHistory);
+    } catch { }
+    finally { setIsStreaming(false); }
   };
 
-  /* ── Regenerate: resend the last user message, replace last AI message ── */
   const regenerate = (aiMessageIndex: number) => {
-    // Find the user message that preceded this AI response
     let lastUserMsg = '';
     for (let i = aiMessageIndex - 1; i >= 0; i--) {
       if (chatHistory[i].role === 'user') { lastUserMsg = chatHistory[i].content; break; }
     }
     if (!lastUserMsg) return;
-    // Strip the AI message being replaced and everything after it
-    setChatHistory(prev => prev.slice(0, aiMessageIndex));
+    setModeHistories(prev => ({ ...prev, [activeMode]: prev[activeMode].slice(0, aiMessageIndex) }));
     sendMessage(lastUserMsg);
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
+    <div className='min-h-screen flex items-center justify-center' style={{ background: 'var(--navy)' }}>
       <p style={{ color: 'var(--gold)' }}>Loading course...</p>
     </div>
   );
   if (!course) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy)' }}>
+    <div className='min-h-screen flex items-center justify-center' style={{ background: 'var(--navy)' }}>
       <p style={{ color: 'var(--text-muted)' }}>Course not found.</p>
     </div>
   );
 
   const sideTabs: { id: SideTab; label: string; icon: string }[] = [
-    { id: 'past-questions', label: 'Past Questions', icon: '📝' },
+    { id: 'materials', label: 'Materials', icon: '📂' },
+    { id: 'notes', label: 'Notes', icon: '📝' },
+    { id: 'past-questions', label: 'Past Q', icon: '🗒' },
     { id: 'aoc', label: 'AOC', icon: '🎯' },
     { id: 'memory', label: 'Memory', icon: '🧠' },
   ];
@@ -304,152 +379,155 @@ export default function CoursePage() {
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
 
   return (
-    <div className="flex flex-col w-screen max-w-full" style={{ height: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', overflow: 'hidden' }}>
+    <div className='flex flex-col w-full' style={{ height: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', overflow: 'hidden', maxWidth: '100vw' }}>
 
-      {/* ── TOP BAR ── */}
-      <div className="flex-shrink-0 border-b" style={{ borderColor: 'var(--border)' }}>
-        <div className="flex items-center gap-2 px-3 py-2">
-          <button onClick={() => router.back()} className="flex-shrink-0 text-sm px-2 py-1 rounded" style={{ color: 'var(--gold)' }}>
-            ← Back
+      {/* TOP BAR */}
+      <div className='flex-shrink-0 border-b' style={{ borderColor: 'var(--border)' }}>
+        <div className='flex items-center gap-2 px-3 py-2' style={{ minWidth: 0 }}>
+          <button onClick={() => router.back()} className='flex-shrink-0 text-sm px-2 py-1 rounded' style={{ color: 'var(--gold)' }}>
+            Back
           </button>
-          <h1 className="flex-1 text-sm font-bold truncate min-w-0" style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }} title={course.name}>
+          <h1 className='flex-1 text-sm font-bold truncate min-w-0' style={{ color: 'var(--gold)', fontFamily: 'Playfair Display, serif' }} title={course.name}>
             {course.name}
           </h1>
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="hidden md:block flex-shrink-0 text-xs px-2 py-1 rounded border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-          >
+          {chatHistory.length > 0 && (
+            <button onClick={handleNewChat} disabled={sessionSaving}
+              className='flex-shrink-0 text-xs px-2 py-1 rounded border'
+              style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+              title='Start new chat (archives current)'>
+              {sessionSaving ? '...' : '+ New'}
+            </button>
+          )}
+          <button onClick={() => { loadArchives(); setHistoryOpen(true); }}
+            className='flex-shrink-0 text-xs px-2 py-1 rounded border'
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+            title='View chat history'>
+            🕐
+          </button>
+          <button onClick={() => { loadTopics(); setTopicsOpen(true); }}
+            className='flex-shrink-0 text-xs px-2 py-1 rounded border'
+            style={{ borderColor: 'var(--border)', color: 'var(--gold)' }}
+            title='Course topics'>
+            🗂
+          </button>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)}
+            className='hidden md:block flex-shrink-0 text-xs px-2 py-1 rounded border'
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
             {sidebarOpen ? '▶' : '◀'} Panel
           </button>
         </div>
-        <div className="flex gap-1.5 px-3 pb-2" style={{ overflowX: "auto", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", msOverflowStyle: "none", minWidth: 0 }}>
+
+        {/* Mode tabs */}
+        <div style={{ display: 'flex', gap: '6px', padding: '0 12px 8px', overflowX: 'auto', flexWrap: 'nowrap', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' } as any}>
           {MODES.map(mode => (
-            <button
-              key={mode.id}
-              onClick={() => setActiveMode(mode.id)}
-              title={mode.description}
-              className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+            <button key={mode.id} onClick={() => setActiveMode(mode.id)} title={mode.description}
               style={{
+                flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px',
+                padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
                 background: activeMode === mode.id ? 'var(--gold)' : 'var(--navy-card)',
                 color: activeMode === mode.id ? 'var(--navy)' : 'var(--text-secondary)',
-                border: '1px solid var(--border)', whiteSpace: 'nowrap',
+                border: '1px solid var(--border)', whiteSpace: 'nowrap', cursor: 'pointer',
               }}
             >
-              <span>{mode.icon}</span><span>{mode.label}</span>
+              <span>{mode.icon}</span>
+              <span>{mode.label}</span>
+              {modeHistories[mode.id]?.length > 0 && (
+                <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>
+                  {modeHistories[mode.id].length}
+                </span>
+              )}
             </button>
           ))}
         </div>
+
+        {/* Active context banner */}
+        {activeContext && (
+          <div style={{ padding: '4px 12px 6px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(196,160,80,0.08)', borderTop: '1px solid rgba(196,160,80,0.2)' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--gold)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              📂 {activeContext.fileName} · active in chat
+            </span>
+            <button onClick={() => setActiveContext(null)} style={{ flexShrink: 0, background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
+          </div>
+        )}
       </div>
 
-      {/* ── MAIN CONTENT ── */}
-      <div className="flex min-h-0" style={{ flex: 1 }}>
+      {/* MAIN CONTENT */}
+      <div className='flex min-h-0' style={{ flex: 1, overflow: 'hidden' }}>
 
         {/* Chat area */}
-        <div className="flex flex-col min-h-0 min-w-0" style={{ flex: 1 }}>
+        <div className='flex flex-col min-h-0' style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
 
-          {/* Messages — scrollable */}
-          <div className="flex-1 overflow-y-auto px-3 md:px-5 py-3 space-y-3">
-
+          {/* Messages */}
+          <div className='flex-1 overflow-y-auto py-3 space-y-3' style={{ padding: '12px 16px', overflowX: 'hidden' }}>
             {isEmpty && (
-              <div style={{ height: '32vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="text-center max-w-sm px-4">
+              <div style={{ height: '32vh', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                <div style={{ textAlign: 'center', width: '100%', maxWidth: '320px', padding: '0 24px', boxSizing: 'border-box' }}>
                   <p style={{ fontSize: '2.4rem', marginBottom: '8px' }}>{MODES.find(m => m.id === activeMode)?.icon}</p>
-                  <p className="font-semibold mb-1" style={{ color: 'var(--gold)', fontSize: '1rem' }}>{MODES.find(m => m.id === activeMode)?.label}</p>
+                  <p style={{ fontWeight: 600, color: 'var(--gold)', fontSize: '1rem', marginBottom: '4px' }}>{MODES.find(m => m.id === activeMode)?.label}</p>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{MODES.find(m => m.id === activeMode)?.description}</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '8px' }}>Sem {semester} · Year {year}</p>
                 </div>
               </div>
             )}
-
             {chatHistory.map((msg, i) => (
-              <div key={i}>
-                <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className="rounded-2xl px-4 py-2.5"
-                    style={{
-                      maxWidth: '85%',
-                      fontSize: 'var(--ai-font-size, 18px)',
-                      background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy-card)',
-                      color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
-                      border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
-                    }}
-                  >
+              <div key={i} style={{ width: '100%', overflowX: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                  <div style={{
+                    maxWidth: '82%', wordBreak: 'break-word',
+                    borderRadius: '16px', padding: '10px 16px',
+                    fontSize: 'var(--ai-font-size, 18px)',
+                    background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy-card)',
+                    color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
+                    border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
+                  }}>
                     {msg.role === 'assistant' ? <MarkdownRenderer content={msg.content} /> : msg.content}
                   </div>
                 </div>
-
-                {/* Action buttons — only on completed assistant messages */}
                 {msg.role === 'assistant' && (
-                  <div className="flex justify-start">
-                    <MessageActions
-                      message={msg}
-                      messageIndex={i}
-                      courseId={courseId}
-                      userId={firebaseUser?.uid ?? ''}
-                      onRegenerate={() => regenerate(i)}
-                    />
+                  <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <MessageActions message={msg} messageIndex={i} courseId={courseId} userId={uid} onRegenerate={() => regenerate(i)} />
                   </div>
                 )}
               </div>
             ))}
-
-            {/* Streaming bubble — no actions yet, still generating */}
             {streamingMessage && (
-              <div className="flex justify-start">
-                <div
-                  className="rounded-2xl px-4 py-2.5"
-                  style={{
-                    maxWidth: '85%', fontSize: 'var(--ai-font-size, 18px)',
-                    background: 'var(--navy-card)', color: 'var(--text-primary)',
-                    border: '1px solid var(--border)',
-                  }}
-                >
+              <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden' }}>
+                <div style={{ maxWidth: '82%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
                   <MarkdownRenderer content={streamingMessage} />
-                  <span className="inline-block w-1.5 h-4 ml-1 animate-pulse" style={{ background: 'var(--gold)' }} />
+                  <span style={{ display: 'inline-block', width: '6px', height: '16px', marginLeft: '4px', background: 'var(--gold)', animation: 'pulse 1s infinite' }} />
                 </div>
               </div>
             )}
-
             <div ref={bottomRef} />
           </div>
 
-          {/* ── INPUT — position driven by settings ── */}
-          <div
-            className="flex-shrink-0 px-3 md:px-5 py-2 border-t"
-            style={{ borderColor: 'var(--border)' }}
-          >
-            <div className="flex md:hidden justify-end mb-1.5">
-              <button
-                onClick={() => setDrawerOpen(true)}
-                className="text-xs px-3 py-1 rounded-lg flex items-center gap-1"
-                style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--gold)' }}
-              >
-                📚 Past Q · AOC · Memory
+          {/* INPUT */}
+          <div className='flex-shrink-0 border-t' style={{ borderColor: 'var(--border)', padding: '8px 12px' }}>
+            <div className='md:hidden' style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
+              <button onClick={() => setDrawerOpen(true)}
+                style={{ fontSize: '0.72rem', padding: '4px 10px', borderRadius: '8px', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--gold)', cursor: 'pointer' }}>
+                📚 Study Panel
               </button>
             </div>
-            <div className="flex gap-2 items-end">
-              <textarea
-                ref={textareaRef}
-                value={input}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+              <textarea ref={textareaRef} value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder={PLACEHOLDERS[activeMode]}
                 rows={1}
-                className="flex-1 rounded-xl p-2.5 resize-none"
                 style={{
+                  flex: 1, borderRadius: '12px', padding: '10px 12px', resize: 'none',
                   background: 'var(--navy-card)', border: '1px solid var(--border)',
-                  color: 'var(--text-primary)', fontSize: 'var(--ui-font-size, 20px)',
-                  minWidth: 0, minHeight: '48px', maxHeight: '140px',
+                  color: 'var(--text-primary)', fontSize: 'var(--ui-font-size, 16px)',
+                  minWidth: 0, minHeight: '44px', maxHeight: '140px', boxSizing: 'border-box',
                 }}
               />
-              <button
-                onClick={() => sendMessage()}
-                disabled={isStreaming || !input.trim()}
-                className="flex-shrink-0 px-4 py-2.5 rounded-xl font-medium"
+              <button onClick={() => sendMessage()} disabled={isStreaming || !input.trim()}
                 style={{
+                  flexShrink: 0, padding: '10px 16px', borderRadius: '12px',
                   background: 'var(--gold)', color: 'var(--navy)',
-                  fontSize: 'var(--ui-font-size, 20px)',
-                  opacity: isStreaming || !input.trim() ? 0.5 : 1,
+                  border: 'none', fontSize: '1rem', fontWeight: 700,
+                  opacity: isStreaming || !input.trim() ? 0.5 : 1, cursor: 'pointer',
                 }}
               >
                 {isStreaming ? '…' : '↑'}
@@ -458,26 +536,27 @@ export default function CoursePage() {
           </div>
         </div>
 
-        {/* ── DESKTOP SIDE PANEL ── */}
+        {/* DESKTOP SIDE PANEL */}
         {sidebarOpen && (
-          <div className="hidden md:flex flex-col flex-shrink-0 border-l" style={{ width: '272px', borderColor: 'var(--border)', background: 'var(--navy-card)' }}>
-            <div className="flex border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <div className='hidden md:flex flex-col flex-shrink-0 border-l' style={{ width: '272px', borderColor: 'var(--border)', background: 'var(--navy-card)' }}>
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' } as any}>
               {sideTabs.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveSideTab(tab.id)}
-                  className="flex-1 py-2 text-xs font-medium transition-colors"
+                <button key={tab.id} onClick={() => setActiveSideTab(tab.id)}
                   style={{
+                    flex: 1, padding: '8px 4px', fontSize: '0.65rem', fontWeight: 500,
                     background: activeSideTab === tab.id ? 'var(--navy)' : 'transparent',
                     color: activeSideTab === tab.id ? 'var(--gold)' : 'var(--text-secondary)',
                     borderBottom: activeSideTab === tab.id ? '2px solid var(--gold)' : '2px solid transparent',
+                    border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
                   }}
                 >
                   {tab.icon} {tab.label}
                 </button>
               ))}
             </div>
-            <div className="flex-1 overflow-y-auto p-3">
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={setActiveContext} activeFileName={activeContext?.fileName ?? null} />}
+              {activeSideTab === 'notes' && <NotesPanel courseId={courseId} userId={uid} />}
               {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
               {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
               {activeSideTab === 'memory' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} />}
@@ -486,37 +565,120 @@ export default function CoursePage() {
         )}
       </div>
 
-      {/* ── MOBILE BOTTOM DRAWER ── */}
+      {/* MOBILE BOTTOM DRAWER */}
       {drawerOpen && (
-        <div
-          className="md:hidden fixed inset-0 z-50 flex flex-col justify-end"
-          style={{ background: 'rgba(0,0,0,0.6)' }}
-          onClick={e => { if (e.target === e.currentTarget) setDrawerOpen(false); }}
-        >
-          <div className="flex flex-col rounded-t-2xl" style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', maxHeight: '75vh' }}>
-            <div className="flex items-center justify-between px-4 py-2.5 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <div className="flex gap-2">
+        <div className='md:hidden' style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}
+          onClick={e => { if (e.target === e.currentTarget) setDrawerOpen(false); }}>
+          <div style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '20px 20px 0 0', maxHeight: '75vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', scrollbarWidth: 'none' } as any}>
                 {sideTabs.map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveSideTab(tab.id)}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                  <button key={tab.id} onClick={() => setActiveSideTab(tab.id)}
                     style={{
+                      padding: '4px 8px', borderRadius: '8px', fontSize: '0.68rem', fontWeight: 500,
                       background: activeSideTab === tab.id ? 'var(--gold)' : 'transparent',
                       color: activeSideTab === tab.id ? 'var(--navy)' : 'var(--text-secondary)',
-                      border: '1px solid var(--border)',
+                      border: '1px solid var(--border)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
                     }}
                   >
                     {tab.icon} {tab.label}
                   </button>
                 ))}
               </div>
-              <button onClick={() => setDrawerOpen(false)} style={{ color: 'var(--text-muted)' }} className="text-lg px-2">✕</button>
+              <button onClick={() => setDrawerOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer', flexShrink: 0, marginLeft: '8px' }}>✕</button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
-              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={ctx => { setActiveContext(ctx); if (ctx) setDrawerOpen(false); }} activeFileName={activeContext?.fileName ?? null} />}
+              {activeSideTab === 'notes' && <NotesPanel courseId={courseId} userId={uid} />}
+              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
+              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
               {activeSideTab === 'memory' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} />}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOPICS DRAWER */}
+      {topicsOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)' }} onClick={() => setTopicsOpen(false)}>
+          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '300px', background: 'var(--navy-card)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem' }}>Course Topics</span>
+              <button onClick={() => setTopicsOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+              {topicsLoading && <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '32px 0' }}>Loading...</p>}
+              {!topicsLoading && topics.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                  <p style={{ fontSize: '1.6rem', marginBottom: '8px' }}>📭</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No topics extracted yet.</p>
+                </div>
+              )}
+              {!topicsLoading && topics.map((mat, i) => (
+                <div key={i} style={{ marginBottom: '20px' }}>
+                  <p style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '8px' }}>{mat.materialName}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {mat.items.map((item, j) => (
+                      <button key={j} onClick={() => { sendMessage('Explain this topic: "' + item + '"'); setTopicsOpen(false); }}
+                        style={{ textAlign: 'left', padding: '7px 10px', borderRadius: '8px', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer' }}>
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HISTORY DRAWER */}
+      {historyOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)' }} onClick={() => { setHistoryOpen(false); setViewingArchive(null); }}>
+          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '300px', background: 'var(--navy-card)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem' }}>
+                {viewingArchive ? 'Archived Session' : 'Chat History — ' + MODES.find(m => m.id === activeMode)?.label}
+              </span>
+              <button onClick={() => { if (viewingArchive) setViewingArchive(null); else setHistoryOpen(false); }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer' }}>
+                {viewingArchive ? '←' : '✕'}
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+              {viewingArchive ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {viewingArchive.messages.map((msg, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                      <div style={{ maxWidth: '85%', borderRadius: '12px', padding: '8px 12px', fontSize: '0.78rem',
+                        background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy)',
+                        color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
+                        border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none' }}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : archivedSessions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                  <p style={{ fontSize: '1.6rem', marginBottom: '8px' }}>🕐</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No archived sessions yet for this mode.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {archivedSessions.map(session => (
+                    <button key={session.id} onClick={() => setViewingArchive(session)}
+                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: '10px', background: 'var(--navy)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
+                        {new Date(session.archivedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                      <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{session.messageCount ?? session.messages?.length ?? 0} messages · Sem {semester}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
