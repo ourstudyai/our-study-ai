@@ -283,7 +283,7 @@ export default function AppNav({ children }: AppNavProps) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100dvh', background: 'var(--body-bg)', maxWidth: '100vw', overflow: 'hidden' }}>
-      <aside className="hidden md:flex" style={{ width: '220px', flexShrink: 0, flexDirection: 'column', background: 'var(--navy-card)', borderRight: '1px solid var(--border)', padding: '20px 12px' }}>
+      <aside className={pathname.startsWith('/admin') ? 'hidden' : 'hidden md:flex'} style={{ width: '220px', flexShrink: 0, flexDirection: 'column', background: 'var(--navy-card)', borderRight: '1px solid var(--border)', padding: '20px 12px' }}>
         <div style={{ marginBottom: '24px' }}><Logo /></div>
         <NavLinks />
         {isAdmin && (
