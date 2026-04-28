@@ -29,6 +29,7 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
   const [delConfirm, setDelConfirm] = useState(false);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [shouldIndex, setShouldIndex] = useState(true);
   const [landscape, setLandscape] = useState(false);
   const [page, setPage] = useState(1);
   const publicId = (material as any).publicId || '';
@@ -61,10 +62,11 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
           department: course?.department || '',
           year: course?.year || null,
           semester: course?.semester || null,
+          shouldIndex,
         }),
       });
       if (!res.ok) throw new Error('Reindex failed');
-      setStatus('Approved and indexed.');
+      setStatus(shouldIndex ? 'Approved and indexed.' : 'Approved (not indexed).');
       setTimeout(onDone, 800);
     } catch { setStatus('Error. Try again.'); }
     finally { setLoading(false); }
@@ -201,6 +203,10 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
 
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 4 }}>
+                <input type="checkbox" checked={shouldIndex} onChange={e => setShouldIndex(e.target.checked)} />
+                Add to Library & Chat index
+              </label>
               <button onClick={handleApprove} disabled={!canApprove || loading} style={{
                 flex: 2, padding: '10px', background: canApprove ? 'var(--gold)' : 'rgba(196,160,80,0.2)',
                 color: canApprove ? 'var(--navy)' : 'var(--text-muted)', border: 'none',

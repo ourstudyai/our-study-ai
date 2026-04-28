@@ -13,7 +13,8 @@ export type MaterialStatus =
     | "awaiting_course"
     | "ocr_pending"
     | "approved"
-    | "rejected";
+    | "rejected"
+    | "approved_hidden";
 
 export type Material = {
     id: string;
