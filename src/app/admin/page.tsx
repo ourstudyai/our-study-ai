@@ -327,7 +327,7 @@ export default function AdminPage() {
         </div>
 
         {/* Desktop main content */}
-        <div style={{ flex: 1, minHeight: '100dvh', background: 'var(--navy)', padding: '16px', overflowY: 'auto', minWidth: 0 }}>
+        <div style={{ flex: 1, minHeight: '100dvh', background: 'var(--navy)', padding: '16px', paddingTop: '24px', overflowY: 'auto', minWidth: 0 }}>
           <MainContent />
         </div>
       </div>
@@ -739,7 +739,7 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
     if (!isChiefAdmin) { alert('Only chief admin can change roles.'); return; }
     setActionLoading(uid);
     try {
-      const res = await fetch('/api/admin/set-role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid, role }) });
+      const res = await fetch('/api/admin/set-role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUid: uid, role }) });
       if (res.ok) setUsers(u => u.map(x => x.uid === uid ? { ...x, role } : x));
       else alert('Role change failed.');
     } finally { setActionLoading(null); }
