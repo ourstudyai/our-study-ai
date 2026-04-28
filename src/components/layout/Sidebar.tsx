@@ -103,7 +103,7 @@ export default function Sidebar() {
 
   return (
     <>
-      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-full z-30 border-r"
+      <aside className={`${pathname.startsWith('/admin') ? 'hidden' : 'hidden md:flex'} flex-col fixed left-0 top-0 h-full z-30 border-r`}
         style={{ width: 'var(--sidebar-width)', background: 'var(--navy-mid)', borderColor: 'var(--border)' }}>
         {/* Logo */}
         <div className="p-4 flex items-center gap-3 border-b" style={{ borderColor: 'var(--border)' }}>
