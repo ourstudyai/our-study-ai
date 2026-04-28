@@ -132,8 +132,8 @@ export default function ContributePage() {
         formData.append('category', selectedCategory);
         const res = await fetch('/api/process-upload', { method: 'POST', body: formData });
         clearInterval(interval);
-        if (!res.ok) {
-          setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: `Your file uploaded successfully but something went wrong during processing. Report this with the file name: ${file.name}.` } }));
+        if (res.status === 409) {
+          setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: `This file already exists in the system and won't be uploaded again.` } }));
           anyFailed = true;
         } else {
           setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100 } }));
@@ -178,8 +178,10 @@ export default function ContributePage() {
         formData.append('uploaderEmail', uploaderEmail);
         const res = await fetch('/api/process-upload', { method: 'POST', body: formData });
         clearInterval(interval);
-        if (!res.ok) {
-          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: `Your file reached us but processing failed. Report this with ${file.name} if it doesn't show up shortly.` } }));
+        if (res.status === 409) {
+          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: `This file already exists in the system and won't be uploaded again.` } }));
+        } else if (!res.ok) {
+          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100, result: { materialId: '', detectedStatus: 'processing', category: 'other', suggestedCourseName: null, detectedCourseName: null, confidence: 'low', wordCount: 0 } } }));
         } else {
           const result = await res.json();
           setDetectStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100, result: { materialId: result.materialId, detectedStatus: result.status, category: result.category, suggestedCourseName: result.suggestedCourseName, detectedCourseName: result.detectedCourseName, confidence: result.confidence, wordCount: result.wordCount } } }));

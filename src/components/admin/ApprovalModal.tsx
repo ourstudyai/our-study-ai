@@ -13,17 +13,25 @@ interface Props {
   onDone: () => void;
 }
 
+
+function getCloudinaryImageUrl(publicId: string, page: number = 1): string {
+  const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || '';
+  return `https://res.cloudinary.com/${cloud}/image/upload/pg_${page},f_jpg,q_80/${publicId}.jpg`;
+}
 export default function ApprovalModal({ material, courses, onClose, onDone }: Props) {
-  const [landscape, setLandscape] = useState(false);
+
   const [ocrText, setOcrText] = useState(material.extractedText || '');
   const [selectedCourseId, setSelectedCourseId] = useState((material as any).suggestedCourseId || '');
   const [category, setCategory] = useState(material.category || 'other');
   const [displayName, setDisplayName] = useState(material.fileName || '');
-  const [fileUrl, setFileUrl] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [delConfirm, setDelConfirm] = useState(false);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [landscape, setLandscape] = useState(false);
+  const [page, setPage] = useState(1);
+  const publicId = (material as any).publicId || '';
 
   const selectedCourse = courses.find(c => c.id === selectedCourseId);
   const canApprove = selectedCourseId && ocrText.trim().length > 0;
@@ -33,16 +41,7 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
     (c.code || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  useEffect(() => {
-    const m = material as any;
-    if (m.publicId) {
-      fetch('/api/material-url?publicId=' + encodeURIComponent(m.publicId))
-        .then(r => r.json()).then(d => { if (d.url) setFileUrl(d.url); })
-        .catch(() => setFileUrl(material.fileUrl || ''));
-    } else {
-      setFileUrl(material.fileUrl || '');
-    }
-  }, [material]);
+
 
   const handleApprove = async () => {
     if (!canApprove) return;
@@ -114,8 +113,15 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--navy-card)' }}>
         <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer', flexShrink: 0 }}>✕</button>
         <p style={{ flex: 1, fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '0.9rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{material.fileName}</p>
-        <button onClick={() => setLandscape(l => !l)} style={{ flexShrink: 0, background: 'rgba(196,160,80,0.1)', border: '1px solid rgba(196,160,80,0.2)', borderRadius: 7, padding: '5px 10px', color: 'var(--gold)', fontSize: '0.72rem', cursor: 'pointer' }}>
-          {landscape ? 'Stack' : 'Side by Side'}
+        {(material as any).fileUrl && (
+          <a href={(material as any).fileUrl} target="_blank" rel="noopener noreferrer"
+            style={{ flexShrink: 0, background: 'rgba(196,160,80,0.1)', border: '1px solid rgba(196,160,80,0.2)', borderRadius: 7, padding: '5px 10px', color: 'var(--gold)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'none' }}>
+            View Original ↗
+          </a>
+        )}
+        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Side by side</span>
+        <button onClick={() => setLandscape(l => !l)} style={{ flexShrink: 0, background: landscape ? 'rgba(196,160,80,0.2)' : 'transparent', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', color: 'var(--gold)', fontSize: '0.72rem', cursor: 'pointer' }}>
+          {landscape ? 'On' : 'Off'}
         </button>
       </div>
 
@@ -123,24 +129,24 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
       <div style={{ flex: 1, display: 'flex', flexDirection: landscape ? 'row' : 'column', overflow: 'hidden', minHeight: 0 }}>
 
         {/* File preview */}
-        <div style={{ flex: 1, minHeight: 0, minWidth: 0, borderRight: landscape ? '1px solid var(--border)' : 'none', borderBottom: !landscape ? '1px solid var(--border)' : 'none', background: '#0a0a0f', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ flexShrink: 0, padding: '6px 12px', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Original File</div>
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            {fileUrl ? (
-              material.mimeType === 'application/pdf' || fileUrl.includes('.pdf') ? (
-                <iframe src={fileUrl} style={{ width: '100%', height: '100%', border: 'none' }} title='File preview' />
-              ) : (
-                <img src={fileUrl} alt='File preview' style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              )
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading preview...</p>
-              </div>
-            )}
+        {landscape && publicId && (
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, borderRight: '1px solid var(--border)', background: '#0a0a0f', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', flex: 1 }}>Original · Page {page}</span>
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--gold)', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>‹</button>
+              <button onClick={() => setPage(p => p + 1)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--gold)', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>›</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 8 }}>
+              <img
+                key={page}
+                src={getCloudinaryImageUrl(publicId, page)}
+                alt={`Page ${page}`}
+                style={{ maxWidth: '100%', borderRadius: 4 }}
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            </div>
           </div>
-        </div>
-
-        {/* Right panel: OCR + form */}
+        )}
         <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* OCR editor */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '10px 12px', gap: 6 }}>
@@ -156,7 +162,7 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
           </div>
 
           {/* Binding form */}
-          <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', maxHeight: landscape ? '45%' : '280px' }}>
+          <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', maxHeight: '320px' }}>
             <p style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.7 }}>Bind to Course</p>
 
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder='Search course...' style={inp} />
