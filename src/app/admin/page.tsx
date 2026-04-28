@@ -259,7 +259,7 @@ export default function AdminPage() {
       <div className="md:hidden tab-bar" style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
         background: 'var(--navy-card)', borderTop: '1px solid var(--border)',
-        display: 'flex', overflowX: 'auto', padding: '8px 0 12px',
+        display: 'flex', overflowX: 'auto', padding: '8px 0 12px', justifyContent: 'center',
       }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
@@ -333,7 +333,7 @@ export default function AdminPage() {
       </div>
 
       {/* Mobile main content */}
-      <div className="md:hidden" style={{ background: 'var(--navy)', padding: '16px', paddingBottom: '80px', minHeight: '100dvh' }}>
+      <div className="md:hidden" style={{ background: 'var(--navy)', padding: '16px', paddingTop: '68px', paddingBottom: '80px', minHeight: '100dvh' }}>
         <MainContent />
       </div>
 
