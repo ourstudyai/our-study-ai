@@ -261,7 +261,7 @@ export default function AdminPage() {
           .tab-bar { justify-content: center !important; overflow-x: visible !important; }
         }
       `}</style>
-      <div className="lg:hidden tab-bar" style={{
+      <div className="tab-bar" style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
         background: 'var(--navy-card)', borderTop: '1px solid var(--border)',
         display: 'flex', overflowX: 'auto', padding: '8px 0 12px',

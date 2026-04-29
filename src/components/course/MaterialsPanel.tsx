@@ -92,30 +92,25 @@ export default function MaterialsPanel({ courseId, onActivate, activeFileName }:
             </div>
             {isOpen && (
               <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {isActive ? (
-                  <button onClick={() => onActivate(null)} style={{
-                    width: '100%', padding: '7px 10px', borderRadius: '7px',
-                    background: 'transparent', color: 'var(--gold)',
-                    border: '1px solid var(--gold)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
-                  }}>
-                    Deactivate context
-                  </button>
-                ) : (
-                  <button onClick={() => onActivate({ fileName: m.fileName, extractedText: m.extractedText || '' })} style={{
-                    width: '100%', padding: '7px 10px', borderRadius: '7px',
-                    background: 'var(--gold)', color: 'var(--navy)',
-                    border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
-                  }}>
-                    Load into chat context
-                  </button>
-                )}
+                <button onClick={() => onActivate({ fileName: m.fileName, extractedText: m.extractedText || '' })} style={{
+                  width: '100%', padding: '8px 10px', borderRadius: '7px',
+                  background: isActive ? 'rgba(196,160,80,0.15)' : 'var(--gold)',
+                  color: isActive ? 'var(--gold)' : 'var(--navy)',
+                  border: isActive ? '1px solid var(--gold)' : 'none',
+                  fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+                }}>
+                  {isActive ? '📖 Studying this' : '📖 Study this'}
+                </button>
                 <button onClick={() => handleViewFile(m)} disabled={fetchingUrl === m.id} style={{
                   width: '100%', padding: '6px 10px', borderRadius: '7px',
                   border: '1px solid var(--border)', background: 'transparent',
                   color: 'var(--text-secondary)', fontSize: '0.72rem', cursor: 'pointer',
                 }}>
-                  {fetchingUrl === m.id ? 'Loading...' : 'View original file'}
+                  {fetchingUrl === m.id ? 'Loading...' : 'View document'}
                 </button>
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '2px' }}>
+                  To download, visit the Library
+                </p>
               </div>
             )}
           </div>
