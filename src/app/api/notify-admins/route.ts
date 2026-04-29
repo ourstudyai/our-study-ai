@@ -45,11 +45,7 @@ export async function POST(req: NextRequest) {
       tokens = snap.docs.map(d => d.data().fcmToken).filter(Boolean);
     }
 
-    if (!tokens.length) {
-      return NextResponse.json({ success: true, sent: 0, reason: 'No tokens registered' });
-    }
-
-    // Save to admin_notifications collection for in-app panel
+    // Always save to admin_notifications for in-app bell panel
     await adminDb.collection('admin_notifications').add({
       type,
       title,
@@ -60,6 +56,10 @@ export async function POST(req: NextRequest) {
       createdAt: new Date(),
       targetRole: type === 'new_upload' ? 'all_admins' : 'supreme',
     });
+
+    if (!tokens.length) {
+      return NextResponse.json({ success: true, sent: 0, reason: 'No tokens registered' });
+    }
 
     // Send FCM push to each token
     const messaging = getMessaging();
