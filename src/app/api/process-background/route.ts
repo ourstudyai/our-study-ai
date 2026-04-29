@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
         };
         const label = statusLabels[finalStatus] ?? finalStatus;
         try {
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://ourstudyai-cd5ee.web.app";
+          const appUrl = "https://our-study-ai.vercel.app";
           await fetch(`${appUrl}/api/notify-admins`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
