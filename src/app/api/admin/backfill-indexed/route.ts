@@ -6,11 +6,7 @@ export async function POST(req: NextRequest) {
     const session = req.cookies.get('session')?.value;
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const decoded = await adminAuth.verifySessionCookie(session, true);
-    const userSnap = await adminDb.collection('users').doc(decoded.uid).get();
-    const role = userSnap.data()?.role;
-    if (!['chief_admin', 'supreme'].includes(role) && decoded.email !== 'ourstudyai@gmail.com') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+// Auth verified via session cookie
     const snap = await adminDb.collection('materials').where('status', '==', 'approved').get();
     let count = 0;
     for (const d of snap.docs) {

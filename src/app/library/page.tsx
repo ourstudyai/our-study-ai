@@ -309,7 +309,7 @@ export default function LibraryPage() {
 
   return (
     <AppNav>
-      <div style={{ minHeight: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', padding: '24px 16px', maxWidth: '1100px', margin: '0 auto' }}>
+      <div style={{ minHeight: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', padding: '24px 16px', paddingTop: '80px', maxWidth: '1100px', margin: '0 auto' }}>
 
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
