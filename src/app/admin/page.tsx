@@ -256,7 +256,7 @@ export default function AdminPage() {
         }
       `}</style>
       {/* ── Mobile Tab Bar ── */}
-      <div className="md:hidden tab-bar" style={{
+      <div className="lg:hidden tab-bar" style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
         background: 'var(--navy-card)', borderTop: '1px solid var(--border)',
         display: 'flex', overflowX: 'auto', padding: '8px 0 12px',
@@ -284,7 +284,7 @@ export default function AdminPage() {
       </div>
 
       {/* ── Desktop layout wrapper ── */}
-      <div className="hidden md:flex" style={{ flex: 1, minHeight: '100dvh' }}>
+      <div className="hidden lg:flex" style={{ flex: 1, minHeight: '100dvh', paddingTop: '56px' }}>
 
         {/* Desktop admin tab sidebar */}
         <div style={{
@@ -327,13 +327,13 @@ export default function AdminPage() {
         </div>
 
         {/* Desktop main content */}
-        <div style={{ flex: 1, minHeight: '100dvh', background: 'var(--navy)', padding: '16px', paddingTop: '24px', overflowY: 'auto', minWidth: 0 }}>
+        <div style={{ flex: 1, minHeight: '100dvh', background: 'var(--navy)', padding: '16px', paddingTop: '72px', overflowY: 'auto', minWidth: 0 }}>
           <MainContent />
         </div>
       </div>
 
       {/* Mobile main content */}
-      <div className="md:hidden" style={{ background: 'var(--navy)', padding: '16px', paddingTop: '68px', paddingBottom: '80px', minHeight: '100dvh' }}>
+      <div className="lg:hidden" style={{ background: 'var(--navy)', padding: '16px', paddingTop: '68px', paddingBottom: '80px', minHeight: '100dvh' }}>
         <MainContent />
       </div>
 

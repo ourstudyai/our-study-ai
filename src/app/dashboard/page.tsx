@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getFilteredCourses } from '@/lib/firestore/courses';
+import { getFilteredCourses, getAllCourses } from '@/lib/firestore/courses';
 import { Course, Department } from '@/lib/types';
 import { db } from '@/lib/firebase/config';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
@@ -29,6 +29,8 @@ export default function DashboardPage() {
   const [activeYear, setActiveYear] = useState<number>(userYear);
   const [activeSemester, setActiveSemester] = useState<number>(userProfile?.currentSemester ?? 1);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [allCourses, setAllCourses] = useState<Course[]>([]);
+  const [showAll, setShowAll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [timetable, setTimetable] = useState<any>(null);
@@ -72,6 +74,11 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [activeDept, activeYear, activeSemester]);
 
+  // Load all courses for browse mode
+  useEffect(() => {
+    getAllCourses().then(setAllCourses).catch(console.error);
+  }, []);
+
   // Load assignments for this user's courses
   useEffect(() => {
     if (!userProfile?.department || !userProfile?.year) return;
@@ -110,10 +117,7 @@ export default function DashboardPage() {
     load();
   }, [userProfile]);
 
-  // Hide theology tab entirely for philosophy students
-  const visibleDepts = userDepartment === 'philosophy'
-    ? DEPARTMENTS.filter(d => d.id === 'philosophy')
-    : DEPARTMENTS;
+  const visibleDepts = DEPARTMENTS;
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--body-bg)', color: 'var(--text-primary)', padding: '16px', maxWidth: '100vw', overflowX: 'hidden' }}>
@@ -190,43 +194,101 @@ export default function DashboardPage() {
       {/* Course grid */}
       {loading ? (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading courses...</p>
-      ) : courses.length === 0 ? (
-        <div style={{ textAlign: 'center', marginTop: '40px' }}>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No courses found for this selection.</p>
-        </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-          {courses.map((course) => (
+        <>
+          {/* My Courses */}
+          {courses.length === 0 ? (
+            <div style={{ textAlign: 'center', marginTop: '40px' }}>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No courses found for this selection.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+              {courses.map((course) => (
+                <button
+                  key={course.id}
+                  onClick={() => router.push(`/dashboard/course/${course.id}`)}
+                  style={{
+                    textAlign: 'left', padding: '14px', borderRadius: '14px',
+                    border: '1px solid var(--border)', background: 'var(--navy-card)',
+                    cursor: 'pointer', transition: 'border-color 0.2s', width: '100%',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+                >
+                  <div style={{ color: 'var(--gold)', fontWeight: 600, fontSize: '0.88rem', marginBottom: '4px', fontFamily: 'Playfair Display, serif' }}>
+                    {course.name}
+                  </div>
+                  {course.code && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginBottom: '6px' }}>
+                      {course.code}
+                    </div>
+                  )}
+                  {course.description && (
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {course.description}
+                    </div>
+                  )}
+                  <div style={{ marginTop: '8px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    Year {course.year} · Sem {course.semester}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Browse All Courses toggle */}
+          <div style={{ marginTop: '28px', borderTop: '1px solid var(--border)', paddingTop: '18px' }}>
             <button
-              key={course.id}
-              onClick={() => router.push(`/dashboard/course/${course.id}`)}
-              style={{
-                textAlign: 'left', padding: '14px', borderRadius: '14px',
-                border: '1px solid var(--border)', background: 'var(--navy-card)',
-                cursor: 'pointer', transition: 'border-color 0.2s', width: '100%',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--gold)')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+              onClick={() => setShowAll(v => !v)}
+              style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '9px', padding: '7px 16px', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer' }}
             >
-              <div style={{ color: 'var(--gold)', fontWeight: 600, fontSize: '0.88rem', marginBottom: '4px', fontFamily: 'Playfair Display, serif' }}>
-                {course.name}
-              </div>
-              {course.code && (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginBottom: '6px' }}>
-                  {course.code}
-                </div>
-              )}
-              {course.description && (
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {course.description}
-                </div>
-              )}
-              <div style={{ marginTop: '8px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                Year {course.year} · Sem {course.semester}
-              </div>
+              {showAll ? '▴ Hide all courses' : '▾ Browse all courses'}
             </button>
-          ))}
-        </div>
+
+            {showAll && (
+              <div style={{ marginTop: '16px' }}>
+                {(['philosophy', 'theology'] as const).map(dept => {
+                  const deptCourses = allCourses.filter(c => c.department === dept);
+                  if (deptCourses.length === 0) return null;
+                  const byYear = [1,2,3,4].map(y => ({ year: y, courses: deptCourses.filter(c => c.year === y) })).filter(g => g.courses.length > 0);
+                  return (
+                    <div key={dept} style={{ marginBottom: '24px' }}>
+                      <p style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.7, marginBottom: '12px' }}>
+                        {dept === 'philosophy' ? '🏛️ Philosophy' : '✝️ Theology'}
+                      </p>
+                      {byYear.map(({ year, courses: yc }) => (
+                        <div key={year} style={{ marginBottom: '14px' }}>
+                          <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Year {year}</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
+                            {yc.map(course => (
+                              <button
+                                key={course.id}
+                                onClick={() => router.push(`/dashboard/course/${course.id}`)}
+                                style={{
+                                  textAlign: 'left', padding: '12px', borderRadius: '12px',
+                                  border: '1px solid var(--border)', background: 'var(--navy-card)',
+                                  cursor: 'pointer', transition: 'border-color 0.2s', width: '100%',
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+                              >
+                                <div style={{ color: 'var(--gold)', fontWeight: 600, fontSize: '0.85rem', marginBottom: '3px', fontFamily: 'Playfair Display, serif' }}>
+                                  {course.name}
+                                </div>
+                                {course.code && <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '4px' }}>{course.code}</div>}
+                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Sem {course.semester}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

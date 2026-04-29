@@ -34,6 +34,17 @@ export async function getFilteredCourses(
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Course));
 }
 
+export async function getAllCourses(): Promise<Course[]> {
+  const q = query(
+    collection(db, COURSES_COLLECTION),
+    orderBy('department', 'asc'),
+    orderBy('year', 'asc'),
+    orderBy('name', 'asc')
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Course));
+}
+
 /**
  * Get a single course by ID.
  */
