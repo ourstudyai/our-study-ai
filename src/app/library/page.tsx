@@ -43,6 +43,7 @@ export default function LibraryPage() {
   const router = useRouter();
 
   const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
+  const isChiefOrSupreme = userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
 
   const [accessChecked, setAccessChecked] = useState(false);
   const [hasAccess, setHasAccess] = useState(false);
@@ -324,10 +325,10 @@ export default function LibraryPage() {
               {materials.length !== filtered.length ? ` · ${materials.length} total` : ''}
             </p>
           </div>
-          <button onClick={() => exportList(filtered)}
+          {isChiefOrSupreme && <button onClick={() => exportList(filtered)}
             style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '9px', padding: '7px 14px', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem' }}>
             ↓ Export list
-          </button>
+          </button>}
         </div>
 
         {/* ── Permanent disclaimer ────────────────────────────────────── */}

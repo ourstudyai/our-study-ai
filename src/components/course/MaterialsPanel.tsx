@@ -35,7 +35,8 @@ export default function MaterialsPanel({ courseId, onActivate, activeFileName }:
     if (data.publicId) {
       setFetchingUrl(m.id);
       try {
-        const res = await fetch('/api/material-url?publicId=' + encodeURIComponent(data.publicId));
+        const params = new URLSearchParams({ publicId: data.publicId || '', fileUrl: m.fileUrl || '' });
+        const res = await fetch('/api/material-url?' + params);
         const json = await res.json();
         if (json.url) window.open(json.url, '_blank');
       } catch { alert('Could not load file URL. Try again.'); }
