@@ -38,23 +38,7 @@ export default function DashboardPage() {
   // Year access logic per handoff doc:
   // Theology students: all 4 philosophy years + theology years up to current
   // Philosophy students: philosophy years up to current only
-  const getAccessibleYears = (dept: Department): number[] => {
-    if (dept === 'philosophy') {
-      if (userDepartment === 'theology') {
-        // Theology student browsing philosophy — all 4 years
-        return [1, 2, 3, 4];
-      }
-      // Philosophy student browsing philosophy — up to their year
-      return Array.from({ length: userYear }, (_, i) => i + 1);
-    }
-    // Theology dept
-    if (userDepartment === 'philosophy') {
-      // Philosophy student cannot browse theology
-      return [];
-    }
-    // Theology student browsing theology — up to their year
-    return Array.from({ length: userYear }, (_, i) => i + 1);
-  };
+  const getAccessibleYears = (_dept: Department): number[] => [1, 2, 3, 4];
 
   const accessibleYears = getAccessibleYears(activeDept);
 
