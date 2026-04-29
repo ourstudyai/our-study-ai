@@ -156,6 +156,7 @@ export async function POST(req: NextRequest) {
 
         // ── Notify admins of new upload ──────────────────────────────────────
         try {
+            console.log("[process-upload] Calling notify-admins at:", appUrl + "/api/notify-admins");
             await fetch(`${appUrl}/api/notify-admins`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -168,6 +169,7 @@ export async function POST(req: NextRequest) {
             });
         } catch (notifyErr) {
             console.error("[process-upload] Notify failed:", notifyErr);
+            console.error("[process-upload] Notify error details:", JSON.stringify(notifyErr));
         }
 
         return NextResponse.json({
