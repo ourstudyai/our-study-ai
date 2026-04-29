@@ -135,8 +135,6 @@ export default function ContributePage() {
       formData.append('timestamp', String(timestamp));
       formData.append('signature', signature);
       formData.append('api_key', apiKey);
-      formData.append('overwrite', 'false');
-      formData.append('resource_type', 'auto');
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`);

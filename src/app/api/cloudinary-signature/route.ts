@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     const timestamp = Math.round(Date.now() / 1000);
 
     const signature = cloudinary.utils.api_sign_request(
-      { public_id: publicId, timestamp, overwrite: "false", resource_type: "auto" },
+      { public_id: publicId, timestamp, overwrite: "false" },
       process.env.CLOUDINARY_API_SECRET!
     );
 
