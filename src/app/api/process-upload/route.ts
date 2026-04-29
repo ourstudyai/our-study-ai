@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       suggestedCourseName: suggestedCourseName ?? null,
       suggestedCourseId: suggestedCourseId ?? null,
       category: category ?? "other",
-      status: "processing",
+      status: "pending_review",
       indexed: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -97,14 +97,14 @@ export async function POST(req: NextRequest) {
           type: "new_upload",
           title: "📤 New Upload",
           body: `${fileName} was just uploaded and is being processed.`,
-          data: { materialId, status: "processing", fileName },
+          data: { materialId, status: "pending_review", fileName },
         }),
       });
     } catch (notifyErr) {
       console.error("[process-upload] Notify failed:", notifyErr);
     }
 
-    return NextResponse.json({ success: true, materialId, status: "processing" });
+    return NextResponse.json({ success: true, materialId, status: "pending_review" });
 
   } catch (err) {
     console.error("[process-upload] Unexpected error:", err);
