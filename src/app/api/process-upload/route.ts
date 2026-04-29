@@ -154,6 +154,22 @@ export async function POST(req: NextRequest) {
             console.error("[process-upload] QStash publish failed:", err);
         }
 
+        // ── Notify admins of new upload ──────────────────────────────────────
+        try {
+            await fetch(`${appUrl}/api/notify-admins`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    type: "new_upload",
+                    title: "📤 New Upload",
+                    body: `${fileName} was just uploaded and is being processed.`,
+                    data: { materialId, status: "processing", fileName },
+                }),
+            });
+        } catch (notifyErr) {
+            console.error("[process-upload] Notify failed:", notifyErr);
+        }
+
         return NextResponse.json({
             success: true,
             materialId,

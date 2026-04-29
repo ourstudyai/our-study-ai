@@ -98,6 +98,10 @@ export default function ContributePage() {
     finally { setSigningIn(false); }
   };
 
+  // ── File size helper ─────────────────────────────────────────────────────
+  const fileSizeMB = (file: File) => (file.size / (1024 * 1024)).toFixed(1);
+  const isLargeFile = (file: File) => file.size > 5 * 1024 * 1024; // 5MB+
+
   // ── Careful upload ──────────────────────────────────────────────────────
   const carefulCanSubmit = department && year && semester &&
     (courseNotListed ? manualCourseName.trim().length > 0 : selectedCourseId) &&
@@ -139,7 +143,9 @@ export default function ContributePage() {
           setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100 } }));
         }
       } catch {
-        setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 0, error: `Upload failed for ${file.name}. Check your internet and try again.` } }));
+        const sizeMB = fileSizeMB(file);
+        const sizeNote = isLargeFile(file) ? ` This file is ${sizeMB}MB — files over 5MB must upload within 60 seconds. A fast, stable WiFi connection is required.` : ' Check your internet connection and try again.';
+        setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 0, error: `Upload failed for ${file.name}.${sizeNote}` } }));
         anyFailed = true;
       }
     }
