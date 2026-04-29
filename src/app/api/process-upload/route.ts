@@ -30,7 +30,7 @@ async function uploadToCloudinary(buffer: Buffer, fileName: string, folder: stri
                     resource_type: 'auto',
                     type: 'upload',
                     sign_url: true,
-                    expires_at: Math.floor(Date.now() / 1000) + 21600,
+                    expires_at: Math.floor(Date.now() / 1000) + 604800,
                 });
                 resolve({ url: signedUrl, publicId: result.public_id });
             }

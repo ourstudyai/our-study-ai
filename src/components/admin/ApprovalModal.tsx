@@ -15,7 +15,7 @@ interface Props {
 
 
 function getCloudinaryImageUrl(publicId: string, page: number = 1): string {
-  const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || '';
+  const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'do5h3c5qm';
   return `https://res.cloudinary.com/${cloud}/image/upload/pg_${page},f_jpg,q_80/${publicId}.jpg`;
 }
 export default function ApprovalModal({ material, courses, onClose, onDone }: Props) {
@@ -30,11 +30,20 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [shouldIndex, setShouldIndex] = useState(true);
+  const [freshUrl, setFreshUrl] = useState('');
   const [landscape, setLandscape] = useState(false);
   const [page, setPage] = useState(1);
   const publicId = (material as any).publicId || '';
 
   const selectedCourse = courses.find(c => c.id === selectedCourseId);
+
+  useEffect(() => {
+    const pid = (material as any).publicId;
+    if (!pid) { setFreshUrl((material as any).fileUrl || ''); return; }
+    fetch('/api/material-url?publicId=' + encodeURIComponent(pid))
+      .then(r => r.json()).then(d => { if (d.url) setFreshUrl(d.url); })
+      .catch(() => setFreshUrl((material as any).fileUrl || ''));
+  }, [material]);
   const canApprove = selectedCourseId && ocrText.trim().length > 0;
 
   const filteredCourses = courses.filter(c =>
@@ -115,8 +124,8 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--navy-card)' }}>
         <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer', flexShrink: 0 }}>✕</button>
         <p style={{ flex: 1, fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '0.9rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{material.fileName}</p>
-        {(material as any).fileUrl && (
-          <a href={(material as any).fileUrl} target="_blank" rel="noopener noreferrer"
+        {freshUrl && (
+          <a href={freshUrl} target="_blank" rel="noopener noreferrer"
             style={{ flexShrink: 0, background: 'rgba(196,160,80,0.1)', border: '1px solid rgba(196,160,80,0.2)', borderRadius: 7, padding: '5px 10px', color: 'var(--gold)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'none' }}>
             View Original ↗
           </a>

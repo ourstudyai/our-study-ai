@@ -259,7 +259,7 @@ export default function AdminPage() {
       <div className="md:hidden tab-bar" style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
         background: 'var(--navy-card)', borderTop: '1px solid var(--border)',
-        display: 'flex', overflowX: 'auto', padding: '8px 0 12px', justifyContent: 'center',
+        display: 'flex', overflowX: 'auto', padding: '8px 0 12px',
       }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
