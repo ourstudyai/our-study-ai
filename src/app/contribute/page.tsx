@@ -102,6 +102,71 @@ export default function ContributePage() {
   const fileSizeMB = (file: File) => (file.size / (1024 * 1024)).toFixed(1);
   const isLargeFile = (file: File) => file.size > 5 * 1024 * 1024; // 5MB+
 
+  // ── Direct Cloudinary upload with real progress ─────────────────────────
+  const uploadToCloudinary = async (
+    file: File,
+    folder: string,
+    onProgress: (pct: number, loaded: number, total: number) => void
+  ): Promise<{ publicId: string; cloudinaryUrl: string; fileHash: string }> => {
+    // Compute MD5 hash
+    const arrayBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // Get signature from server (also does duplicate check)
+    const sigRes = await fetch('/api/cloudinary-signature', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName: file.name, folder, fileHash }),
+    });
+    if (sigRes.status === 409) {
+      const data = await sigRes.json();
+      throw Object.assign(new Error('duplicate'), { duplicate: true, data });
+    }
+    if (!sigRes.ok) throw new Error('Failed to get upload signature');
+    const { signature, timestamp, publicId, apiKey, cloudName } = await sigRes.json();
+
+    // Upload directly to Cloudinary with real progress
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('public_id', publicId);
+      formData.append('timestamp', String(timestamp));
+      formData.append('signature', signature);
+      formData.append('api_key', apiKey);
+      formData.append('overwrite', 'false');
+      formData.append('resource_type', 'auto');
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          onProgress(pct, e.loaded, e.total);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const result = JSON.parse(xhr.responseText);
+          const signedUrl = result.secure_url;
+          resolve({ publicId: result.public_id, cloudinaryUrl: signedUrl, fileHash });
+        } else {
+          reject(new Error('Cloudinary upload failed: ' + xhr.status));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Cloudinary upload network error'));
+      xhr.send(formData);
+    });
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
   // ── Careful upload ──────────────────────────────────────────────────────
   const carefulCanSubmit = department && year && semester &&
     (courseNotListed ? manualCourseName.trim().length > 0 : selectedCourseId) &&
@@ -121,31 +186,45 @@ export default function ContributePage() {
 
     for (const file of carefulFiles) {
       try {
-        let fakeProgress = 0;
-        const interval = setInterval(() => {
-          fakeProgress = Math.min(fakeProgress + 8, 85);
-          setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'uploading', progress: fakeProgress } }));
-        }, 300);
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('uploadedBy', firebaseUser.uid);
-        formData.append('uploadedByRole', 'student');
-        formData.append('uploaderEmail', uploaderEmail);
-        formData.append('suggestedCourseName', courseName);
-        if (courseId) formData.append('suggestedCourseId', courseId);
-        formData.append('category', selectedCategory);
-        const res = await fetch('/api/process-upload', { method: 'POST', body: formData });
-        clearInterval(interval);
-        if (res.status === 409) {
+        const folder = courseId ? `contributions/${courseId}` : 'contributions/auto-detect';
+        const { publicId, cloudinaryUrl, fileHash } = await uploadToCloudinary(
+          file,
+          folder,
+          (pct, loaded, total) => {
+            setCarefulStatuses(p => ({
+              ...p,
+              [file.name]: {
+                status: 'uploading',
+                progress: pct,
+                progressLabel: `${pct}% — ${formatBytes(loaded)} of ${formatBytes(total)}`
+              }
+            }));
+          }
+        );
+        // Register with server
+        const res = await fetch('/api/process-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            publicId, cloudinaryUrl, fileHash,
+            fileName: file.name,
+            mimeType: file.type,
+            uploadedBy: firebaseUser.uid,
+            uploadedByRole: 'student',
+            uploaderEmail,
+            suggestedCourseName: courseName,
+            suggestedCourseId: courseId,
+            category: selectedCategory,
+          }),
+        });
+        if (!res.ok) throw new Error('Server registration failed');
+        setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100 } }));
+      } catch (err: any) {
+        if (err?.duplicate) {
           setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: `This file already exists in the system and won't be uploaded again.` } }));
-          anyFailed = true;
         } else {
-          setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100 } }));
+          setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 0, error: `Upload failed for ${file.name}. Check your connection and try again.` } }));
         }
-      } catch {
-        const sizeMB = fileSizeMB(file);
-        const sizeNote = isLargeFile(file) ? ` This file is ${sizeMB}MB — files over 5MB must upload within 60 seconds. A fast, stable WiFi connection is required.` : ' Check your internet connection and try again.';
-        setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 0, error: `Upload failed for ${file.name}.${sizeNote}` } }));
         anyFailed = true;
       }
     }
@@ -172,28 +251,44 @@ export default function ContributePage() {
 
     for (const file of detectFiles) {
       try {
-        let fakeProgress = 0;
-        const interval = setInterval(() => {
-          fakeProgress = Math.min(fakeProgress + 7, 80);
-          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'uploading', progress: fakeProgress } }));
-        }, 350);
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('uploadedBy', firebaseUser.uid);
-        formData.append('uploadedByRole', 'student');
-        formData.append('uploaderEmail', uploaderEmail);
-        const res = await fetch('/api/process-upload', { method: 'POST', body: formData });
-        clearInterval(interval);
-        if (res.status === 409) {
+        const { publicId, cloudinaryUrl, fileHash } = await uploadToCloudinary(
+          file,
+          'contributions/auto-detect',
+          (pct, loaded, total) => {
+            setDetectStatuses(p => ({
+              ...p,
+              [file.name]: {
+                status: 'uploading',
+                progress: pct,
+                progressLabel: `${pct}% — ${formatBytes(loaded)} of ${formatBytes(total)}`
+              }
+            }));
+          }
+        );
+        const res = await fetch('/api/process-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            publicId, cloudinaryUrl, fileHash,
+            fileName: file.name,
+            mimeType: file.type,
+            uploadedBy: firebaseUser.uid,
+            uploadedByRole: 'student',
+            uploaderEmail,
+            suggestedCourseName: null,
+            suggestedCourseId: null,
+            category: 'other',
+          }),
+        });
+        if (!res.ok) throw new Error('Server registration failed');
+        const result = await res.json();
+        setDetectStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100, result: { materialId: result.materialId, detectedStatus: result.status, category: result.category ?? 'other', suggestedCourseName: result.suggestedCourseName ?? null, detectedCourseName: result.detectedCourseName ?? null, confidence: result.confidence ?? 'low', wordCount: result.wordCount ?? 0 } } }));
+      } catch (err: any) {
+        if (err?.duplicate) {
           setDetectStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: `This file already exists in the system and won't be uploaded again.` } }));
-        } else if (!res.ok) {
-          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100, result: { materialId: '', detectedStatus: 'processing', category: 'other', suggestedCourseName: null, detectedCourseName: null, confidence: 'low', wordCount: 0 } } }));
         } else {
-          const result = await res.json();
-          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100, result: { materialId: result.materialId, detectedStatus: result.status, category: result.category, suggestedCourseName: result.suggestedCourseName, detectedCourseName: result.detectedCourseName, confidence: result.confidence, wordCount: result.wordCount } } }));
+          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 0, error: `Upload failed for ${file.name}. Check your connection and try again.` } }));
         }
-      } catch {
-        setDetectStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 0, error: `Something went wrong with ${file.name}. Please try again.` } }));
       }
     }
     setDetectUploading(false);
@@ -522,7 +617,7 @@ export default function ContributePage() {
                             <button onClick={() => setDetectFiles(p => p.filter(f => f.name !== file.name))} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0 }}>✕</button>
                           ) : (
                             <span style={{ fontSize: '0.72rem', flexShrink: 0, color: fs.status === 'done' ? '#22c55e' : fs.status === 'error' ? '#ef4444' : '#a78bfa' }}>
-                              {fs.status === 'uploading' ? `${fs.progress}%` : fs.status === 'done' ? 'Done ✓' : fs.status === 'error' ? 'Failed' : 'Processing...'}
+                              {fs.status === 'uploading' ? ((fs as any).progressLabel || `${fs.progress}%`) : fs.status === 'done' ? 'Done ✓' : fs.status === 'error' ? 'Failed' : 'Processing...'}
                             </span>
                           )}
                         </div>
