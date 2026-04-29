@@ -44,6 +44,13 @@ export default function AdminPage() {
   const isChiefAdmin = userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
 
   const [tab, setTab] = useState<Tab>('pending');
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const check = () => setIsDesktop(window.innerWidth >= 1024);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
   const [pending, setPending]       = useState<Material[]>([]);
   const [approved, setApproved]     = useState<Material[]>([]);
   const [quarantined, setQuarantined] = useState<Material[]>([]);
@@ -256,15 +263,11 @@ export default function AdminPage() {
         }
       `}</style>
       {/* ── Mobile Tab Bar ── */}
-      <style>{`
-        @media (min-width: 1024px) {
-          .tab-bar { justify-content: center !important; overflow-x: visible !important; }
-        }
-      `}</style>
       <div className="tab-bar" style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
         background: 'var(--navy-card)', borderTop: '1px solid var(--border)',
         display: 'flex', overflowX: 'auto', padding: '8px 0 12px',
+        justifyContent: isDesktop ? 'center' : 'flex-start',
       }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
