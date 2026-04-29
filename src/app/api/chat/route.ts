@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { getChunksByCourse } from "@/lib/firestore/materials";
+import { adminDb } from "@/lib/firebase/admin";
 import { getSystemPrompt } from "@/lib/gemini/system-prompts";
 
 export async function POST(req: NextRequest) {
@@ -24,9 +24,33 @@ export async function POST(req: NextRequest) {
 
     if (courseId) {
       try {
-        const chunks = await getChunksByCourse(courseId, 6);
-        if (chunks.length > 0) {
-          ragContext = chunks.map((c, i) => `[Chunk ${i + 1}]\n${c.text}`).join("\n\n");
+        const snap = await adminDb.collection('material_chunks')
+          .where('courseId', '==', courseId)
+          .limit(30)
+          .get();
+
+        if (!snap.empty) {
+          // Keyword matching — score each chunk by relevance to the message
+          const keywords = message.toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .split(/\s+/)
+            .filter((w: string) => w.length > 3);
+
+          const scored = snap.docs
+            .filter(d => !d.data().deleted)
+            .map(d => {
+              const text = (d.data().text || '').toLowerCase();
+              const score = keywords.reduce((acc: number, kw: string) => {
+                return acc + (text.includes(kw) ? 1 : 0);
+              }, 0);
+              return { text: d.data().text, score };
+            })
+            .sort((a: any, b: any) => b.score - a.score)
+            .slice(0, 10);
+
+          if (scored.length > 0) {
+            ragContext = scored.map((c: any, i: number) => `[Chunk ${i + 1}]\n${c.text}`).join("\n\n");
+          }
         }
       } catch (err) {
         console.error("[chat] RAG fetch failed:", err);

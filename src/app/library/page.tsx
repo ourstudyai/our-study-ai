@@ -495,10 +495,20 @@ export default function LibraryPage() {
                         📖 Study this
                       </button>
                     )}
-                    <button onClick={() => handleDownload(m)}
-                      style={{ width: '100%', padding: '9px', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '9px', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>
-                      📥 Download original
-                    </button>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => handleDownloadTxt(m)}
+                        style={{ flex: 1, padding: '9px', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '9px', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>
+                        📄 Text
+                      </button>
+                      <button onClick={() => handleDownloadPdf(m)}
+                        style={{ flex: 1, padding: '9px', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '9px', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>
+                        🖨️ PDF
+                      </button>
+                      <button onClick={() => handleDownload(m)}
+                        style={{ flex: 1, padding: '9px', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '9px', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>
+                        📥 Original
+                      </button>
+                    </div>
                     {isAdmin && (
                       removeConfirm === m.id ? (
                         <div style={{ display: 'flex', gap: '6px' }}>

@@ -27,10 +27,15 @@ export async function POST(req: NextRequest) {
     const fileUrl: string = mat.fileUrl;
 
     // Extract public ID from Cloudinary URL
-    const urlParts = fileUrl.split('/upload/');
-    if (urlParts.length < 2) return NextResponse.json({ error: 'Invalid file URL' }, { status: 400 });
-    const publicIdWithExt = urlParts[1];
-    const publicId = publicIdWithExt.replace(/\.[^/.]+$/, '');
+    // Use stored publicId if available, else extract from URL
+    let publicId = mat.publicId || '';
+    if (!publicId) {
+      const urlParts = fileUrl.split('/upload/');
+      if (urlParts.length < 2) return NextResponse.json({ error: 'Invalid file URL' }, { status: 400 });
+      // Remove signing params (s--...--) and version (v123/)
+      let raw = urlParts[1].replace(/^s--[^-]+--.\//, '').replace(/^v\d+\//, '');
+      publicId = raw.replace(/\.[^/.]+$/, '');
+    }
 
     // Generate signed URL valid for 15 minutes
     const signedUrl = cloudinary.url(publicId, {
