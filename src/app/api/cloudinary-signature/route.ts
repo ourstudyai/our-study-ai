@@ -12,7 +12,9 @@ cloudinary.config({
 
 export async function POST(req: NextRequest) {
   try {
-    const { fileName, folder, fileHash } = await req.json();
+    const { fileName, folder, fileHash, checkOnly } = await req.json();
+    if (checkOnly) {
+      // Just do duplicate check, no signature needed
 
     if (!fileName || !folder || !fileHash) {
       return NextResponse.json({ error: "Missing fields." }, { status: 400 });
@@ -32,6 +34,8 @@ export async function POST(req: NextRequest) {
         existingFileName: existing.fileName,
         existingStatus: existing.status,
       }, { status: 409 });
+    }
+
     }
 
     // Generate Cloudinary signature
