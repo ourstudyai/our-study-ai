@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
       suggestedCourseId,
       category,
     } = await req.json();
+    console.log("[process-upload] body:", JSON.stringify({ key, uploadedBy, uploaderEmail, fileName }));
 
     if (!key || !uploadedBy || !uploaderEmail || !fileName) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
