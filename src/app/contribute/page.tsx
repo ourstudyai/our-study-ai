@@ -114,17 +114,6 @@ export default function ContributePage() {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // Duplicate check
-    const dupRes = await fetch('/api/cloudinary-signature', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: file.name, folder, fileHash, checkOnly: true }),
-    });
-    if (dupRes.status === 409) {
-      const data = await dupRes.json();
-      const dupErr: any = new Error('duplicate'); dupErr.duplicate = true; dupErr.data = data; throw dupErr;
-    }
-
     const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
     const publicId = `${folder}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
