@@ -113,8 +113,8 @@ export async function getMaterialsByStatus(
     return snapshot.docs
         .map((d) => ({ id: d.id, ...d.data() } as Material))
         .sort((a, b) => {
-            const aTime = a.createdAt?.toMillis() ?? 0;
-            const bTime = b.createdAt?.toMillis() ?? 0;
+            const aTime = typeof a.createdAt === "string" ? new Date(a.createdAt).getTime() : a.createdAt?.toMillis() ?? 0;
+            const bTime = typeof b.createdAt === "string" ? new Date(b.createdAt).getTime() : b.createdAt?.toMillis() ?? 0;
             return bTime - aTime;
         });
 }
