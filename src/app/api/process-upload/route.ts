@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
     const matRef = adminDb.collection("materials").doc();
     const materialId = matRef.id;
 
+    console.log("[process-upload] attempting set for", materialId);
+    try {
     await matRef.set({
       fileName,
       mimeType: mimeType ?? "application/octet-stream",
@@ -48,6 +50,11 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+    console.log("[process-upload] set succeeded for", materialId);
+    } catch (setErr) {
+      console.error("[process-upload] set FAILED:", setErr);
+      throw setErr;
+    }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://our-study-ai.vercel.app";
 
