@@ -429,7 +429,7 @@ export default function LibraryPage() {
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     {m.pageCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.pageCount} pages</span>}
                     {m.wordCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span>}
-                    {m.indexedAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Added {typeof m.indexedAt === 'string' ? new Date(m.indexedAt).toLocaleDateString() : m.indexedAt?.toDate().toLocaleDateString()}</span>}
+                    {m.indexedAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Added {new Date(m.indexedAt).toLocaleDateString()}</span>}
                     <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Uploaded by: A community member</span>
                   </div>
 
