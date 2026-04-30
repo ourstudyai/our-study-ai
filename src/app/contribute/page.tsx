@@ -114,27 +114,26 @@ export default function ContributePage() {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // Get signature from server (also does duplicate check)
-    const sigRes = await fetch('/api/cloudinary-signature', {
+    // Duplicate check
+    const dupRes = await fetch('/api/cloudinary-signature', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: file.name, folder, fileHash }),
+      body: JSON.stringify({ fileName: file.name, folder, fileHash, checkOnly: true }),
     });
-    if (sigRes.status === 409) {
-      const data = await sigRes.json();
-      throw Object.assign(new Error('duplicate'), { duplicate: true, data });
+    if (dupRes.status === 409) {
+      const data = await dupRes.json();
+      const dupErr: any = new Error('duplicate'); dupErr.duplicate = true; dupErr.data = data; throw dupErr;
     }
-    if (!sigRes.ok) throw new Error('Failed to get upload signature');
-    const { signature, timestamp, publicId, apiKey, cloudName } = await sigRes.json();
 
-    // Upload directly to Cloudinary with real progress
+    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+    const publicId = `${folder}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+    // Upload directly to Cloudinary unsigned
     return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('public_id', publicId);
-      formData.append('timestamp', String(timestamp));
-      formData.append('signature', signature);
-      formData.append('api_key', apiKey);
+      formData.append('upload_preset', 'OurStudyAI');
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`);
