@@ -1,26 +1,15 @@
 export const dynamic = "force-dynamic";
-
-// src/app/api/process-upload/route.ts
-// Phase 1: Receives publicId + metadata after direct Cloudinary upload.
-// Saves Firestore stub + queues background job via QStash + notifies admins.
-
 import { NextRequest, NextResponse } from "next/server";
-import { v2 as cloudinary } from "cloudinary";
 import { Client } from "@upstash/qstash";
 import { adminDb } from "@/lib/firebase/admin";
+import { R2_PUBLIC_URL } from "@/lib/r2";
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN! });
 
 export async function POST(req: NextRequest) {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-    api_key: process.env.CLOUDINARY_API_KEY!,
-    api_secret: process.env.CLOUDINARY_API_SECRET!,
-  });
-
   try {
     const {
-      publicId,
+      key,
       fileHash,
       fileName,
       mimeType,
@@ -32,27 +21,20 @@ export async function POST(req: NextRequest) {
       category,
     } = await req.json();
 
-    if (!publicId || !uploadedBy || !uploaderEmail || !fileName) {
+    if (!key || !uploadedBy || !uploaderEmail || !fileName) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
 
-    // Generate 1-year signed URL
-    const cloudinaryUrl = cloudinary.url(publicId, {
-      resource_type: "auto",
-      type: "upload",
-      sign_url: true,
-      expires_at: Math.floor(Date.now() / 1000) + 31536000,
-    });
+    const fileUrl = `${R2_PUBLIC_URL}/${key}`;
 
-    // Save Firestore stub
     const matRef = adminDb.collection("materials").doc();
     const materialId = matRef.id;
 
     await matRef.set({
       fileName,
       mimeType: mimeType ?? "application/octet-stream",
-      fileUrl: cloudinaryUrl,
-      publicId,
+      fileUrl,
+      publicId: key,
       fileHash: fileHash ?? "",
       uploadedBy,
       uploadedByRole: uploadedByRole ?? "student",
@@ -66,7 +48,6 @@ export async function POST(req: NextRequest) {
       updatedAt: new Date().toISOString(),
     });
 
-    // Queue background processing
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://our-study-ai.vercel.app";
 
     try {
@@ -74,7 +55,7 @@ export async function POST(req: NextRequest) {
         url: `${appUrl}/api/process-background`,
         body: {
           materialId,
-          cloudinaryUrl,
+          fileUrl,
           mimeType: mimeType ?? "application/octet-stream",
           fileName,
           category: category ?? "other",
@@ -87,9 +68,7 @@ export async function POST(req: NextRequest) {
       console.error("[process-upload] QStash publish failed:", err);
     }
 
-    // Notify admins immediately
     try {
-      console.log("[process-upload] Notifying admins...");
       await fetch(`${appUrl}/api/notify-admins`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -105,7 +84,6 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, materialId, status: "pending_review" });
-
   } catch (err) {
     console.error("[process-upload] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });

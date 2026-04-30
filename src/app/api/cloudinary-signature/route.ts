@@ -1,62 +1,52 @@
 export const dynamic = "force-dynamic";
-
 import { NextRequest, NextResponse } from "next/server";
-import { v2 as cloudinary } from "cloudinary";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { r2Client, R2_BUCKET, R2_PUBLIC_URL } from "@/lib/r2";
 import { adminDb } from "@/lib/firebase/admin";
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-  api_key: process.env.CLOUDINARY_API_KEY!,
-  api_secret: process.env.CLOUDINARY_API_SECRET!,
-});
 
 export async function POST(req: NextRequest) {
   try {
-    const { fileName, folder, fileHash, checkOnly } = await req.json();
+    const { fileName, folder, fileHash, checkOnly, mimeType } = await req.json();
+
     if (checkOnly) {
-      // Just do duplicate check, no signature needed
-
-    if (!fileName || !folder || !fileHash) {
-      return NextResponse.json({ error: "Missing fields." }, { status: 400 });
+      if (!fileName || !folder || !fileHash) {
+        return NextResponse.json({ error: "Missing fields." }, { status: 400 });
+      }
+      const existingSnap = await adminDb.collection("materials")
+        .where("fileHash", "==", fileHash)
+        .limit(1)
+        .get();
+      if (!existingSnap.empty) {
+        const existing = existingSnap.docs[0].data();
+        return NextResponse.json({
+          duplicate: true,
+          existingId: existingSnap.docs[0].id,
+          existingFileName: existing.fileName,
+          existingStatus: existing.status,
+        }, { status: 409 });
+      }
+      return NextResponse.json({ duplicate: false });
     }
 
-    // Duplicate check
-    const existingSnap = await adminDb.collection("materials")
-      .where("fileHash", "==", fileHash)
-      .limit(1)
-      .get();
-
-    if (!existingSnap.empty) {
-      const existing = existingSnap.docs[0].data();
-      return NextResponse.json({
-        duplicate: true,
-        existingId: existingSnap.docs[0].id,
-        existingFileName: existing.fileName,
-        existingStatus: existing.status,
-      }, { status: 409 });
-    }
-
-    }
-
-    // Generate Cloudinary signature
     const sanitized = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const publicId = `${folder}/${Date.now()}_${sanitized}`;
-    const timestamp = Math.round(Date.now() / 1000);
+    const key = `${folder}/${Date.now()}_${sanitized}`;
 
-    const signature = cloudinary.utils.api_sign_request(
-      { public_id: publicId, timestamp },
-      process.env.CLOUDINARY_API_SECRET!
+    const signedUrl = await getSignedUrl(
+      r2Client,
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        ContentType: mimeType ?? "application/octet-stream",
+      }),
+      { expiresIn: 300 } // 5 minutes to complete upload
     );
 
-    return NextResponse.json({
-      signature,
-      timestamp,
-      publicId,
-      apiKey: process.env.CLOUDINARY_API_KEY!,
-      cloudName: process.env.CLOUDINARY_CLOUD_NAME!,
-    });
+    const publicUrl = `${R2_PUBLIC_URL}/${key}`;
+
+    return NextResponse.json({ signedUrl, key, publicUrl });
   } catch (err) {
-    console.error("[cloudinary-signature]", err);
-    return NextResponse.json({ error: "Failed to generate signature." }, { status: 500 });
+    console.error("[r2-upload]", err);
+    return NextResponse.json({ error: "Failed to generate upload URL." }, { status: 500 });
   }
 }

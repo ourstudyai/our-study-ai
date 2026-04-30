@@ -1,53 +1,23 @@
 export const dynamic = "force-dynamic";
-
-import { NextRequest, NextResponse } from 'next/server';
-import { adminDb, adminAuth } from '@/lib/firebase/admin';
-import { v2 as cloudinary } from 'cloudinary';
+import { NextRequest, NextResponse } from "next/server";
+import { adminDb, adminAuth } from "@/lib/firebase/admin";
 
 export async function POST(req: NextRequest) {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-  });
   try {
     const { materialId } = await req.json();
-    if (!materialId) return NextResponse.json({ error: 'Missing materialId' }, { status: 400 });
+    if (!materialId) return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
 
-    // Verify auth
-    const session = req.cookies.get('session')?.value;
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
+    const session = req.cookies.get("session")?.value;
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     await adminAuth.verifySessionCookie(session, true);
 
-    const matSnap = await adminDb.collection('materials').doc(materialId).get();
-    if (!matSnap.exists) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const matSnap = await adminDb.collection("materials").doc(materialId).get();
+    if (!matSnap.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const mat = matSnap.data()!;
-    const fileUrl: string = mat.fileUrl;
-
-    // Extract public ID from Cloudinary URL
-    // Use stored publicId if available, else extract from URL
-    let publicId = mat.publicId || '';
-    if (!publicId) {
-      const urlParts = fileUrl.split('/upload/');
-      if (urlParts.length < 2) return NextResponse.json({ error: 'Invalid file URL' }, { status: 400 });
-      // Remove signing params (s--...--) and version (v123/)
-      let raw = urlParts[1].replace(/^s--[^-]+--.\//, '').replace(/^v\d+\//, '');
-      publicId = raw.replace(/\.[^/.]+$/, '');
-    }
-
-    // Generate signed URL valid for 15 minutes
-    const signedUrl = cloudinary.url(publicId, {
-      resource_type: 'auto',
-      type: 'upload',
-      sign_url: true,
-      expires_at: Math.floor(Date.now() / 1000) + 900,
-    });
-
-    return NextResponse.json({ signedUrl });
+    // R2 public URL — no signing needed since bucket is open
+    return NextResponse.json({ signedUrl: matSnap.data()!.fileUrl });
   } catch (err) {
-    console.error('download-material error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error("download-material error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
