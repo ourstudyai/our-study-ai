@@ -155,7 +155,7 @@ export default function ContributePage() {
           const errMsg = 'Cloudinary ' + xhr.status + ': ' + xhr.responseText.slice(0, 300); console.error(errMsg); reject(new Error(errMsg));
         }
       };
-      xhr.onerror = () => reject(new Error('Cloudinary upload network error'));
+      xhr.onerror = () => reject(new Error('Network error uploading to: https://api.cloudinary.com/v1_1/' + cloudName + '/auto/upload'));
       xhr.send(formData);
     });
   };
