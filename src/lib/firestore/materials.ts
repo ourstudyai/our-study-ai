@@ -38,7 +38,7 @@ export type Material = {
     confidence: "high" | "medium" | "low";
     classifierReason: string;
     status: MaterialStatus;
-    createdAt: Timestamp | null;
+    createdAt: Timestamp | string | null;
     updatedAt: Timestamp | null;
 };
 
@@ -50,7 +50,7 @@ export type MaterialChunk = {
     chunkIndex: number;
     text: string;
     wordCount: number;
-    createdAt: Timestamp | null;
+    createdAt: Timestamp | string | null;
 };
 
 export type UploadReport = {
@@ -275,7 +275,7 @@ export async function getMaterialStats(): Promise<MaterialStats> {
 
     for (const m of materials) {
         if (!m.createdAt) continue;
-        const date = m.createdAt.toDate();
+        const date = typeof m.createdAt === "string" ? new Date(m.createdAt) : m.createdAt?.toDate();
         const year = date.getFullYear().toString();
         const month = MONTHS[date.getMonth()];
         const isAdmin = m.uploadedByRole === "admin" || m.uploadedByRole === "chief_admin";

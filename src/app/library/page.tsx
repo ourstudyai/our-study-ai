@@ -32,7 +32,7 @@ interface IndexedMaterial {
   contentList?: string[];
   aiSummary?: string;
   indexDisplayName?: string;
-  indexedAt?: { toDate: () => Date } | null;
+  indexedAt?: string | null;
   createdAt?: { toDate: () => Date } | null;
 }
 
@@ -94,7 +94,7 @@ export default function LibraryPage() {
     async function load() {
       setLoading(true);
       try {
-        const snap = await getDocs(query(collection(db, 'materials'), where('indexed', '==', true), orderBy('indexedAt', 'desc')));
+        const snap = await getDocs(query(collection(db, 'materials'), where('indexed', '==', true)));
         const mats = snap.docs.map(d => ({ id: d.id, ...d.data() } as IndexedMaterial));
 
         // Enrich with course metadata if missing
@@ -278,7 +278,7 @@ export default function LibraryPage() {
     if (filterCat) list = list.filter(m => m.category === filterCat);
 
     return [...list].sort((a, b) => {
-      if (sort === 'recent') return (b.indexedAt?.toDate().getTime() ?? 0) - (a.indexedAt?.toDate().getTime() ?? 0);
+      if (sort === 'recent') return (b.indexedAt ? new Date(b.indexedAt as string).getTime() : 0) - (a.indexedAt ? new Date(a.indexedAt as string).getTime() : 0);
       if (sort === 'name') return (a.indexDisplayName || a.fileName).localeCompare(b.indexDisplayName || b.fileName);
       if (sort === 'pages') return (b.pageCount ?? 0) - (a.pageCount ?? 0);
       if (sort === 'category') return a.category.localeCompare(b.category);
@@ -288,7 +288,7 @@ export default function LibraryPage() {
 
   const isNew = (m: IndexedMaterial) => {
     if (!m.indexedAt) return false;
-    return Date.now() - m.indexedAt.toDate().getTime() < 7 * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(m.indexedAt as string).getTime() < 7 * 24 * 60 * 60 * 1000;
   };
 
   const depts = Array.from(new Set(materials.map(m => m.department).filter(Boolean)));
@@ -429,7 +429,7 @@ export default function LibraryPage() {
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     {m.pageCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.pageCount} pages</span>}
                     {m.wordCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span>}
-                    {m.indexedAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Added {m.indexedAt.toDate().toLocaleDateString()}</span>}
+                    {m.indexedAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Added {typeof m.indexedAt === 'string' ? new Date(m.indexedAt).toLocaleDateString() : m.indexedAt?.toDate().toLocaleDateString()}</span>}
                     <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Uploaded by: A community member</span>
                   </div>
 
