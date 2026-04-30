@@ -107,7 +107,7 @@ export default function ContributePage() {
     file: File,
     folder: string,
     onProgress: (pct: number, loaded: number, total: number) => void
-  ): Promise<{ publicId: string; cloudinaryUrl: string; fileHash: string }> => {
+  ): Promise<{ key: string; publicUrl: string; fileHash: string }> => {
     // Compute SHA-256 hash
     const arrayBuffer = await file.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
@@ -142,7 +142,7 @@ export default function ContributePage() {
 
       xhr.onload = () => {
         if (xhr.status === 200 || xhr.status === 204) {
-          resolve({ publicId: key, cloudinaryUrl: publicUrl, fileHash });
+          resolve({ key, publicUrl, fileHash });
         } else {
           const errMsg = 'R2 upload failed: ' + xhr.status + ' ' + xhr.responseText.slice(0, 300);
           console.error(errMsg);
@@ -178,7 +178,7 @@ export default function ContributePage() {
     for (const file of carefulFiles) {
       try {
         const folder = courseId ? `contributions/${courseId}` : 'contributions/auto-detect';
-        const { publicId, cloudinaryUrl, fileHash } = await uploadToCloudinary(
+        const { key, publicUrl, fileHash } = await uploadToCloudinary(
           file,
           folder,
           (pct, loaded, total) => {
@@ -197,7 +197,7 @@ export default function ContributePage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            publicId, cloudinaryUrl, fileHash,
+            key, fileHash,
             fileName: file.name,
             mimeType: file.type,
             uploadedBy: firebaseUser.uid,
@@ -242,7 +242,7 @@ export default function ContributePage() {
 
     for (const file of detectFiles) {
       try {
-        const { publicId, cloudinaryUrl, fileHash } = await uploadToCloudinary(
+        const { key, publicUrl, fileHash } = await uploadToCloudinary(
           file,
           'contributions/auto-detect',
           (pct, loaded, total) => {
@@ -260,7 +260,7 @@ export default function ContributePage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            publicId, cloudinaryUrl, fileHash,
+            key, fileHash,
             fileName: file.name,
             mimeType: file.type,
             uploadedBy: firebaseUser.uid,
