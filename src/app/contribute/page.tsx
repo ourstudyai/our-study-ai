@@ -108,24 +108,30 @@ export default function ContributePage() {
     folder: string,
     onProgress: (pct: number, loaded: number, total: number) => void
   ): Promise<{ publicId: string; cloudinaryUrl: string; fileHash: string }> => {
-    // Compute MD5 hash
+    // Compute SHA-256 hash
     const arrayBuffer = await file.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-    const publicId = `${folder}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    // Get R2 presigned upload URL from server
+    const sigRes = await fetch('/api/cloudinary-signature', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName: file.name, folder, fileHash, mimeType: file.type }),
+    });
+    if (sigRes.status === 409) {
+      const data = await sigRes.json();
+      throw Object.assign(new Error('duplicate'), { duplicate: true, data });
+    }
+    if (!sigRes.ok) throw new Error('Failed to get upload URL');
+    const { signedUrl, key, publicUrl } = await sigRes.json();
 
-    // Upload directly to Cloudinary unsigned
+    // Upload directly to R2 with progress tracking
     return new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('public_id', publicId);
-      formData.append('upload_preset', 'OurStudyAI');
-
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`);
+      xhr.open('PUT', signedUrl);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
@@ -135,19 +141,18 @@ export default function ContributePage() {
       };
 
       xhr.onload = () => {
-        if (xhr.status === 200) {
-          const result = JSON.parse(xhr.responseText);
-          const signedUrl = result.secure_url;
-          resolve({ publicId: result.public_id, cloudinaryUrl: signedUrl, fileHash });
+        if (xhr.status === 200 || xhr.status === 204) {
+          resolve({ publicId: key, cloudinaryUrl: publicUrl, fileHash });
         } else {
-          const errMsg = 'Cloudinary ' + xhr.status + ': ' + xhr.responseText.slice(0, 300); console.error(errMsg); reject(new Error(errMsg));
+          const errMsg = 'R2 upload failed: ' + xhr.status + ' ' + xhr.responseText.slice(0, 300);
+          console.error(errMsg);
+          reject(new Error(errMsg));
         }
       };
-      xhr.onerror = () => reject(new Error('Network error uploading to: https://api.cloudinary.com/v1_1/' + cloudName + '/auto/upload'));
-      xhr.send(formData);
+      xhr.onerror = () => reject(new Error('Network error uploading to R2'));
+      xhr.send(file);
     });
   };
-
   const formatBytes = (bytes: number) => {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
