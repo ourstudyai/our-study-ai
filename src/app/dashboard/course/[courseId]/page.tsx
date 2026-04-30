@@ -620,7 +620,7 @@ export default function CoursePage() {
                   <p style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '8px' }}>{mat.materialName}</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {mat.items.map((item, j) => (
-                      <button key={j} onClick={() => { sendMessage('Explain this topic: "' + item + '"'); setTopicsOpen(false); }}
+                      <button key={j} onClick={() => { sendMessage('[TOPIC:' + item + '] Explain this topic: "' + item + '"'); setTopicsOpen(false); }}
                         style={{ textAlign: 'left', padding: '7px 10px', borderRadius: '8px', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer' }}>
                         {item}
                       </button>

@@ -58,37 +58,72 @@ export async function POST(req: NextRequest) {
     let lowConfidence = false;
     let suggestedPaths: string[] = [];
 
+    const topicMatch = message.match(/^\[TOPIC:(.+?)\]/);
+    const topicHeading = topicMatch ? topicMatch[1].trim() : null;
+
     if (courseId) {
       try {
-        const snap = await adminDb.collection('material_chunks')
-          .where('courseId', '==', courseId)
-          .limit(80)
-          .get();
-
-        if (!snap.empty) {
-          const stopWords = new Set(['that','this','with','from','they','have','what','will','your','been','were','when','there','their','about','which','would','could','should','does','into','more','also','than','then','them','these','those','some','such','only','very','just','like','well','even','each','much','most','over','after','before','other','same','both','here','where','while','through','between','because','however','therefore','although','without']);
-
-          const queryTerms = message.toLowerCase()
-            .replace(/[^a-z0-9\s]/g, ' ')
-            .split(/\s+/)
-            .filter((w: string) => w.length > 2 && !stopWords.has(w));
-
+        if (topicHeading) {
+          const snap = await adminDb.collection('material_chunks')
+            .where('courseId', '==', courseId)
+            .limit(300)
+            .get();
           const docs = snap.docs.filter(d => !d.data().deleted);
-
-          const scored = docs
-            .map(d => ({
-              chunk: d.data() as ChunkDoc,
-              score: scoreChunk(d.data() as ChunkDoc, queryTerms),
-            }))
-            .filter(s => s.score > 0)
-            .sort((a, b) => b.score - a.score);
-
-          const topScore = scored[0]?.score ?? 0;
-          const secondScore = scored[1]?.score ?? 0;
-          const top3Total = scored.slice(0, 3).reduce((sum, s) => sum + s.score, 0);
-          const absolutelyLow = topScore < 5;
-          const noStandout = topScore > 0 && (topScore - secondScore) < 3;
-          lowConfidence = absolutelyLow && noStandout && top3Total < 10;
+          const headingLower = topicHeading.toLowerCase();
+          const matched = docs.filter(d => {
+            const h = (d.data().heading ?? '').toLowerCase();
+            const fp = (d.data().fullPath ?? '').toLowerCase();
+            return h.includes(headingLower) || headingLower.includes(h) || fp.includes(headingLower);
+          });
+          if (matched.length > 0) {
+            const matchedData = matched.map(d => ({ id: d.id, ...(d.data() as ChunkDoc & { chunkIndex?: number; materialId?: string }) }));
+            matchedData.sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0));
+            const firstMatch = matchedData[0];
+            const siblings = docs
+              .filter(d => {
+                const data = d.data() as ChunkDoc & { chunkIndex?: number; materialId?: string };
+                return data.materialId === firstMatch.materialId &&
+                  Math.abs((data.chunkIndex ?? 0) - (firstMatch.chunkIndex ?? 0)) <= 2 &&
+                  !matchedData.find(m => m.id === d.id);
+              })
+              .map(d => ({ id: d.id, ...(d.data() as ChunkDoc & { chunkIndex?: number; materialId?: string }) }));
+            const allChunks = [...matchedData, ...siblings]
+              .sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0))
+              .slice(0, 6);
+            ragContext = allChunks.map((c: any) => {
+              const pathLabel = c.fullPath ? `[${c.fullPath}]` : `[${c.heading ?? 'Section'}]`;
+              return `${pathLabel}\n${c.text}`;
+            }).join("\n\n");
+            lowConfidence = false;
+          } else {
+            lowConfidence = true;
+            suggestedPaths = [...new Set(docs.slice(0, 5).map(d => d.data().fullPath ?? d.data().heading ?? '').filter(Boolean))];
+          }
+        } else {
+          const snap = await adminDb.collection('material_chunks')
+            .where('courseId', '==', courseId)
+            .limit(80)
+            .get();
+          if (!snap.empty) {
+            const stopWords = new Set(['that','this','with','from','they','have','what','will','your','been','were','when','there','their','about','which','would','could','should','does','into','more','also','than','then','them','these','those','some','such','only','very','just','like','well','even','each','much','most','over','after','before','other','same','both','here','where','while','through','between','because','however','therefore','although','without']);
+            const queryTerms = message.toLowerCase()
+              .replace(/[^a-z0-9\s]/g, ' ')
+              .split(/\s+/)
+              .filter((w: string) => w.length > 2 && !stopWords.has(w));
+            const docs = snap.docs.filter(d => !d.data().deleted);
+            const scored = docs
+              .map(d => ({
+                chunk: d.data() as ChunkDoc,
+                score: scoreChunk(d.data() as ChunkDoc, queryTerms),
+              }))
+              .filter(s => s.score > 0)
+              .sort((a, b) => b.score - a.score);
+            const topScore = scored[0]?.score ?? 0;
+            const secondScore = scored[1]?.score ?? 0;
+            const top3Total = scored.slice(0, 3).reduce((sum, s) => sum + s.score, 0);
+            const absolutelyLow = topScore < 5;
+            const noStandout = topScore > 0 && (topScore - secondScore) < 3;
+            lowConfidence = absolutelyLow && noStandout && top3Total < 10;
 
           if (scored.length > 0) {
             const top = scored.slice(0, 12);
@@ -102,6 +137,7 @@ export async function POST(req: NextRequest) {
               const pathLabel = s.chunk.fullPath ? `[${s.chunk.fullPath}]` : `[Chunk ${i + 1}]`;
               return `${pathLabel}\n${s.chunk.text}`;
             }).join("\n\n");
+            }
           }
         }
       } catch (err) {
