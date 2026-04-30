@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
             lowConfidence = false;
           } else {
             lowConfidence = true;
-            suggestedPaths = [...new Set(docs.slice(0, 5).map(d => d.data().fullPath ?? d.data().heading ?? '').filter(Boolean))];
+            suggestedPaths = Array.from(new Set(docs.slice(0, 5).map(d => d.data().fullPath ?? d.data().heading ?? '').filter(Boolean)));
           }
         } else {
           const snap = await adminDb.collection('material_chunks')
