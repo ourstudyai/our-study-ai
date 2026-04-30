@@ -152,7 +152,7 @@ export default function ContributePage() {
           const signedUrl = result.secure_url;
           resolve({ publicId: result.public_id, cloudinaryUrl: signedUrl, fileHash });
         } else {
-          reject(new Error('Cloudinary upload failed: ' + xhr.status + ' | ' + xhr.responseText.slice(0, 200)));
+          const errMsg = 'Cloudinary ' + xhr.status + ': ' + xhr.responseText.slice(0, 300); console.error(errMsg); reject(new Error(errMsg));
         }
       };
       xhr.onerror = () => reject(new Error('Cloudinary upload network error'));
