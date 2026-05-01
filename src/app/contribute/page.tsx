@@ -103,7 +103,7 @@ export default function ContributePage() {
   const isLargeFile = (file: File) => file.size > 5 * 1024 * 1024; // 5MB+
 
   // ── Direct Cloudinary upload with real progress ─────────────────────────
-  const uploadToCloudinary = async (
+  const uploadToR2 = async (
     file: File,
     folder: string,
     onProgress: (pct: number, loaded: number, total: number) => void
@@ -178,7 +178,7 @@ export default function ContributePage() {
     for (const file of carefulFiles) {
       try {
         const folder = courseId ? `contributions/${courseId}` : 'contributions/auto-detect';
-        const { key, publicUrl, fileHash } = await uploadToCloudinary(
+        const { key, publicUrl, fileHash } = await uploadToR2(
           file,
           folder,
           (pct, loaded, total) => {
@@ -242,7 +242,7 @@ export default function ContributePage() {
 
     for (const file of detectFiles) {
       try {
-        const { key, publicUrl, fileHash } = await uploadToCloudinary(
+        const { key, publicUrl, fileHash } = await uploadToR2(
           file,
           'contributions/auto-detect',
           (pct, loaded, total) => {

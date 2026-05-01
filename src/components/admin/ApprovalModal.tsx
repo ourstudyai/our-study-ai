@@ -1,7 +1,7 @@
 // src/components/admin/ApprovalModal.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Material } from '@/lib/firestore/materials';
 
 type Course = { id: string; name: string; code?: string; department: string; year: number; semester: number };
@@ -14,10 +14,7 @@ interface Props {
 }
 
 
-function getCloudinaryImageUrl(publicId: string, page: number = 1): string {
-  const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'do5h3c5qm';
-  return `https://res.cloudinary.com/${cloud}/image/upload/pg_${page},f_jpg,q_80/${publicId}.jpg`;
-}
+// Cloudinary removed — preview uses R2 fileUrl directly
 export default function ApprovalModal({ material, courses, onClose, onDone }: Props) {
 
   const [ocrText, setOcrText] = useState(material.extractedText || '');
@@ -32,8 +29,12 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
   const [shouldIndex, setShouldIndex] = useState(true);
   const [freshUrl, setFreshUrl] = useState('');
   const [landscape, setLandscape] = useState(false);
-  const [page, setPage] = useState(1);
+  // page state removed — R2 preview uses iframe
+  // totalPages removed — iframe handles pagination natively
   const publicId = (material as any).publicId || '';
+  const previewRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const syncingRef = useRef(false);
 
   const selectedCourse = courses.find(c => c.id === selectedCourseId);
 
@@ -44,6 +45,24 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
       .then(r => r.json()).then(d => { if (d.url) setFreshUrl(d.url); })
       .catch(() => setFreshUrl((material as any).fileUrl || ''));
   }, [material]);
+function handlePreviewScroll(e: React.UIEvent<HTMLDivElement>) {
+    syncingRef.current = true;
+    const el = e.currentTarget;
+    const pct = el.scrollTop / (el.scrollHeight - el.clientHeight || 1);
+    const ta = textRef.current;
+    ta.scrollTop = pct * (ta.scrollHeight - ta.clientHeight);
+    requestAnimationFrame(() => { syncingRef.current = false; });
+  }
+
+  function handleTextScroll(e: React.UIEvent<HTMLTextAreaElement>) {
+    syncingRef.current = true;
+    const el = e.currentTarget;
+    const pct = el.scrollTop / (el.scrollHeight - el.clientHeight || 1);
+    const pv = previewRef.current;
+    pv.scrollTop = pct * (pv.scrollHeight - pv.clientHeight);
+    requestAnimationFrame(() => { syncingRef.current = false; });
+  }
+
   const canApprove = selectedCourseId && ocrText.trim().length > 0;
 
   const filteredCourses = courses.filter(c =>
@@ -143,11 +162,11 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
         {landscape && publicId && (
           <div style={{ flex: 1, minHeight: 0, minWidth: 0, borderRight: '1px solid var(--border)', background: '#0a0a0f', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', flex: 1 }}>Original · Page {page}</span>
+              <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', flex: 1 }}>Original · Page {page}{totalPages ? ' / ' + totalPages : ''}</span>
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--gold)', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>‹</button>
-              <button onClick={() => setPage(p => p + 1)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--gold)', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>›</button>
+              <button onClick={() => setPage(p => p + 1)} disabled={totalPages !== null && page >= totalPages} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--gold)', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>›</button>
             </div>
-            <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 8 }}>
+            <div ref={previewRef} onScroll={handlePreviewScroll} style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 8 }}>
               <img
                 key={page}
                 src={getCloudinaryImageUrl(publicId, page)}
@@ -166,6 +185,8 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
               <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{ocrText.split(/\s+/).filter(Boolean).length} words</span>
             </div>
             <textarea
+              ref={textRef}
+              onScroll={handleTextScroll}
               value={ocrText}
               onChange={e => setOcrText(e.target.value)}
               style={{ flex: 1, ...inp, resize: 'none', lineHeight: 1.7, fontFamily: 'monospace', fontSize: '0.75rem' }}
