@@ -1,4 +1,3 @@
-// Admin Flags API — Resolve flags with golden corrections
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 
@@ -11,6 +10,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (!flagId || !adminNote) {
       return NextResponse.json({ error: "Missing flagId or adminNote" }, { status: 400 });
     }
 

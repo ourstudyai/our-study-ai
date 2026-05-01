@@ -36,14 +36,14 @@ export async function POST(req: NextRequest) {
     try {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://ourstudyai-cd5ee.web.app';
       const action = role === 'student' ? 'removed as' : 'promoted to';
-      const emoji = role === 'student' ? '🔴' : role === 'chief_admin' ? '⭐' : '🟡';
-      await fetch(\`\${appUrl}/api/notify-admins\`, {
+      const emoji = role === 'student' ? 'red' : role === 'chief_admin' ? 'star' : 'yellow';
+      await fetch(appUrl + '/api/notify-admins', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'role_change',
-          title: \`\${emoji} Role Change\`,
-          body: \`\${callerEmail} \${action} \${role}: \${targetEmail}\`,
+          title: emoji + ' Role Change',
+          body: callerEmail + ' ' + action + ' ' + role + ': ' + targetEmail,
           data: { targetUid, targetEmail, role, changedBy: callerEmail },
         }),
       });
