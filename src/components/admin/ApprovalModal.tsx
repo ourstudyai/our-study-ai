@@ -145,12 +145,15 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>
               <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', flex: 1 }}>Original Preview</span>
             </div>
-            <iframe
-              ref={previewRef}
-              src={freshUrl}
-              style={{ flex: 1, border: 'none', background: '#0a0a0f' }}
-              title="Material preview"
-            />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 }}>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center' }}>
+                R2 files cannot be embedded directly.
+              </p>
+              <a href={freshUrl} target="_blank" rel="noopener noreferrer"
+                style={{ background: 'var(--gold)', color: 'var(--navy)', borderRadius: 8, padding: '10px 20px', fontWeight: 700, fontSize: '0.85rem', textDecoration: 'none' }}>
+                Open Original in New Tab ↗
+              </a>
+            </div>
           </div>
         )}
 

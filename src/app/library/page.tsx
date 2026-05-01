@@ -218,13 +218,8 @@ export default function LibraryPage() {
     }
   }
 
-  async function handleDownload(m: IndexedMaterial) {
-    const res = await fetch('/api/download-material', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materialId: m.id }),
-    });
-    if (!res.ok) { alert('Download failed. You may not have access.'); return; }
-    const { signedUrl } = await res.json();
-    window.open(signedUrl, '_blank');
+  function handleDownload(m: IndexedMaterial) {
+    window.open(m.fileUrl, '_blank');
   }
 
   async function handleRemoveFromIndex(id: string) {

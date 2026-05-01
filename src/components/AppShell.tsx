@@ -57,7 +57,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         };
         root.style.setProperty('--ui-font', UI_FONTS[settings.uiFont] ?? UI_FONTS.dm_sans);
         root.style.setProperty('--ai-font', AI_FONTS[settings.aiFont] ?? AI_FONTS.lora);
-    }, [resolved, settings.uiFontSize, settings.aiFontSize, settings.uiFont, settings.aiFont]);
+        root.style.setProperty('--chat-input-bottom', settings.chatInputBottom + 'px');
+        root.style.setProperty('--settings-btn-top', settings.settingsBtnTop + 'px');
+        root.style.setProperty('--chat-input-bottom', settings.chatInputBottom + 'px');
+        root.style.setProperty('--settings-btn-top', settings.settingsBtnTop + 'px');
+    }, [resolved, settings.uiFontSize, settings.aiFontSize, settings.uiFont, settings.aiFont, settings.chatInputBottom, settings.settingsBtnTop]);
     // Listen for system theme changes when in system mode
     useEffect(() => {
         if (settings.theme !== 'system') return;

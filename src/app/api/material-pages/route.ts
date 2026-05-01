@@ -9,13 +9,12 @@ export async function POST(req: NextRequest) {
 
     const session = req.cookies.get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    await adminAuth.verifySessionCookie(session, true);
+    await adminAuth.verifyIdToken(session, true);
 
     const snap = await adminDb.collection("materials").doc(materialId).get();
     if (!snap.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const mat = snap.data()!;
-    // Return the direct file URL — browser renders natively
     return NextResponse.json({
       pages: [{ page: 1, url: mat.fileUrl }],
       pageCount: mat.pageCount || 1,

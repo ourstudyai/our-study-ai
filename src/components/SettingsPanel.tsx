@@ -42,7 +42,7 @@ export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: b
                     onClick={() => setOpen(true)}
                     title="Appearance settings"
                     style={{
-                        position: 'fixed', bottom: '80px', right: '12px', zIndex: 90,
+                        position: 'fixed', bottom: 'var(--settings-btn-top, 80px)', right: '12px', zIndex: 90,
                         width: '40px', height: '40px', borderRadius: '50%',
                         background: 'var(--navy-card)', border: '1px solid var(--border)',
                         color: 'var(--gold)', fontSize: '1.1rem', cursor: 'pointer',
