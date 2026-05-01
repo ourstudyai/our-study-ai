@@ -13,8 +13,6 @@ interface Props {
   onDone: () => void;
 }
 
-
-// Cloudinary removed — preview uses R2 fileUrl directly
 export default function ApprovalModal({ material, courses, onClose, onDone }: Props) {
 
   const [ocrText, setOcrText] = useState(material.extractedText || '');
@@ -29,39 +27,21 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
   const [shouldIndex, setShouldIndex] = useState(true);
   const [freshUrl, setFreshUrl] = useState('');
   const [landscape, setLandscape] = useState(false);
-  // page state removed — R2 preview uses iframe
-  // totalPages removed — iframe handles pagination natively
-  const publicId = (material as any).publicId || '';
-  const previewRef = useRef<HTMLDivElement>(null);
+
+  const previewRef = useRef<HTMLIFrameElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const syncingRef = useRef(false);
 
   const selectedCourse = courses.find(c => c.id === selectedCourseId);
 
+  // Load R2 fileUrl directly — Cloudinary removed
   useEffect(() => {
-    const pid = (material as any).publicId;
-    if (!pid) { setFreshUrl((material as any).fileUrl || ''); return; }
-    fetch('/api/material-url?publicId=' + encodeURIComponent(pid))
+    const url = (material as any).fileUrl || '';
+    if (url) { setFreshUrl(url); return; }
+    fetch('/api/material-url?materialId=' + encodeURIComponent(material.id))
       .then(r => r.json()).then(d => { if (d.url) setFreshUrl(d.url); })
-      .catch(() => setFreshUrl((material as any).fileUrl || ''));
+      .catch(() => {});
   }, [material]);
-function handlePreviewScroll(e: React.UIEvent<HTMLDivElement>) {
-    syncingRef.current = true;
-    const el = e.currentTarget;
-    const pct = el.scrollTop / (el.scrollHeight - el.clientHeight || 1);
-    const ta = textRef.current;
-    ta.scrollTop = pct * (ta.scrollHeight - ta.clientHeight);
-    requestAnimationFrame(() => { syncingRef.current = false; });
-  }
-
-  function handleTextScroll(e: React.UIEvent<HTMLTextAreaElement>) {
-    syncingRef.current = true;
-    const el = e.currentTarget;
-    const pct = el.scrollTop / (el.scrollHeight - el.clientHeight || 1);
-    const pv = previewRef.current;
-    pv.scrollTop = pct * (pv.scrollHeight - pv.clientHeight);
-    requestAnimationFrame(() => { syncingRef.current = false; });
-  }
 
   const canApprove = selectedCourseId && ocrText.trim().length > 0;
 
@@ -70,7 +50,11 @@ function handlePreviewScroll(e: React.UIEvent<HTMLDivElement>) {
     (c.code || '').toLowerCase().includes(search.toLowerCase())
   );
 
-
+  function handleTextScroll(e: React.UIEvent<HTMLTextAreaElement>) {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    requestAnimationFrame(() => { syncingRef.current = false; });
+  }
 
   const handleApprove = async () => {
     if (!canApprove) return;
@@ -139,7 +123,6 @@ function handlePreviewScroll(e: React.UIEvent<HTMLDivElement>) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.85)', display: 'flex', flexDirection: 'column' }}>
-      {/* Top bar */}
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--navy-card)' }}>
         <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer', flexShrink: 0 }}>✕</button>
         <p style={{ flex: 1, fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '0.9rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{material.fileName}</p>
@@ -155,30 +138,23 @@ function handlePreviewScroll(e: React.UIEvent<HTMLDivElement>) {
         </button>
       </div>
 
-      {/* Body */}
       <div style={{ flex: 1, display: 'flex', flexDirection: landscape ? 'row' : 'column', overflow: 'hidden', minHeight: 0 }}>
 
-        {/* File preview */}
-        {landscape && publicId && (
+        {landscape && freshUrl && (
           <div style={{ flex: 1, minHeight: 0, minWidth: 0, borderRight: '1px solid var(--border)', background: '#0a0a0f', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', flex: 1 }}>Original · Page {page}{totalPages ? ' / ' + totalPages : ''}</span>
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--gold)', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>‹</button>
-              <button onClick={() => setPage(p => p + 1)} disabled={totalPages !== null && page >= totalPages} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--gold)', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>›</button>
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', flex: 1 }}>Original Preview</span>
             </div>
-            <div ref={previewRef} onScroll={handlePreviewScroll} style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 8 }}>
-              <img
-                key={page}
-                src={getCloudinaryImageUrl(publicId, page)}
-                alt={`Page ${page}`}
-                style={{ maxWidth: '100%', borderRadius: 4 }}
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
-            </div>
+            <iframe
+              ref={previewRef}
+              src={freshUrl}
+              style={{ flex: 1, border: 'none', background: '#0a0a0f' }}
+              title="Material preview"
+            />
           </div>
         )}
+
         <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* OCR editor */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '10px 12px', gap: 6 }}>
             <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Extracted Text (editable)</span>
@@ -193,19 +169,15 @@ function handlePreviewScroll(e: React.UIEvent<HTMLDivElement>) {
             />
           </div>
 
-          {/* Binding form */}
           <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', maxHeight: '320px' }}>
             <p style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.7 }}>Bind to Course</p>
-
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder='Search course...' style={inp} />
-
             <select value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)} style={{ ...inp, height: 80 }} size={4}>
               <option value=''>— Select course —</option>
               {filteredCourses.map(c => (
                 <option key={c.id} value={c.id}>{c.name} · Y{c.year} S{c.semester} · {c.department}</option>
               ))}
             </select>
-
             {selectedCourse && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {[selectedCourse.department, 'Year ' + selectedCourse.year, 'Sem ' + selectedCourse.semester].map(t => (
@@ -213,7 +185,6 @@ function handlePreviewScroll(e: React.UIEvent<HTMLDivElement>) {
                 ))}
               </div>
             )}
-
             <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 4 }}>Category</p>
@@ -228,10 +199,7 @@ function handlePreviewScroll(e: React.UIEvent<HTMLDivElement>) {
                 <input value={displayName} onChange={e => setDisplayName(e.target.value)} style={inp} placeholder='Name shown to students' />
               </div>
             </div>
-
             {status && <p style={{ fontSize: '0.72rem', color: status.includes('Error') || status.includes('failed') ? '#ef4444' : 'var(--gold)', textAlign: 'center' }}>{status}</p>}
-
-            {/* Action buttons */}
             <div style={{ display: 'flex', gap: 6 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 4 }}>
                 <input type="checkbox" checked={shouldIndex} onChange={e => setShouldIndex(e.target.checked)} />
