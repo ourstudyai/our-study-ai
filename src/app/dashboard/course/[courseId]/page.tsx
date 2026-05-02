@@ -532,7 +532,7 @@ export default function CoursePage() {
 
           {/* Floating scroll buttons */}
           {(showScrollUp || showScrollDown) && (
-            <div style={{ position: 'absolute', right: 14, bottom: 80, display: 'flex', flexDirection: 'column', gap: 6, zIndex: 20 }}>
+            <div style={{ position: 'fixed', right: 16, bottom: 100, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 999 }}>
               {showScrollUp && (
                 <button onClick={scrollToTop} style={{ ...floatBtnStyle, position: 'static' }} title='Scroll to top'>↑</button>
               )}
