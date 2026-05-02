@@ -367,6 +367,8 @@ export default function CoursePage() {
   const prevHistoryLenRef = useRef(0);
 
   const [isListening, setIsListening] = useState(false);
+  const [micPopoverOpen, setMicPopoverOpen] = useState(false);
+  const micLastTapRef = useRef<number>(0);
   const [autoSend, setAutoSend] = useState(() => {
     try { return localStorage.getItem('ourstudyai_stt_autosend') === '1'; } catch { return false; }
   });
@@ -381,6 +383,7 @@ export default function CoursePage() {
     });
   };
   const recognitionRef = useRef<any>(null);
+  const finalTranscriptRef = useRef('');
 
   const handleSTT = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -399,28 +402,29 @@ export default function CoursePage() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
-    let finalTranscript = '';
+    finalTranscriptRef.current = '';
     recognition.onresult = (e: any) => {
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          finalTranscript += e.results[i][0].transcript + ' ';
+          finalTranscriptRef.current += e.results[i][0].transcript + ' ';
         } else {
           interim += e.results[i][0].transcript;
         }
       }
-      // Show live preview: committed finals + current interim
-      setInput((finalTranscript + interim).trim());
+      setInput((finalTranscriptRef.current + interim).trim());
     };
     recognition.onspeechend = () => {
-      if (autoSend && finalTranscript.trim()) {
+      if (autoSend && finalTranscriptRef.current.trim()) {
         recognitionRef.current?.stop();
       }
     };
     recognition.onend = () => {
       setIsListening(false);
-      if (autoSend && finalTranscript.trim()) {
-        sendMessage(finalTranscript.trim());
+      const finalText = finalTranscriptRef.current.trim();
+      finalTranscriptRef.current = '';
+      if (autoSend && finalText) {
+        sendMessage(finalText);
       }
     };
     recognition.onerror = () => setIsListening(false);
@@ -878,27 +882,55 @@ export default function CoursePage() {
                 }}
               />
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
-                <button onClick={handleSTT} title={isListening ? 'Stop listening' : autoSend ? 'Speak (auto-send on)' : 'Speak'}
-                  style={{
-                    padding: '10px 12px', borderRadius: '12px',
-                    background: isListening ? '#ef4444' : autoSend ? 'rgba(196,160,80,0.15)' : 'var(--navy-card)',
-                    color: isListening ? '#fff' : autoSend ? 'var(--gold)' : 'var(--text-muted)',
-                    border: '1px solid ' + (isListening ? '#ef4444' : autoSend ? 'var(--gold)' : 'var(--border)'),
-                    fontSize: '1rem', cursor: 'pointer', transition: 'all 0.2s',
-                  }}
-                >
-                  <i className={isListening ? 'fa-solid fa-stop' : 'fa-solid fa-microphone'} />
-                </button>
-                <button onClick={toggleAutoSend} title={autoSend ? 'Auto-send ON' : 'Auto-send OFF'}
-                  style={{ fontSize: '0.52rem', padding: '1px 5px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                    background: autoSend ? 'var(--gold)' : 'var(--border)', color: autoSend ? 'var(--navy)' : 'var(--text-muted)', fontWeight: 700, lineHeight: 1.4 }}>
-                  {autoSend ? 'AUTO' : 'auto'}
-                </button>
-                <button onClick={toggleAutoSpeak} title={autoSpeak ? 'Auto-read ON' : 'Auto-read OFF'}
-                  style={{ fontSize: '0.52rem', padding: '1px 5px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                    background: autoSpeak ? 'rgba(196,160,80,0.3)' : 'var(--border)', color: autoSpeak ? 'var(--gold)' : 'var(--text-muted)', fontWeight: 700, lineHeight: 1.4 }}>
-                  {autoSpeak ? '🔊' : '🔇'}
-                </button>
+                <div style={{ position: 'relative' }}>
+                  {micPopoverOpen && (
+                    <div style={{
+                      position: 'absolute', bottom: '54px', right: 0,
+                      background: 'var(--navy-card)', border: '1px solid var(--border)',
+                      borderRadius: '10px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px',
+                      zIndex: 50, minWidth: '130px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                    }}>
+                      <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Voice options</p>
+                      <button onClick={() => { toggleAutoSend(); }}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: autoSend ? 'rgba(196,160,80,0.12)' : 'transparent', color: autoSend ? 'var(--gold)' : 'var(--text-secondary)', fontSize: '0.72rem', cursor: 'pointer' }}>
+                        <span>Auto-send</span>
+                        <span style={{ fontWeight: 700 }}>{autoSend ? 'ON' : 'off'}</span>
+                      </button>
+                      <button onClick={() => { toggleAutoSpeak(); }}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: autoSpeak ? 'rgba(196,160,80,0.12)' : 'transparent', color: autoSpeak ? 'var(--gold)' : 'var(--text-secondary)', fontSize: '0.72rem', cursor: 'pointer' }}>
+                        <span>Auto-read</span>
+                        <span>{autoSpeak ? '🔊' : '🔇'}</span>
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      const now = Date.now();
+                      if (now - micLastTapRef.current < 350) {
+                        setMicPopoverOpen(prev => !prev);
+                        micLastTapRef.current = 0;
+                      } else {
+                        micLastTapRef.current = now;
+                        setTimeout(() => {
+                          if (Date.now() - micLastTapRef.current >= 340) {
+                            handleSTT();
+                            setMicPopoverOpen(false);
+                          }
+                        }, 360);
+                      }
+                    }}
+                    title={isListening ? 'Stop (double-tap for options)' : 'Speak (double-tap for options)'}
+                    style={{
+                      padding: '10px 12px', borderRadius: '12px',
+                      background: isListening ? '#ef4444' : micPopoverOpen ? 'rgba(196,160,80,0.2)' : 'var(--navy-card)',
+                      color: isListening ? '#fff' : micPopoverOpen ? 'var(--gold)' : 'var(--text-muted)',
+                      border: '1px solid ' + (isListening ? '#ef4444' : micPopoverOpen ? 'var(--gold)' : 'var(--border)'),
+                      fontSize: '1rem', cursor: 'pointer', transition: 'all 0.2s',
+                    }}
+                  >
+                    <i className={isListening ? 'fa-solid fa-stop' : 'fa-solid fa-microphone'} />
+                  </button>
+                </div>
               </div>
               <button onClick={() => sendMessage()} disabled={isStreaming || !input.trim()}
                 style={{
