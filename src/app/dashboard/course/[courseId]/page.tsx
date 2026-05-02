@@ -383,7 +383,6 @@ export default function CoursePage() {
   const recognitionRef = useRef<any>(null);
   const finalTranscriptRef = useRef('');
   const micPressTimer = useRef<any>(null);
-  const finalTranscriptRef = useRef('');
 
   const handleSTT = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
