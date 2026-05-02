@@ -161,6 +161,8 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
       setSpeaking(false);
       return;
     }
+    // Cancel anything currently playing first
+    window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(stripMarkdown(message.content));
     utt.rate = ttsRate;
     if (ttsVoice) {
@@ -169,7 +171,8 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
     }
     utt.onend = () => setSpeaking(false);
     utt.onerror = () => setSpeaking(false);
-    window.speechSynthesis.speak(utt);
+    // Small delay needed after cancel for some browsers
+    setTimeout(() => window.speechSynthesis.speak(utt), 50);
     setSpeaking(true);
   };
 
@@ -362,14 +365,36 @@ export default function CoursePage() {
       setIsListening(false);
       return;
     }
+    // Cancel any ongoing TTS when mic opens
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
+
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.lang = 'en-US';
+    const baseInput = input;
     recognition.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript;
-      if (autoSend) { sendMessage(transcript); }
-      else { setInput(prev => prev ? prev + ' ' + transcript : transcript); }
+      let interim = '';
+      let final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          final += e.results[i][0].transcript;
+        } else {
+          interim += e.results[i][0].transcript;
+        }
+      }
+      if (final) {
+        if (autoSend) {
+          recognitionRef.current?.stop();
+          sendMessage((baseInput + ' ' + final).trim());
+        } else {
+          setInput(prev => (prev + ' ' + final).trim());
+        }
+      } else if (interim) {
+        setInput((baseInput + ' ' + interim).trim());
+      }
     };
     recognition.onend = () => setIsListening(false);
     recognition.onerror = () => setIsListening(false);
