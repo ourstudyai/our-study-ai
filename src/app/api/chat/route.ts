@@ -195,7 +195,22 @@ export async function POST(req: NextRequest) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", content: delta })}\n\n`));
             }
           }
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          
+        // Track analytics - fire and forget
+        try {
+          const today = new Date().toISOString().slice(0,10).replace(/-/g,'_');
+          const hour = new Date().getHours();
+          const analyticsRef = adminDb.collection('analytics').doc('daily');
+          const { FieldValue } = await import('firebase-admin/firestore');
+          await analyticsRef.set({
+            [`prompts_${today}`]: FieldValue.increment(1),
+            [`responses_${today}`]: FieldValue.increment(1),
+            [`sessions_${today}`]: FieldValue.increment(1),
+            [`hourly_${hour}`]: FieldValue.increment(1),
+            total_sessions: FieldValue.increment(1),
+          }, { merge: true });
+        } catch (_) {}
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         } catch (err) {
           console.error("[chat] Stream error:", err);
         } finally {

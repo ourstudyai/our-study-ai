@@ -11,7 +11,7 @@ import {
 import { db } from '@/lib/firebase/config';
 import {
   collection, getDocs, query, orderBy, where,
-  addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
+  addDoc, updateDoc, deleteDoc, doc, getDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { Material } from '@/lib/firestore/materials';
 import AppNav from '@/components/AppNav';
@@ -20,9 +20,9 @@ import ApprovalModal from '@/components/admin/ApprovalModal';
 const SUPREME = 'ourstudyai@gmail.com';
 
 type Tab = 'pending' | 'approved' | 'quarantined' | 'resurrection' |
-           'users' | 'reports' | 'courses' | 'timetables' | 'assignments';
+           'users' | 'reports' | 'courses' | 'timetables' | 'assignments' | 'analytics';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
+const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] = [
   { key: 'pending',      label: 'Pending',     icon: '⏳' },
   { key: 'approved',     label: 'Approved',    icon: '✓' },
   { key: 'quarantined',  label: 'Quarantined', icon: '⚠' },
@@ -36,12 +36,343 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 
 type Course = { id: string; name: string; code?: string; department: string; year: number; semester: number; description?: string };
 
+// ============================================================
+// ANALYTICS PANEL (Supreme only)
+// ============================================================
+function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isSupreme) return;
+    async function load() {
+      try {
+        const [matsSnap, usersSnap, coursesSnap, flagsSnap, reportsSnap, analyticsSnap] = await Promise.all([
+          getDocs(collection(db, 'materials')),
+          getDocs(collection(db, 'users')),
+          getDocs(collection(db, 'courses')),
+          getDocs(collection(db, 'flags')),
+          getDocs(collection(db, 'upload_reports')),
+          getDoc(doc(db, 'analytics', 'daily')).catch(() => null),
+        ]);
+
+        const mats = matsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        const courses = coursesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        const flags = flagsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        const reports = reportsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        const analytics = analyticsSnap?.exists() ? analyticsSnap.data() : {};
+
+        // Material stats
+        const matByStatus: Record<string, number> = {};
+        const matByDept: Record<string, number> = {};
+        const matByType: Record<string, number> = {};
+        const contribCount: Record<string, number> = {};
+        let totalWords = 0;
+        mats.forEach((m: any) => {
+          matByStatus[m.status] = (matByStatus[m.status] || 0) + 1;
+          const dept = m.confirmedCourseName || m.suggestedCourseName || 'Unassigned';
+          matByDept[dept] = (matByDept[dept] || 0) + 1;
+          const ext = (m.fileName || '').split('.').pop()?.toLowerCase() || 'other';
+          matByType[ext] = (matByType[ext] || 0) + 1;
+          if (m.uploadedBy) contribCount[m.uploadedBy] = (contribCount[m.uploadedBy] || 0) + 1;
+          totalWords += m.wordCount || 0;
+        });
+
+        const topContributors = Object.entries(contribCount)
+          .sort((a, b) => (b[1] as number) - (a[1] as number))
+          .slice(0, 5);
+
+        // User stats
+        const userByRole: Record<string, number> = {};
+        const userByDept: Record<string, number> = {};
+        const now = Date.now();
+        const oneWeek = 7 * 24 * 60 * 60 * 1000;
+        let newThisWeek = 0;
+        let inactiveCount = 0;
+        users.forEach((u: any) => {
+          userByRole[u.role || 'student'] = (userByRole[u.role || 'student'] || 0) + 1;
+          userByDept[u.department || 'Unknown'] = (userByDept[u.department || 'Unknown'] || 0) + 1;
+          const created = u.createdAt?.toMillis?.() || new Date(u.createdAt || 0).getTime();
+          if (now - created < oneWeek) newThisWeek++;
+          const lastSeen = u.lastSeen?.toMillis?.() || new Date(u.lastSeen || 0).getTime();
+          if (lastSeen && now - lastSeen > oneWeek) inactiveCount++;
+        });
+
+        // Course stats
+        const courseByDept: Record<string, number> = {};
+        courses.forEach((c: any) => {
+          courseByDept[c.department || 'Unknown'] = (courseByDept[c.department || 'Unknown'] || 0) + 1;
+        });
+
+        // Flag stats
+        const openFlags = flags.filter((f: any) => f.status !== 'resolved').length;
+        const resolvedFlags = flags.filter((f: any) => f.status === 'resolved').length;
+
+        // Analytics tracking data
+        const todayKey = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+        const todaySessions = analytics[`sessions_${todayKey}`] || 0;
+        const todayMins = analytics[`minutes_${todayKey}`] || 0;
+        const totalSessions = analytics.total_sessions || 0;
+        const totalMinutes = analytics.total_minutes || 0;
+        const topTopics = analytics.top_topics || {};
+        const hourlyActivity = analytics.hourly || {};
+
+        const fmtTime = (mins: number) => {
+          const h = Math.floor(mins / 60);
+          const m = mins % 60;
+          return h > 0 ? `${h}h ${m}m` : `${m}m`;
+        };
+
+        setData({
+          mats, matByStatus, matByDept, matByType, topContributors, totalWords,
+          users, userByRole, userByDept, newThisWeek, inactiveCount,
+          courses, courseByDept,
+          flags, openFlags, resolvedFlags,
+          reports,
+          todaySessions, todayMins, totalSessions, totalMinutes,
+          topTopics, hourlyActivity, fmtTime,
+          analytics
+        });
+      } catch (e) {
+        console.error('Analytics load error:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [isSupreme, db]);
+
+  if (!isSupreme) return (
+    <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+      <p style={{ fontSize: '2rem' }}>🔒</p>
+      <p>Analytics are visible to supreme administrators only.</p>
+    </div>
+  );
+
+  if (loading) return <div style={{ padding: 32, color: 'var(--text-muted)' }}>Loading analytics...</div>;
+  if (!data) return <div style={{ padding: 32, color: 'var(--text-muted)' }}>No data available.</div>;
+
+  const card = (title: string, value: string | number, sub?: string, color?: string) => (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
+      padding: '16px 18px', flex: '1 1 140px', minWidth: 130
+    }}>
+      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>{title}</div>
+      <div style={{ fontSize: '1.6rem', fontWeight: 700, color: color || 'var(--gold)', margin: '4px 0' }}>{value}</div>
+      {sub && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sub}</div>}
+    </div>
+  );
+
+  const section = (title: string, children: React.ReactNode) => (
+    <div style={{ marginBottom: 28 }}>
+      <p style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--text-muted)', marginBottom: 10 }}>{title}</p>
+      {children}
+    </div>
+  );
+
+  const row = (label: string, value: any, color?: string) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+      <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{label}</span>
+      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: color || 'var(--gold)' }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ padding: '0 0 60px' }}>
+
+      {section('Live Activity', (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {card('Today Sessions', data.todaySessions, 'chat sessions today')}
+          {card('Today Time', data.fmtTime(data.todayMins), 'total usage today')}
+          {card('All-time Sessions', data.totalSessions)}
+          {card('All-time Time', data.fmtTime(data.totalMinutes))}
+        </div>
+      ))}
+
+      {section('Users', (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            {card('Total Users', data.users.length)}
+            {card('New This Week', data.newThisWeek, 'joined in last 7 days', 'var(--success, #4caf50)')}
+            {card('Inactive 7d+', data.inactiveCount, 'no activity in a week', '#e07')}
+          </div>
+          {Object.entries(data.userByRole).map(([role, count]: any) => row(role, count))}
+          <div style={{ marginTop: 10 }}>
+            {Object.entries(data.userByDept).map(([dept, count]: any) => row(dept, count))}
+          </div>
+        </>
+      ))}
+
+      {section('Materials', (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            {card('Total', data.mats.length)}
+            {card('Approved', data.matByStatus['approved'] || 0, undefined, 'var(--success, #4caf50)')}
+            {card('Pending', data.matByStatus['pending_review'] || 0, undefined, '#f90')}
+            {card('Quarantined', data.matByStatus['quarantined'] || 0, undefined, '#e07')}
+          </div>
+          {card('Total Words', (data.totalWords || 0).toLocaleString(), 'across all materials')}
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>By File Type</p>
+            {Object.entries(data.matByType).sort((a: any, b: any) => b[1] - a[1]).map(([ext, count]: any) => row(`.${ext}`, count))}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>Top Contributors</p>
+            {data.topContributors.map(([email, count]: any) => row(email, `${count} uploads`))}
+          </div>
+        </>
+      ))}
+
+      {section('Courses', (
+        <>
+          {card('Total Courses', data.courses.length)}
+          <div style={{ marginTop: 10 }}>
+            {Object.entries(data.courseByDept).map(([dept, count]: any) => row(dept, count))}
+          </div>
+        </>
+      ))}
+
+      {section('Flags & Reports', (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {card('Open Flags', data.openFlags, undefined, '#e07')}
+          {card('Resolved', data.resolvedFlags, undefined, 'var(--success, #4caf50)')}
+          {card('Upload Errors', data.reports.length, undefined, '#f90')}
+        </div>
+      ))}
+
+      {Object.keys(data.topTopics).length > 0 && section('Top Topics Studied', (
+        <div>
+          {Object.entries(data.topTopics).sort((a: any, b: any) => b[1] - a[1]).slice(0, 10).map(([topic, count]: any) => row(topic, count))}
+        </div>
+      ))}
+
+      {Object.keys(data.hourlyActivity).length > 0 && section('Most Active Hours', (
+        <div>
+          {Object.entries(data.hourlyActivity).sort((a: any, b: any) => b[1] - a[1]).slice(0, 8).map(([hour, count]: any) => row(`${hour}:00`, `${count} sessions`))}
+        </div>
+      ))}
+
+      <div style={{ marginTop: 20, padding: 14, background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+        <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+          📡 Activity data (sessions, time, topics, hourly patterns) accumulates from this point forward via session tracking. Historical data before this feature was enabled is not available.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// REPORTS PANEL with sub-tabs
+// ============================================================
+function ReportsPanel({ db, isChiefAdmin }: { db: any; isChiefAdmin: boolean }) {
+  const [subTab, setSubTab] = useState<'uploads' | 'flags'>('uploads');
+  const [reports, setReports] = useState<any[]>([]);
+  const [flags, setFlags] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adminNote, setAdminNote] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [rSnap, fSnap] = await Promise.all([
+          getDocs(query(collection(db, 'upload_reports'), orderBy('timestamp', 'desc'))),
+          getDocs(query(collection(db, 'flags'), orderBy('createdAt', 'desc'))),
+        ]);
+        setReports(rSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setFlags(fSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    }
+    load();
+  }, [db]);
+
+  const resolveFlag = async (flagId: string) => {
+    await updateDoc(doc(db, 'flags', flagId), { status: 'resolved', adminNote: adminNote[flagId] || '', resolvedAt: new Date().toISOString() });
+    setFlags(f => f.map(x => x.id === flagId ? { ...x, status: 'resolved' } : x));
+  };
+
+  const statusColor = (s: string) => s === 'resolved' ? 'var(--success,#4caf50)' : '#e07';
+
+  if (loading) return <div style={{ padding: 32, color: 'var(--text-muted)' }}>Loading reports...</div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        {(['uploads', 'flags'] as const).map(t => (
+          <button key={t} onClick={() => setSubTab(t)} style={{
+            padding: '7px 18px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+            background: subTab === t ? 'var(--gold)' : 'var(--surface)',
+            color: subTab === t ? '#000' : 'var(--text-muted)',
+          }}>
+            {t === 'uploads' ? `📁 Uploads (${reports.length})` : `🚩 Flags (${flags.filter(f => f.status !== 'resolved').length} open)`}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'uploads' && (
+        <div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+            {['upload_failed', 'processing_failed', 'partial_batch'].map(type => (
+              <div key={type} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px', flex: '1 1 120px' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{type.replace(/_/g, ' ')}</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--gold)' }}>{reports.filter(r => r.errorType === type).length}</div>
+              </div>
+            ))}
+          </div>
+          {reports.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No upload errors recorded.</p>}
+          {reports.map(r => (
+            <div key={r.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{r.fileName}</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>{r.uploaderEmail} · {r.errorType}</div>
+              <div style={{ fontSize: '0.8rem', color: '#f90', marginTop: 4 }}>{r.description}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>{r.timestamp?.toDate?.()?.toLocaleString?.() || ''}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {subTab === 'flags' && (
+        <div>
+          {flags.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No flags yet.</p>}
+          {flags.map(f => (
+            <div key={f.id} style={{ background: 'var(--surface)', border: `1px solid ${statusColor(f.status)}44`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{f.userEmail}</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: statusColor(f.status), textTransform: 'uppercase' }}>{f.status}</span>
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', margin: '6px 0' }}><strong>Q:</strong> {f.question}</div>
+              <div style={{ fontSize: '0.78rem', color: '#f90' }}><strong>Issue:</strong> {f.studentDescription}</div>
+              {f.status !== 'resolved' && isChiefAdmin && (
+                <div style={{ marginTop: 10 }}>
+                  <textarea
+                    placeholder="Admin note (optional)..."
+                    value={adminNote[f.id] || ''}
+                    onChange={e => setAdminNote(n => ({ ...n, [f.id]: e.target.value }))}
+                    style={{ width: '100%', padding: 8, borderRadius: 6, background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: '0.8rem', resize: 'vertical', minHeight: 60 }}
+                  />
+                  <button onClick={() => resolveFlag(f.id)} style={{
+                    marginTop: 6, padding: '6px 16px', background: 'var(--gold)', color: '#000',
+                    border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem'
+                  }}>✓ Resolve</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function AdminPage() {
   const { userProfile, firebaseUser, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
   const isChiefAdmin = userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
+  const isSupreme = firebaseUser?.email === SUPREME;
 
   const [tab, setTab] = useState<Tab>('pending');
   const [isDesktop, setIsDesktop] = useState(false);
@@ -271,6 +602,11 @@ export default function AdminPage() {
         {tab === 'assignments' && <AssignmentsPanel courses={courses} />}
 
         {/* Users tab */}
+        {tab === 'analytics' && (
+          <div>
+            <AnalyticsPanel db={db} isSupreme={isSupreme} />
+          </div>
+        )}
         {tab === 'users' && <UsersPanel currentUserEmail={firebaseUser?.email ?? ''} />}
 
         {/* Reports tab */}
@@ -318,7 +654,7 @@ export default function AdminPage() {
         display: 'flex', overflowX: 'auto', padding: '8px 0 12px',
         justifyContent: isDesktop ? 'center' : 'flex-start',
       }}>
-        {TABS.map(t => (
+        {TABS.filter(t => !t.supremeOnly || isSupreme).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
             padding: '4px 14px', background: 'transparent', border: 'none',
@@ -361,7 +697,7 @@ export default function AdminPage() {
               </div>
             ) : null)}
           </div>
-          {TABS.map(t => (
+          {TABS.filter(t => !t.supremeOnly || isSupreme).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px',
               background: tab === t.key ? 'rgba(196,160,80,0.1)' : 'transparent',
@@ -600,6 +936,7 @@ function ReassignPicker({ courses, defaultCourseId, onConfirm, onCancel }: {
 function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: () => void }) {
   const { userProfile, firebaseUser } = useAuth();
   const isChiefAdmin = userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
+  const isSupreme = firebaseUser?.email === SUPREME;
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -855,6 +1192,7 @@ function AssignmentsPanel({ courses }: { courses: Course[] }) {
 function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
   const { userProfile, firebaseUser } = useAuth();
   const isChiefAdmin = userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
+  const isSupreme = firebaseUser?.email === SUPREME;
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

@@ -143,7 +143,8 @@ export default function CoursePage() {
   const [viewingArchive, setViewingArchive] = useState<ArchivedSession | null>(null);
 
   const [modeHistories, setModeHistories] = useState<Record<string, ChatMessage[]>>({});
-  const [streamingMessage, setStreamingMessage] = useState('');
+  const [streamingMessage, setStreamingMessage] = useState('')
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [input, setInput] = useState('');
   const [sessionSaving, setSessionSaving] = useState(false);
@@ -525,7 +526,25 @@ export default function CoursePage() {
                 )}
               </div>
             ))}
-            {streamingMessage && (
+            
+              {/* AI Reading indicator */}
+              {isAiLoading && !streamingMessage && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[0,1,2].map(i => (
+                      <span key={i} style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        background: 'var(--gold)', opacity: 0.7,
+                        animation: 'aiPulse 1.2s ease-in-out infinite',
+                        animationDelay: `${i * 0.2}s`,
+                        display: 'inline-block'
+                      }} />
+                    ))}
+                  </div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Reading...</span>
+                </div>
+              )}
+              {streamingMessage && (
               <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ maxWidth: '82%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
                   <MarkdownRenderer content={streamingMessage} />
