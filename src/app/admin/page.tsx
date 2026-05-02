@@ -64,6 +64,22 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [search, setSearch]         = useState('');
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [reassigning, setReassigning] = useState<string | null>(null);
+  const [reassignCourseId, setReassignCourseId] = useState('');
+
+  async function handleReassign(materialId: string) {
+    if (!reassignCourseId) return;
+    const course = courses.find(c => c.id === reassignCourseId);
+    if (!course) return;
+    const idToken = await firebaseUser?.getIdToken(true);
+    const res = await fetch('/api/reassign-material', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ materialId, courseId: course.id, courseName: course.name, mode: 'primary', idToken }),
+    });
+    if (res.ok) { alert('Reassigned successfully!'); setReassigning(null); setReassignCourseId(''); await load(); }
+    else { const d = await res.json(); alert('Failed: ' + (d.error || res.status)); }
+  }
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
@@ -223,6 +239,30 @@ export default function AdminPage() {
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>→</span>
                     </div>
                   </div>
+                  {reassigning === m.id ? (
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                      <select value={reassignCourseId} onChange={e => setReassignCourseId(e.target.value)}
+                        style={{ flex: 1, background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', color: 'var(--text-primary)', fontSize: '0.75rem' }}>
+                        <option value=''>— Select course —</option>
+                        {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <button onClick={() => handleReassign(m.id)}
+                        style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 6, padding: '5px 12px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}>
+                        Confirm
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); setReassigning(null); setReassignCourseId(''); }}
+                        style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                      <button onClick={() => { setReassigning(m.id); setReassignCourseId(m.confirmedCourseId ?? m.suggestedCourseId ?? ''); }}
+                        style={{ fontSize: '0.68rem', padding: '3px 10px', borderRadius: 6, background: 'transparent', border: '1px solid rgba(196,160,80,0.3)', color: 'var(--gold)', cursor: 'pointer' }}>
+                        ↔ Reassign
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
