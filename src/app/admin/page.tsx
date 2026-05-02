@@ -149,15 +149,6 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
         const tavilyLastSearch = tavilyData.last_search || null;
         const tavilyHitRate = (tavilyTotal + tavilyCacheTotal) > 0
           ? Math.round((tavilyCacheTotal / (tavilyTotal + tavilyCacheTotal)) * 100) : 0;
-        const todayKey2 = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
-        const tavilySearchesToday = tavilyAnalytics[`searches_${todayKey2}`] || 0;
-        const tavilyHitsToday = tavilyAnalytics[`cache_hits_${todayKey2}`] || 0;
-        const tavilyTotal = tavilyAnalytics.total_searches || 0;
-        const tavilyCacheTotal = tavilyAnalytics.total_cache_hits || 0;
-        const tavilyLastSearch = tavilyAnalytics.last_search || null;
-        const tavilyHitRate = (tavilyTotal + tavilyCacheTotal) > 0
-          ? Math.round((tavilyCacheTotal / (tavilyTotal + tavilyCacheTotal)) * 100)
-          : 0;
 
         const fmtTime = (mins: number) => {
           const h = Math.floor(mins / 60);
