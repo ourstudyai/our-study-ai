@@ -67,15 +67,12 @@ export default function AdminPage() {
   const [reassigning, setReassigning] = useState<string | null>(null);
   const [reassignCourseId, setReassignCourseId] = useState('');
 
-  async function handleReassign(materialId: string) {
-    if (!reassignCourseId) return;
-    const course = courses.find(c => c.id === reassignCourseId);
-    if (!course) return;
+  async function handleReassign(materialId: string, courseId: string, courseName: string) {
     const idToken = await firebaseUser?.getIdToken(true);
     const res = await fetch('/api/reassign-material', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ materialId, courseId: course.id, courseName: course.name, mode: 'primary', idToken }),
+      body: JSON.stringify({ materialId, courseId, courseName, mode: 'primary', idToken }),
     });
     if (res.ok) { alert('Reassigned successfully!'); setReassigning(null); setReassignCourseId(''); await load(); }
     else { const d = await res.json(); alert('Failed: ' + (d.error || res.status)); }
@@ -240,24 +237,17 @@ export default function AdminPage() {
                     </div>
                   </div>
                   {reassigning === m.id ? (
-                    <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
-                      <select value={reassignCourseId} onChange={e => setReassignCourseId(e.target.value)}
-                        style={{ flex: 1, background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', color: 'var(--text-primary)', fontSize: '0.75rem' }}>
-                        <option value=''>— Select course —</option>
-                        {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                      <button onClick={() => handleReassign(m.id)}
-                        style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 6, padding: '5px 12px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}>
-                        Confirm
-                      </button>
-                      <button onClick={e => { e.stopPropagation(); setReassigning(null); setReassignCourseId(''); }}
-                        style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>
-                        ✕
-                      </button>
+                    <div onClick={e => e.stopPropagation()}>
+                      <ReassignPicker
+                        courses={courses}
+                        defaultCourseId={m.confirmedCourseId ?? m.suggestedCourseId ?? ''}
+                        onConfirm={(cId, cName) => { setReassignCourseId(cId); handleReassign(m.id, cId, cName); }}
+                        onCancel={() => { setReassigning(null); setReassignCourseId(''); }}
+                      />
                     </div>
                   ) : (
                     <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
-                      <button onClick={() => { setReassigning(m.id); setReassignCourseId(m.confirmedCourseId ?? m.suggestedCourseId ?? ''); }}
+                      <button onClick={() => setReassigning(m.id)}
                         style={{ fontSize: '0.68rem', padding: '3px 10px', borderRadius: 6, background: 'transparent', border: '1px solid rgba(196,160,80,0.3)', color: 'var(--gold)', cursor: 'pointer' }}>
                         ↔ Reassign
                       </button>
@@ -521,6 +511,82 @@ function CourseSelector({ courses, defaultCourseId, onSelect, loading }: {
         style={{ padding: '8px 14px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer', opacity: (!selected || loading) ? 0.5 : 1 }}>
         Assign
       </button>
+    </div>
+  );
+}
+
+// ── Reassign Picker ───────────────────────────────────────────────────────────
+function ReassignPicker({ courses, defaultCourseId, onConfirm, onCancel }: {
+  courses: Course[];
+  defaultCourseId: string;
+  onConfirm: (courseId: string, courseName: string) => void;
+  onCancel: () => void;
+}) {
+  const [dept, setDept] = useState('');
+  const [year, setYear] = useState('');
+  const [sem, setSem] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState(defaultCourseId);
+
+  const depts = Array.from(new Set(courses.map(c => c.department))).sort();
+  const years = Array.from(new Set(courses.map(c => String(c.year)))).sort();
+  const sems = Array.from(new Set(courses.map(c => String(c.semester)))).sort();
+
+  const filtered = courses.filter(c => {
+    if (dept && c.department !== dept) return false;
+    if (year && String(c.year) !== year) return false;
+    if (sem && String(c.semester) !== sem) return false;
+    if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const sel = courses.find(c => c.id === selectedId);
+
+  return (
+    <div style={{ marginTop: 8, background: 'var(--navy)', border: '1px solid rgba(196,160,80,0.25)', borderRadius: 10, padding: 10 }}>
+      <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--gold)', marginBottom: 8 }}>↔ Reassign to course</p>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
+        <select value={dept} onChange={e => setDept(e.target.value)}
+          style={{ flex: 1, minWidth: 80, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px', color: 'var(--text-primary)', fontSize: '0.72rem' }}>
+          <option value=''>All depts</option>
+          {depts.map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
+        </select>
+        <select value={year} onChange={e => setYear(e.target.value)}
+          style={{ flex: 1, minWidth: 60, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px', color: 'var(--text-primary)', fontSize: '0.72rem' }}>
+          <option value=''>All yrs</option>
+          {years.map(y => <option key={y} value={y}>Yr {y}</option>)}
+        </select>
+        <select value={sem} onChange={e => setSem(e.target.value)}
+          style={{ flex: 1, minWidth: 60, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px', color: 'var(--text-primary)', fontSize: '0.72rem' }}>
+          <option value=''>All sems</option>
+          {sems.map(s => <option key={s} value={s}>Sem {s}</option>)}
+        </select>
+      </div>
+      <input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder='Search course name...'
+        style={{ width: '100%', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', color: 'var(--text-primary)', fontSize: '0.72rem', marginBottom: 6, boxSizing: 'border-box' as const }} />
+      <div style={{ maxHeight: 160, overflowY: 'auto', marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {filtered.length === 0 && <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>No courses found</p>}
+        {filtered.map(c => (
+          <button key={c.id} onClick={() => setSelectedId(c.id)}
+            style={{ textAlign: 'left', padding: '5px 8px', borderRadius: 6, border: `1px solid ${selectedId === c.id ? 'var(--gold)' : 'var(--border)'}`,
+              background: selectedId === c.id ? 'rgba(196,160,80,0.12)' : 'transparent',
+              color: selectedId === c.id ? 'var(--gold)' : 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer' }}>
+            {c.name} <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>· {c.department} Yr{c.year} Sem{c.semester}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={() => { if (sel) onConfirm(sel.id, sel.name); }}
+          disabled={!selectedId}
+          style={{ flex: 1, padding: '7px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer', opacity: selectedId ? 1 : 0.5 }}>
+          Confirm
+        </button>
+        <button onClick={onCancel}
+          style={{ padding: '7px 14px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer' }}>
+          ✕
+        </button>
+      </div>
     </div>
   );
 }

@@ -396,12 +396,12 @@ export default function CoursePage() {
 
   const floatBtnStyle: React.CSSProperties = {
     position: 'absolute', right: '14px',
-    width: '32px', height: '32px', borderRadius: '50%',
-    background: 'rgba(196,160,80,0.15)', border: '1px solid rgba(196,160,80,0.35)',
-    color: 'var(--gold)', fontSize: '0.85rem', cursor: 'pointer',
+    width: '36px', height: '36px', borderRadius: '50%',
+    background: 'rgba(20,24,40,0.85)', border: '1px solid rgba(196,160,80,0.5)',
+    color: 'var(--gold)', fontSize: '1rem', cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    backdropFilter: 'blur(4px)', transition: 'opacity 0.2s',
-    zIndex: 10,
+    backdropFilter: 'blur(6px)', transition: 'opacity 0.2s',
+    zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
   };
 
   return (
@@ -532,10 +532,10 @@ export default function CoursePage() {
 
           {/* Floating scroll buttons */}
           {showScrollUp && (
-            <button onClick={scrollToTop} style={{ ...floatBtnStyle, bottom: '72px' }} title='Scroll to top'>↑</button>
+            <button onClick={scrollToTop} style={{ ...floatBtnStyle, bottom: '96px' }} title='Scroll to top'>↑</button>
           )}
           {showScrollDown && (
-            <button onClick={scrollToBottom} style={{ ...floatBtnStyle, bottom: '36px' }} title='Scroll to bottom'>↓</button>
+            <button onClick={scrollToBottom} style={{ ...floatBtnStyle, bottom: '52px' }} title='Scroll to bottom'>↓</button>
           )}
 
           {/* INPUT */}
