@@ -5,7 +5,7 @@ const SUPREME = "ourstudyai@gmail.com";
 
 export async function POST(req: NextRequest) {
   try {
-    const { targetUid, role } = await req.json();
+    const { targetUid, role, idToken } = await req.json();
     if (!targetUid || !role) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
     const session = req.cookies.get("session")?.value;
