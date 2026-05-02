@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { signOut } from '@/lib/firebase/auth';
-import { getAllCourses } from '@/lib/firestore/courses';
 import { updateUserProfile, softDeleteUserAccount } from '@/lib/firestore/users';
-import { Course } from '@/lib/types';
 
 const LOGO = 'https://i.imgur.com/MPk1vBA.png';
 const SUPREME = 'ourstudyai@gmail.com';
@@ -20,10 +18,6 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
   const { userProfile, firebaseUser, refreshProfile } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [filterDept, setFilterDept] = useState(userProfile?.department ?? '');
-  const [filterYear, setFilterYear] = useState<number | ''>(userProfile?.year ?? '');
-  const [filterSem, setFilterSem] = useState<number | ''>(userProfile?.currentSemester ?? '');
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
@@ -38,22 +32,6 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
   const [deleting, setDeleting] = useState(false);
 
   const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
-
-  useEffect(() => {
-    getAllCourses().then(setCourses).catch(console.error);
-  }, []);
-
-  const filtered = courses.filter(c => {
-    if (filterDept && c.department !== filterDept) return false;
-    if (filterYear && c.year !== Number(filterYear)) return false;
-    if (filterSem && c.semester !== Number(filterSem)) return false;
-    return true;
-  });
-
-  const handleCourseClick = (courseId: string) => {
-    router.push(`/dashboard/course/${courseId}`);
-    onClose();
-  };
 
   const handleNav = (href: string) => {
     router.push(href);
@@ -267,53 +245,6 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
         {navBtn('/library', '📚', 'Library')}
         {navBtn('/contribute', '📤', 'Contribute')}
         {isAdmin && navBtn('/admin', '🛡️', 'Admin Panel')}
-
-        {/* Course filters */}
-        <p className="text-xs font-medium uppercase tracking-wider mt-4 mb-2" style={{ color: 'var(--text-muted)' }}>Browse Courses</p>
-        <div className="flex gap-2 mb-3 flex-wrap">
-          <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-            className="flex-1 p-2 rounded-lg text-xs"
-            style={{ background: 'var(--navy-mid)', border: '1px solid var(--border)', color: 'var(--text-primary)', minWidth: '100px' }}>
-            <option value="">All Depts</option>
-            {DEPARTMENTS.map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
-          </select>
-          <select value={filterYear} onChange={e => setFilterYear(e.target.value ? Number(e.target.value) : '')}
-            className="p-2 rounded-lg text-xs"
-            style={{ background: 'var(--navy-mid)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            <option value="">All Years</option>
-            {YEARS.map(y => <option key={y} value={y}>Yr {y}</option>)}
-          </select>
-          <select value={filterSem} onChange={e => setFilterSem(e.target.value ? Number(e.target.value) : '')}
-            className="p-2 rounded-lg text-xs"
-            style={{ background: 'var(--navy-mid)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            <option value="">All Sems</option>
-            {SEMESTERS.map(s => <option key={s} value={s}>Sem {s}</option>)}
-          </select>
-        </div>
-
-        {/* Course list */}
-        {filtered.length === 0 && (
-          <p className="text-sm text-center py-4" style={{ color: 'var(--text-muted)' }}>No courses found</p>
-        )}
-        {filtered.map(course => {
-          const isActive = pathname.includes(`/course/${course.id}`);
-          return (
-            <button key={course.id} onClick={() => handleCourseClick(course.id)}
-              className="w-full text-left p-3 rounded-xl mb-2 transition-all"
-              style={{
-                background: isActive ? 'var(--gold-dim)' : 'rgba(255,255,255,0.02)',
-                border: `1px solid ${isActive ? 'rgba(201,150,58,0.3)' : 'var(--border)'}`,
-              }}>
-              <div className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: readinessDot(course.readiness) }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate" style={{ color: isActive ? 'var(--gold-light)' : 'var(--text-primary)' }}>{course.name}</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{course.code} · {course.department} Y{course.year}S{course.semester}</p>
-                </div>
-              </div>
-            </button>
-          );
-        })}
       </div>
 
       {/* Footer — profile button */}

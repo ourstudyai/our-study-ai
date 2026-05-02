@@ -1,12 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { signOut } from '@/lib/firebase/auth';
-import { getAllCourses } from '@/lib/firestore/courses';
 import { updateUserProfile, softDeleteUserAccount } from '@/lib/firestore/users';
-import { Course } from '@/lib/types';
 
 const LOGO = 'https://i.imgur.com/MPk1vBA.png';
 const SUPREME = 'ourstudyai@gmail.com';
@@ -18,10 +16,6 @@ export default function Sidebar() {
   const { userProfile, firebaseUser, refreshProfile } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [filterDept, setFilterDept] = useState(userProfile?.department ?? '');
-  const [filterYear, setFilterYear] = useState<number | ''>(userProfile?.year ?? '');
-  const [filterSem, setFilterSem] = useState<number | ''>(userProfile?.currentSemester ?? '');
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [editDept, setEditDept] = useState(userProfile?.department ?? '');
@@ -34,17 +28,6 @@ export default function Sidebar() {
   const [deleting, setDeleting] = useState(false);
 
   const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'chief_admin' || firebaseUser?.email === SUPREME;
-
-  useEffect(() => {
-    getAllCourses().then(setCourses).catch(console.error);
-  }, []);
-
-  const filtered = courses.filter(c => {
-    if (filterDept && c.department !== filterDept) return false;
-    if (filterYear && c.year !== Number(filterYear)) return false;
-    if (filterSem && c.semester !== Number(filterSem)) return false;
-    return true;
-  });
 
   const handleSignOut = async () => {
     await signOut();
@@ -84,12 +67,6 @@ export default function Sidebar() {
     }
   };
 
-  const readinessDot = (status?: string) => {
-    if (status === 'verified') return '#22c55e';
-    if (status === 'partial') return '#facc15';
-    return '#ef4444';
-  };
-
   const navBtn = (href: string, icon: string, label: string) => {
     const active = pathname === href || pathname.startsWith(href + '/');
     return (
@@ -117,56 +94,12 @@ export default function Sidebar() {
         </div>
 
         {/* Nav links */}
-        <div className="px-3 pt-3">
+        <div className="px-3 pt-3 flex-1 overflow-y-auto">
           <p className="text-xs font-medium uppercase tracking-wider mb-2 px-2" style={{ color: 'var(--text-muted)' }}>Navigate</p>
           {navBtn('/dashboard', '🏠', 'Dashboard')}
           {navBtn('/library', '📚', 'Library')}
           {navBtn('/contribute', '📤', 'Contribute')}
           {isAdmin && navBtn('/admin', '🛡️', 'Admin Panel')}
-        </div>
-
-        {/* Filters */}
-        <div className="px-3 pt-3">
-          <p className="text-xs font-medium uppercase tracking-wider mb-2 px-2" style={{ color: 'var(--text-muted)' }}>Browse Courses</p>
-          <div className="flex flex-col gap-1 mb-2">
-            <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-              className="w-full p-1.5 rounded-lg text-xs"
-              style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-              <option value="">All Departments</option>
-              {DEPARTMENTS.map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
-            </select>
-            <div className="flex gap-1">
-              <select value={filterYear} onChange={e => setFilterYear(e.target.value ? Number(e.target.value) : '')}
-                className="flex-1 p-1.5 rounded-lg text-xs"
-                style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-                <option value="">All Years</option>
-                {YEARS.map(y => <option key={y} value={y}>Year {y}</option>)}
-              </select>
-              <select value={filterSem} onChange={e => setFilterSem(e.target.value ? Number(e.target.value) : '')}
-                className="flex-1 p-1.5 rounded-lg text-xs"
-                style={{ background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-                <option value="">All Sems</option>
-                {SEMESTERS.map(s => <option key={s} value={s}>Sem {s}</option>)}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Course list */}
-        <div className="flex-1 overflow-y-auto px-3 pb-2">
-          {filtered.length === 0 && (
-            <p className="text-xs text-center py-3 px-2" style={{ color: 'var(--text-muted)' }}>No courses found</p>
-          )}
-          {filtered.map(course => (
-            <button key={course.id} onClick={() => router.push(`/dashboard/course/${course.id}`)}
-              className={`sidebar-item mb-1 w-full ${pathname.includes(`/course/${course.id}`) ? 'active' : ''}`}>
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: readinessDot(course.readiness) }} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{course.name}</p>
-                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{course.code}</p>
-              </div>
-            </button>
-          ))}
         </div>
 
         {/* Profile button */}

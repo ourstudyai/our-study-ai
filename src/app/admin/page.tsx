@@ -32,6 +32,7 @@ const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] =
   { key: 'timetables',   label: 'Timetables',  icon: '🗓' },
   { key: 'users',        label: 'Users',       icon: '👥' },
   { key: 'reports',      label: 'Reports',     icon: '📊' },
+  { key: 'analytics',    label: 'Analytics',   icon: '📈', supremeOnly: true },
 ];
 
 type Course = { id: string; name: string; code?: string; department: string; year: number; semester: number; description?: string };
