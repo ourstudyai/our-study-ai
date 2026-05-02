@@ -56,7 +56,6 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
           getDocs(collection(db, 'upload_reports')),
           getDoc(doc(db, 'analytics', 'daily')).catch(() => null),
           getDoc(doc(db, 'analytics', 'tavily')).catch(() => null),
-          getDoc(doc(db, 'analytics', 'tavily')).catch(() => null),
         ]);
 
         const mats = matsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
@@ -66,7 +65,6 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
         const reports = reportsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
         const analytics = analyticsSnap?.exists() ? analyticsSnap.data() : {};
         const tavilyData = tavilySnap?.exists() ? tavilySnap.data() : {};
-        const tavilyAnalytics = tavilySnap?.exists() ? tavilySnap.data() : {};
 
         // Material stats
         const matByStatus: Record<string, number> = {};
@@ -165,7 +163,6 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
           todaySessions, todayMins, totalSessions, totalMinutes,
           topTopics, hourlyActivity, fmtTime, analytics,
           tavilySearchesToday, tavilyHitsToday, tavilyTotal, tavilyCacheTotal, tavilyLastSearch, tavilyHitRate,
-          tavilySearchesToday, tavilyHitsToday, tavilyTotal, tavilyCacheTotal, tavilyLastSearch, tavilyHitRate
         });
       } catch (e) {
         console.error('Analytics load error:', e);
