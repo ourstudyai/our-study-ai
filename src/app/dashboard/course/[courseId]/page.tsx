@@ -290,8 +290,10 @@ export default function CoursePage() {
       setShowScrollUp(scrollTop > 80);
     };
     el.addEventListener('scroll', onScroll, { passive: true });
+    // Check on mount too
+    onScroll();
     return () => el.removeEventListener('scroll', onScroll);
-  }, []);
+  }, [chatHistory]);
 
   // Auto-resize textarea
   useEffect(() => {

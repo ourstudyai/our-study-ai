@@ -26,7 +26,7 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
   const [status, setStatus] = useState('');
   const [shouldIndex, setShouldIndex] = useState(true);
   const [freshUrl, setFreshUrl] = useState('');
-  const [landscape, setLandscape] = useState(false);
+  const [landscape, setLandscape] = useState(true);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);

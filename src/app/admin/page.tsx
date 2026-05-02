@@ -874,7 +874,7 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
     try {
       const res = await fetch('/api/admin/set-role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUid: uid, role, idToken: await firebaseUser?.getIdToken(true) }) });
       if (res.ok) setUsers(u => u.map(x => x.uid === uid ? { ...x, role } : x));
-      else alert('Role change failed.');
+      else { const d = await res.json(); alert('Role change failed: ' + (d.error || res.status)); }
     } finally { setActionLoading(null); }
   }
 
