@@ -705,7 +705,7 @@ export default function CoursePage() {
             title='Course topics'>
             📋
           </button>
-          <button onClick={() => setActiveSideTab('history')}
+          <button onClick={() => { setActiveSideTab('history'); setDrawerOpen(true); setSidebarOpen(true); }}
             className='flex-shrink-0 text-xs px-2 py-1 rounded border'
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
             title='Chat history'>
