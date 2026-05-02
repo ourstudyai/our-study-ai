@@ -872,7 +872,7 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
     if (!isChiefAdmin) { alert('Only chief admin can change roles.'); return; }
     setActionLoading(uid);
     try {
-      const res = await fetch('/api/admin/set-role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUid: u.uid || u.id, role, idToken: await firebaseUser?.getIdToken(true) }) });
+      const res = await fetch('/api/admin/set-role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUid: uid, role, idToken: await firebaseUser?.getIdToken(true) }) });
       if (res.ok) setUsers(u => u.map(x => x.uid === uid ? { ...x, role } : x));
       else { const d = await res.json(); alert('Role change failed: ' + (d.error || res.status)); }
     } finally { setActionLoading(null); }
