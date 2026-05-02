@@ -863,7 +863,7 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
 
   useEffect(() => {
     getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
-      .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, uid: d.id, ...d.data() }))))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

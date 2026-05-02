@@ -397,14 +397,15 @@ export default function CoursePage() {
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
 
   const floatBtnStyle: React.CSSProperties = {
-    width: '28px', height: '28px',
+    width: '40px', height: '40px',
     background: 'transparent',
     border: 'none',
     color: 'var(--gold)',
-    fontSize: '1.3rem',
+    fontSize: '1.6rem',
+    fontWeight: 700,
     cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    opacity: 0.45,
+    opacity: 0.6,
     transition: 'opacity 0.2s',
   };
 
@@ -536,7 +537,7 @@ export default function CoursePage() {
 
           {/* Floating scroll buttons */}
           {(showScrollUp || showScrollDown) && (
-            <div style={{ position: 'fixed', right: 12, top: '50vh', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 4, zIndex: 999 }}>
+            <div style={{ position: 'fixed', right: 14, top: '50vh', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 14, zIndex: 999 }}>
               {showScrollUp && (
                 <button onClick={scrollToTop} style={{ ...floatBtnStyle, position: 'static' }} title='Scroll to top'>↑</button>
               )}
