@@ -830,6 +830,48 @@ export default function AdminPage() {
                     {actionLoading ? 'Re-indexing…' : '↺ Re-index chunks'}
                   </button>
                 )}
+                {selected.status === 'approved' && selected.extractedText && (
+                  <button onClick={async () => {
+                    setActionLoading(true);
+                    try {
+                      const res = await fetch('/api/index-material', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ materialId: selected.id, action: 'add' }),
+                      });
+                      if (res.ok) { alert('✅ Topics refreshed.'); }
+                      else { const d = await res.json(); alert('❌ Failed: ' + (d.error || res.status)); }
+                    } finally { setActionLoading(false); }
+                  }} disabled={actionLoading} style={{
+                    width: '100%', padding: '11px', background: 'transparent',
+                    border: '1px solid rgba(196,160,80,0.2)', borderRadius: 10,
+                    color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
+                    opacity: actionLoading ? 0.6 : 1,
+                  }}>
+                    {actionLoading ? 'Refreshing…' : '📋 Refresh topics'}
+                  </button>
+                )}
+                {selected.status === 'approved' && selected.extractedText && (
+                  <button onClick={async () => {
+                    setActionLoading(true);
+                    try {
+                      const res = await fetch('/api/index-material', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ materialId: selected.id, action: 'add' }),
+                      });
+                      if (res.ok) { alert('✅ Topics refreshed.'); }
+                      else { const d = await res.json(); alert('❌ Failed: ' + (d.error || res.status)); }
+                    } finally { setActionLoading(false); }
+                  }} disabled={actionLoading} style={{
+                    width: '100%', padding: '11px', background: 'transparent',
+                    border: '1px solid rgba(196,160,80,0.2)', borderRadius: 10,
+                    color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
+                    opacity: actionLoading ? 0.6 : 1,
+                  }}>
+                    {actionLoading ? 'Refreshing…' : '📋 Refresh topics'}
+                  </button>
+                )}
                 {selected.status !== 'quarantined' && (
                   <button onClick={() => handleQuarantine(selected)} disabled={actionLoading} style={{
                     width: '100%', padding: '10px', background: 'transparent',

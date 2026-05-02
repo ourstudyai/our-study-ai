@@ -51,7 +51,7 @@ const AI_FONTS: { id: AIFont; label: string; sample: string; family: string }[] 
 
 type Section = null | 'theme' | 'uiFont' | 'aiFont' | 'sizes';
 
-export default function SettingsPanel({ hideTrigger = false, externalOpen = false, onClose }: { hideTrigger?: boolean; externalOpen?: boolean; onClose?: () => void }) {
+export default function SettingsPanel({ externalOpen = false, onClose }: { externalOpen?: boolean; onClose?: () => void }) {
     const { settings, update } = useSettings();
     const [open, setOpen] = useState(false);
     const [section, setSection] = useState<Section>(null);
@@ -65,25 +65,7 @@ export default function SettingsPanel({ hideTrigger = false, externalOpen = fals
 
     return (
         <>
-            {!hideTrigger && (
-                <button
-                    onClick={() => setOpen(true)}
-                    title="Appearance settings"
-                    style={{
-                        position: 'fixed', bottom: 'var(--settings-btn-top, 80px)', right: '12px', zIndex: 90,
-                        width: '40px', height: '40px', borderRadius: '50%',
-                        background: 'var(--navy-card)', border: '1px solid var(--border)',
-                        color: 'var(--gold)', fontSize: '1.1rem', cursor: 'pointer',
-                        boxShadow: 'var(--shadow-float)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        transition: 'border-color 0.2s',
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-                >
-                    ⚙️
-                </button>
-            )}
+
 
             {isOpen && (
                 <div
