@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     // Get content list
     const contentRes = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
+      model: 'llama-3.3-70b-versatile',
       messages: [{
         role: 'user',
         content: `You are indexing a study material for a seminary library. Given the following extracted text, return a JSON object with one field: 'contentList' — an array of all major topics, chapters, or sections that appear in this material. Do not set a minimum or maximum number. Include every significant topic. If the material has 3 major topics return 3, if it has 20 return 20. Return only the JSON object, no markdown, no preamble.\n\n${extractedText.slice(0, 6000)}`,
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     // Get AI summary
     const summaryRes = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
+      model: 'llama-3.3-70b-versatile',
       messages: [{
         role: 'user',
         content: `Summarise this study material in 2-3 sentences for a seminary library index. Return only the summary, no preamble.\n\n${extractedText.slice(0, 3000)}`,
