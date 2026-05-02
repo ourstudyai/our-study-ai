@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase/config';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, writeBatch, where } from 'firebase/firestore';
+import SettingsPanel from '@/components/SettingsPanel';
 
 const FAQ_CONTENT: Record<string, { title: string; content: string }> = {
   '/dashboard': { title: 'Dashboard Guide', content: `**Your Dashboard**\n\nBrowse all courses available to your year and department.\n\n**Opening a course**\nTap any course card to enter the AI study chat.\n\n**Navigation**\n- **Library** — Browse indexed study materials\n- **Contribute** — Upload lecture notes and past questions\n- **Admin** — Manage materials (admins only)` },
@@ -36,6 +37,7 @@ export default function AppNav({ children }: AppNavProps) {
   const [faqOpen, setFaqOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +160,10 @@ export default function AppNav({ children }: AppNavProps) {
       <button onClick={() => { setFaqOpen(true); onNav?.(); }}
         style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '10px', width: '100%', textAlign: 'left', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500, background: 'transparent', color: 'var(--text-secondary)', border: '1px solid transparent' }}>
         <span>❓</span>Help & Guide
+      </button>
+      <button onClick={() => { setSettingsOpen(true); onNav?.(); }}
+        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '10px', width: '100%', textAlign: 'left', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500, background: 'transparent', color: 'var(--text-secondary)', border: '1px solid transparent' }}>
+        <span>⚙️</span>Settings
       </button>
     </div>
   );
@@ -329,6 +335,8 @@ export default function AppNav({ children }: AppNavProps) {
       <main style={{ flex: 1, minWidth: 0 }} className="pt-[52px] md:pt-0">
         {children}
       </main>
+
+      <SettingsPanel externalOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {faqOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setFaqOpen(false)}>
