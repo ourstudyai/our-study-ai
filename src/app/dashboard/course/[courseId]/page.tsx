@@ -106,12 +106,33 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
   const [disliked, setDisliked] = useState(false);
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [showLikeNote, setShowLikeNote] = useState(false);
+  const [likeNote, setLikeNote] = useState('');
   const [showDislikeNote, setShowDislikeNote] = useState(false);
   const [dislikeNote, setDislikeNote] = useState('');
   const [showFlagBox, setShowFlagBox] = useState(false);
   const [flagNote, setFlagNote] = useState('');
   const [flagSent, setFlagSent] = useState(false);
   const [flagSending, setFlagSending] = useState(false);
+  const [showTTSSettings, setShowTTSSettings] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [ttsVoice, setTtsVoice] = useState('');
+  const [ttsRate, setTtsRate] = useState(1);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('ourstudyai_tts_prefs') || '{}');
+      if (saved.voice) setTtsVoice(saved.voice);
+      if (saved.rate) setTtsRate(saved.rate);
+    } catch {}
+    const loadVoices = () => { const v = window.speechSynthesis.getVoices(); if (v.length) setVoices(v); };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }, []);
+
+  const saveTTSPrefs = (voice: string, rate: number) => {
+    try { localStorage.setItem('ourstudyai_tts_prefs', JSON.stringify({ voice, rate })); } catch {}
+  };
 
   const btnStyle = (active = false, danger = false): React.CSSProperties => ({
     background: 'none',
@@ -141,24 +162,26 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
       return;
     }
     const utt = new SpeechSynthesisUtterance(stripMarkdown(message.content));
+    utt.rate = ttsRate;
+    if (ttsVoice) {
+      const found = window.speechSynthesis.getVoices().find(v => v.name === ttsVoice);
+      if (found) utt.voice = found;
+    }
     utt.onend = () => setSpeaking(false);
     utt.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utt);
     setSpeaking(true);
   };
 
-  const handleDislike = () => {
-    if (!disliked) {
-      setDisliked(true);
-      setLiked(false);
-      setShowDislikeNote(true);
-    }
+  const handleLike = () => {
+    if (!liked) { setLiked(true); setDisliked(false); setShowDislikeNote(false); setShowLikeNote(true); }
   };
+  const submitLike = async () => { await sendFeedback('like', likeNote); setShowLikeNote(false); };
 
-  const submitDislike = async () => {
-    await sendFeedback('dislike', dislikeNote);
-    setShowDislikeNote(false);
+  const handleDislike = () => {
+    if (!disliked) { setDisliked(true); setLiked(false); setShowLikeNote(false); setShowDislikeNote(true); }
   };
+  const submitDislike = async () => { await sendFeedback('dislike', dislikeNote); setShowDislikeNote(false); };
 
   const submitFlag = async () => {
     if (!flagNote.trim()) return;
@@ -166,15 +189,15 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
     try {
       await addDoc(collection(db, 'flags'), {
         userId, userEmail, courseId, courseName,
-        question: lastUserMsg.substring(0, 500),
-        aiResponse: message.content.substring(0, 500),
+        question: lastUserMsg.substring(0, 1000),
+        aiResponse: message.content.substring(0, 1000),
         studentDescription: flagNote,
         status: 'open',
         createdAt: serverTimestamp(),
       });
       setFlagSent(true);
       setFlagNote('');
-      setTimeout(() => { setShowFlagBox(false); setFlagSent(false); }, 2000);
+      setTimeout(() => { setShowFlagBox(false); setFlagSent(false); }, 4000);
     } catch { }
     finally { setFlagSending(false); }
   };
@@ -182,7 +205,7 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
   return (
     <div style={{ paddingLeft: '4px', marginTop: '6px' }}>
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-        <button style={btnStyle(liked)} onClick={() => { if (!liked) { setLiked(true); setDisliked(false); setShowDislikeNote(false); sendFeedback('like'); } }} title='Helpful'>
+        <button style={btnStyle(liked)} onClick={handleLike} title='Helpful'>
           <i className='fa-regular fa-thumbs-up' />
         </button>
         <button style={btnStyle(disliked)} onClick={handleDislike} title='Not helpful'>
@@ -192,10 +215,36 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
           <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'} />
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
-        <button onClick={handleTTS} title={speaking ? 'Stop reading' : 'Read aloud'}
-          style={{ ...btnStyle(speaking), color: speaking ? 'var(--gold)' : 'var(--text-muted)', border: '1px solid ' + (speaking ? 'var(--gold)' : 'var(--border)') }}>
-          <i className={speaking ? 'fa-solid fa-stop' : 'fa-solid fa-volume-high'} />
-        </button>
+        <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+          <button onClick={handleTTS} title={speaking ? 'Stop reading' : 'Read aloud'}
+            style={{ ...btnStyle(speaking), borderRight: 'none', borderRadius: '6px 0 0 6px' }}>
+            <i className={speaking ? 'fa-solid fa-stop' : 'fa-solid fa-volume-high'} />
+          </button>
+          <button onClick={() => setShowTTSSettings(s => !s)} title='Voice settings'
+            style={{ ...btnStyle(showTTSSettings), borderLeft: 'none', borderRadius: '0 6px 6px 0', padding: '4px 5px' }}>
+            <i className='fa-solid fa-gear' style={{ fontSize: '0.65rem' }} />
+          </button>
+          {showTTSSettings && (
+            <div style={{ position: 'absolute', bottom: '120%', left: 0, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px', zIndex: 50, minWidth: '210px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
+              <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '8px' }}>Voice Settings</p>
+              <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Voice</p>
+              <select value={ttsVoice} onChange={e => { setTtsVoice(e.target.value); saveTTSPrefs(e.target.value, ttsRate); }}
+                style={{ width: '100%', padding: '4px 6px', borderRadius: '6px', fontSize: '0.72rem', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                <option value=''>Default</option>
+                {voices.map(v => <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}
+              </select>
+              <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Speed: {ttsRate}x</p>
+              <input type='range' min='0.5' max='2' step='0.1' value={ttsRate}
+                onChange={e => { const r = parseFloat(e.target.value); setTtsRate(r); saveTTSPrefs(ttsVoice, r); }}
+                style={{ width: '100%', accentColor: 'var(--gold)', marginBottom: '4px' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                <span>0.5x</span><span>2x</span>
+              </div>
+              <button onClick={() => setShowTTSSettings(false)}
+                style={{ width: '100%', padding: '4px', borderRadius: '6px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>Done</button>
+            </div>
+          )}
+        </div>
         <button style={btnStyle()} onClick={onRegenerate} title='Retry'>
           <i className='fa-solid fa-rotate-right' /><span>Retry</span>
         </button>
@@ -207,20 +256,23 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
         </button>
       </div>
 
+      {showLikeNote && (
+        <div style={{ marginTop: '8px', display: 'flex', gap: '6px', alignItems: 'flex-end', maxWidth: '360px' }}>
+          <textarea value={likeNote} onChange={e => setLikeNote(e.target.value)}
+            placeholder='What did you love? (optional)' rows={2}
+            style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
+          <button onClick={submitLike}
+            style={{ padding: '6px 12px', borderRadius: '8px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Send</button>
+        </div>
+      )}
+
       {showDislikeNote && (
         <div style={{ marginTop: '8px', display: 'flex', gap: '6px', alignItems: 'flex-end', maxWidth: '360px' }}>
-          <textarea
-            value={dislikeNote}
-            onChange={e => setDislikeNote(e.target.value)}
-            placeholder='What was wrong? (optional)'
-            rows={2}
-            style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none',
-              background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-          />
+          <textarea value={dislikeNote} onChange={e => setDislikeNote(e.target.value)}
+            placeholder='What was wrong? (optional)' rows={2}
+            style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
           <button onClick={submitDislike}
-            style={{ padding: '6px 12px', borderRadius: '8px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
-            Send
-          </button>
+            style={{ padding: '6px 12px', borderRadius: '8px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Send</button>
         </div>
       )}
 
@@ -228,7 +280,10 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
         <div style={{ marginTop: '8px', maxWidth: '360px', padding: '10px', borderRadius: '10px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
           <p style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 700, marginBottom: '6px' }}>🚩 Flag this response</p>
           {flagSent ? (
-            <p style={{ fontSize: '0.78rem', color: 'var(--gold)' }}>✅ Flagged — thank you!</p>
+            <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(196,160,80,0.08)', border: '1px solid rgba(196,160,80,0.2)' }}>
+              <p style={{ fontSize: '0.78rem', color: 'var(--gold)', fontWeight: 600 }}>✅ Flag submitted successfully</p>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.5 }}>Your report has been sent to the admin team. We will review this and get back to you if needed.</p>
+            </div>
           ) : (
             <>
               <textarea
@@ -294,6 +349,9 @@ export default function CoursePage() {
   const prevHistoryLenRef = useRef(0);
 
   const [isListening, setIsListening] = useState(false);
+  const [autoSend, setAutoSend] = useState(() => {
+    try { return localStorage.getItem('ourstudyai_stt_autosend') === '1'; } catch { return false; }
+  });
   const recognitionRef = useRef<any>(null);
 
   const handleSTT = () => {
@@ -310,13 +368,22 @@ export default function CoursePage() {
     recognition.lang = 'en-US';
     recognition.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript;
-      setInput(prev => prev ? prev + ' ' + transcript : transcript);
+      if (autoSend) { sendMessage(transcript); }
+      else { setInput(prev => prev ? prev + ' ' + transcript : transcript); }
     };
     recognition.onend = () => setIsListening(false);
     recognition.onerror = () => setIsListening(false);
     recognitionRef.current = recognition;
     recognition.start();
     setIsListening(true);
+  };
+
+  const toggleAutoSend = () => {
+    setAutoSend(prev => {
+      const next = !prev;
+      try { localStorage.setItem('ourstudyai_stt_autosend', next ? '1' : '0'); } catch {}
+      return next;
+    });
   };
 
   const chatHistory = modeHistories[activeMode] ?? [];
@@ -758,17 +825,24 @@ export default function CoursePage() {
                   minWidth: 0, minHeight: '44px', maxHeight: '140px', boxSizing: 'border-box',
                 }}
               />
-              <button onClick={handleSTT} title={isListening ? 'Stop listening' : 'Speak'}
-                style={{
-                  flexShrink: 0, padding: '10px 12px', borderRadius: '12px',
-                  background: isListening ? '#ef4444' : 'var(--navy-card)',
-                  color: isListening ? '#fff' : 'var(--text-muted)',
-                  border: '1px solid ' + (isListening ? '#ef4444' : 'var(--border)'),
-                  fontSize: '1rem', cursor: 'pointer', transition: 'all 0.2s',
-                }}
-              >
-                <i className={isListening ? 'fa-solid fa-stop' : 'fa-solid fa-microphone'} />
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+                <button onClick={handleSTT} title={isListening ? 'Stop listening' : autoSend ? 'Speak (auto-send on)' : 'Speak'}
+                  style={{
+                    padding: '10px 12px', borderRadius: '12px',
+                    background: isListening ? '#ef4444' : autoSend ? 'rgba(196,160,80,0.15)' : 'var(--navy-card)',
+                    color: isListening ? '#fff' : autoSend ? 'var(--gold)' : 'var(--text-muted)',
+                    border: '1px solid ' + (isListening ? '#ef4444' : autoSend ? 'var(--gold)' : 'var(--border)'),
+                    fontSize: '1rem', cursor: 'pointer', transition: 'all 0.2s',
+                  }}
+                >
+                  <i className={isListening ? 'fa-solid fa-stop' : 'fa-solid fa-microphone'} />
+                </button>
+                <button onClick={toggleAutoSend} title={autoSend ? 'Auto-send ON' : 'Auto-send OFF'}
+                  style={{ fontSize: '0.52rem', padding: '1px 5px', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                    background: autoSend ? 'var(--gold)' : 'var(--border)', color: autoSend ? 'var(--navy)' : 'var(--text-muted)', fontWeight: 700, lineHeight: 1.4 }}>
+                  {autoSend ? 'AUTO' : 'auto'}
+                </button>
+              </div>
               <button onClick={() => sendMessage()} disabled={isStreaming || !input.trim()}
                 style={{
                   flexShrink: 0, padding: '10px 16px', borderRadius: '12px',
