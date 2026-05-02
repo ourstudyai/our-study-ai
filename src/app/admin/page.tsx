@@ -801,6 +801,35 @@ export default function AdminPage() {
                     {actionLoading ? 'Approving…' : '✓ Approve'}
                   </button>
                 )}
+                {selected.status === 'approved' && selected.extractedText && (
+                  <button onClick={async () => {
+                    if (!window.confirm('Re-index this material? Old chunks will be replaced with freshly stripped and chunked content.')) return;
+                    setActionLoading(true);
+                    try {
+                      const res = await fetch('/api/admin/reindex-material', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          materialId: selected.id,
+                          courseId: selected.confirmedCourseId ?? selected.suggestedCourseId ?? '',
+                          courseName: selected.confirmedCourseName ?? selected.suggestedCourseName ?? '',
+                          category: selected.category,
+                          extractedText: selected.extractedText,
+                          shouldIndex: true,
+                        }),
+                      });
+                      if (res.ok) { alert('✅ Re-indexed successfully.'); setDrawerOpen(false); setSelected(null); }
+                      else { const d = await res.json(); alert('❌ Failed: ' + (d.error || res.status)); }
+                    } finally { setActionLoading(false); }
+                  }} disabled={actionLoading} style={{
+                    width: '100%', padding: '11px', background: 'transparent',
+                    border: '1px solid rgba(196,160,80,0.4)', borderRadius: 10,
+                    color: 'var(--gold)', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
+                    opacity: actionLoading ? 0.6 : 1,
+                  }}>
+                    {actionLoading ? 'Re-indexing…' : '↺ Re-index chunks'}
+                  </button>
+                )}
                 {selected.status !== 'quarantined' && (
                   <button onClick={() => handleQuarantine(selected)} disabled={actionLoading} style={{
                     width: '100%', padding: '10px', background: 'transparent',
