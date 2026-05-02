@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       await matRef.update({ indexed: true });
     }
     return NextResponse.json({ success: true });
-  } catch (e) {
+  } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
