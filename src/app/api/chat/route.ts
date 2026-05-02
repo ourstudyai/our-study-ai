@@ -161,16 +161,10 @@ export async function POST(req: NextRequest) {
     } else {
       semesterSummary = `Relevant course material excerpts (answer primarily from these, use the exact headings and terminology as they appear):\n\n${ragContext}`;
     }
-
-    if (webSearchContext) {
-      semesterSummary = (semesterSummary ?? '') + webSearchContext;
-    }
-
     if (materialContext) {
       semesterSummary = (semesterSummary ? semesterSummary + '\n\n' : '') +
         `ACTIVE STUDY MATERIAL (student has loaded this for focused study — answer questions with this as primary reference):\n\n${materialContext}`;
     }
-
 
     // Web search for research mode
     let webSearchContext = '';
@@ -182,6 +176,10 @@ export async function POST(req: NextRequest) {
             `[WEB ${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 600)}`
           ).join('\n\n');
       }
+    }
+
+    if (webSearchContext) {
+      semesterSummary = (semesterSummary ?? '') + webSearchContext;
     }
 
     const systemPrompt = getSystemPrompt(

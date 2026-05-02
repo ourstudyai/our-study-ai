@@ -48,13 +48,15 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
     if (!isSupreme) return;
     async function load() {
       try {
-        const [matsSnap, usersSnap, coursesSnap, flagsSnap, reportsSnap, analyticsSnap] = await Promise.all([
+        const [matsSnap, usersSnap, coursesSnap, flagsSnap, reportsSnap, analyticsSnap, tavilySnap] = await Promise.all([
           getDocs(collection(db, 'materials')),
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'courses')),
           getDocs(collection(db, 'flags')),
           getDocs(collection(db, 'upload_reports')),
           getDoc(doc(db, 'analytics', 'daily')).catch(() => null),
+          getDoc(doc(db, 'analytics', 'tavily')).catch(() => null),
+          getDoc(doc(db, 'analytics', 'tavily')).catch(() => null),
         ]);
 
         const mats = matsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
@@ -63,6 +65,8 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
         const flags = flagsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
         const reports = reportsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
         const analytics = analyticsSnap?.exists() ? analyticsSnap.data() : {};
+        const tavilyData = tavilySnap?.exists() ? tavilySnap.data() : {};
+        const tavilyAnalytics = tavilySnap?.exists() ? tavilySnap.data() : {};
 
         // Material stats
         const matByStatus: Record<string, number> = {};
@@ -137,6 +141,23 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
         const totalMinutes = analytics.total_minutes || 0;
         const topTopics = analytics.top_topics || {};
         const hourlyActivity = analytics.hourly || {};
+        const todayTag = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+        const tavilySearchesToday = tavilyData[`searches_${todayTag}`] || 0;
+        const tavilyHitsToday = tavilyData[`cache_hits_${todayTag}`] || 0;
+        const tavilyTotal = tavilyData.total_searches || 0;
+        const tavilyCacheTotal = tavilyData.total_cache_hits || 0;
+        const tavilyLastSearch = tavilyData.last_search || null;
+        const tavilyHitRate = (tavilyTotal + tavilyCacheTotal) > 0
+          ? Math.round((tavilyCacheTotal / (tavilyTotal + tavilyCacheTotal)) * 100) : 0;
+        const todayKey2 = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+        const tavilySearchesToday = tavilyAnalytics[`searches_${todayKey2}`] || 0;
+        const tavilyHitsToday = tavilyAnalytics[`cache_hits_${todayKey2}`] || 0;
+        const tavilyTotal = tavilyAnalytics.total_searches || 0;
+        const tavilyCacheTotal = tavilyAnalytics.total_cache_hits || 0;
+        const tavilyLastSearch = tavilyAnalytics.last_search || null;
+        const tavilyHitRate = (tavilyTotal + tavilyCacheTotal) > 0
+          ? Math.round((tavilyCacheTotal / (tavilyTotal + tavilyCacheTotal)) * 100)
+          : 0;
 
         const fmtTime = (mins: number) => {
           const h = Math.floor(mins / 60);
@@ -151,8 +172,9 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
           flags, openFlags, resolvedFlags,
           reports,
           todaySessions, todayMins, totalSessions, totalMinutes,
-          topTopics, hourlyActivity, fmtTime,
-          analytics
+          topTopics, hourlyActivity, fmtTime, analytics,
+          tavilySearchesToday, tavilyHitsToday, tavilyTotal, tavilyCacheTotal, tavilyLastSearch, tavilyHitRate,
+          tavilySearchesToday, tavilyHitsToday, tavilyTotal, tavilyCacheTotal, tavilyLastSearch, tavilyHitRate
         });
       } catch (e) {
         console.error('Analytics load error:', e);
@@ -208,6 +230,32 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
           {card('All-time Sessions', data.totalSessions)}
           {card('All-time Time', data.fmtTime(data.totalMinutes))}
         </div>
+      ))}
+
+      {section('🔍 Tavily Web Search Credits', (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            {card('API Calls Today', data.tavilySearchesToday, 'credits used today', '#f90')}
+            {card('Cache Hits Today', data.tavilyHitsToday, 'credits saved today', 'var(--success, #4caf50)')}
+            {card('Total API Calls', data.tavilyTotal, 'all-time credits used', '#f90')}
+            {card('Total Cache Hits', data.tavilyCacheTotal, 'all-time credits saved', 'var(--success, #4caf50)')}
+          </div>
+          {row('Cache Hit Rate', `${data.tavilyHitRate}%`, data.tavilyHitRate > 50 ? 'var(--success, #4caf50)' : '#f90')}
+          {row('Last API Search', data.tavilyLastSearch ? new Date(data.tavilyLastSearch).toLocaleString() : 'Never')}
+        </>
+      ))}
+
+      {section('🔍 Tavily Search Credits', (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            {card('API Calls Today', data.tavilySearchesToday, 'credits used today', '#f90')}
+            {card('Cache Hits Today', data.tavilyHitsToday, 'credits saved today', 'var(--success, #4caf50)')}
+            {card('Total API Calls', data.tavilyTotal, 'all-time credits used', '#f90')}
+            {card('Total Saved', data.tavilyCacheTotal, 'all-time credits saved', 'var(--success, #4caf50)')}
+          </div>
+          {row('Cache Hit Rate', `${data.tavilyHitRate}%`, data.tavilyHitRate > 50 ? 'var(--success, #4caf50)' : '#f90')}
+          {row('Last API Search', data.tavilyLastSearch ? new Date(data.tavilyLastSearch).toLocaleString() : 'Never')}
+        </>
       ))}
 
       {section('Users', (

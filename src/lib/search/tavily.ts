@@ -28,6 +28,14 @@ async function getCached(key: string): Promise<TavilyResult[] | null> {
       return null;
     }
     console.log('[tavily] Cache HIT:', key.slice(0, 60));
+    try {
+      const { FieldValue } = await import('firebase-admin/firestore');
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+      await adminDb.collection('analytics').doc('tavily').set({
+        [\`cache_hits_\${today}\`]: FieldValue.increment(1),
+        total_cache_hits: FieldValue.increment(1),
+      }, { merge: true });
+    } catch (_) {}
     return data.results as TavilyResult[];
   } catch (err) {
     console.warn('[tavily] Cache read error:', err);
@@ -87,6 +95,15 @@ export async function searchTavily(query: string, maxResults = 5): Promise<Tavil
 
     if (results.length > 0) {
       setCached(cacheKey, results).catch(() => {});
+      try {
+        const { FieldValue } = await import('firebase-admin/firestore');
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+        await adminDb.collection('analytics').doc('tavily').set({
+          [\`searches_\${today}\`]: FieldValue.increment(1),
+          total_searches: FieldValue.increment(1),
+          last_search: new Date().toISOString(),
+        }, { merge: true });
+      } catch (_) {}
     }
 
     return results;
