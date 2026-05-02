@@ -51,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthProvider>
           <AppShell>
             {children}
-            <SettingsPanel hideTrigger={true} />
+            <SettingsPanel />
           </AppShell>
         </AuthProvider>
       </body>
