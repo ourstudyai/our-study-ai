@@ -901,7 +901,7 @@ export default function CoursePage() {
               ))}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={setActiveContext} activeFileName={activeContext?.fileName ?? null} />}
+              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={setActiveContext} activeFileName={activeContext?.fileName ?? null} onSendMessage={sendMessage} />}
               {activeSideTab === 'notes' && <NotesPanel courseId={courseId} userId={uid} />}
               {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
               {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
@@ -934,7 +934,7 @@ export default function CoursePage() {
               <button onClick={() => setDrawerOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer', flexShrink: 0, marginLeft: '8px' }}>✕</button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={ctx => { setActiveContext(ctx); if (ctx) setDrawerOpen(false); }} activeFileName={activeContext?.fileName ?? null} />}
+              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={ctx => { setActiveContext(ctx); if (ctx) setDrawerOpen(false); }} activeFileName={activeContext?.fileName ?? null} onSendMessage={text => { sendMessage(text); setDrawerOpen(false); }} />}
               {activeSideTab === 'notes' && <NotesPanel courseId={courseId} userId={uid} />}
               {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
               {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
