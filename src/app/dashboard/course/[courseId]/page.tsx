@@ -337,6 +337,7 @@ export default function CoursePage() {
   const [topicsOpen, setTopicsOpen] = useState(false);
 
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
+  const [historyOverlayOpen, setHistoryOverlayOpen] = useState(false);
   const [topics, setTopics] = useState<{ materialName: string; items: string[] }[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
 
@@ -705,7 +706,7 @@ export default function CoursePage() {
             title='Course topics'>
             📋
           </button>
-          <button onClick={() => { setActiveSideTab('history'); setDrawerOpen(true); setSidebarOpen(true); }}
+          <button onClick={() => setHistoryOverlayOpen(true)}
             className='flex-shrink-0 text-xs px-2 py-1 rounded border'
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
             title='Chat history'>
@@ -1030,6 +1031,29 @@ export default function CoursePage() {
 
 
       <SettingsPanel externalOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
+      {/* HISTORY OVERLAY — standalone, above everything */}
+      {historyOverlayOpen && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.65)', display: 'flex', flexDirection: 'column' }}
+          onClick={() => setHistoryOverlayOpen(false)}
+        >
+          <div
+            style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '300px', maxWidth: '90vw', background: 'var(--navy-card)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--navy-soft)' }}>
+              <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem' }}>🕐 Session History</span>
+              <button
+                onClick={() => setHistoryOverlayOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1 }}
+              >✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+              <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="history" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -419,6 +419,7 @@ export default function AdminPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [refreshLoading, setRefreshLoading] = useState(false);
   const [search, setSearch]         = useState('');
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [reassigning, setReassigning] = useState<string | null>(null);
@@ -832,7 +833,8 @@ export default function AdminPage() {
                 )}
                 {selected.status === 'approved' && selected.extractedText && (
                   <button onClick={async () => {
-                    setActionLoading(true);
+                    if (refreshLoading) return;
+                    setRefreshLoading(true);
                     try {
                       const res = await fetch('/api/index-material', {
                         method: 'POST',
@@ -841,14 +843,14 @@ export default function AdminPage() {
                       });
                       if (res.ok) { alert('✅ Topics refreshed.'); }
                       else { const d = await res.json(); alert('❌ Failed: ' + (d.error || res.status)); }
-                    } finally { setActionLoading(false); }
-                  }} disabled={actionLoading} style={{
+                    } finally { setRefreshLoading(false); }
+                  }} disabled={refreshLoading || actionLoading} style={{
                     width: '100%', padding: '11px', background: 'transparent',
                     border: '1px solid rgba(196,160,80,0.4)', borderRadius: 10,
-                    color: 'var(--gold)', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
-                    opacity: actionLoading ? 0.6 : 1,
+                    color: 'var(--gold)', fontSize: '0.82rem', cursor: refreshLoading ? 'not-allowed' : 'pointer', fontWeight: 600,
+                    opacity: refreshLoading || actionLoading ? 0.6 : 1,
                   }}>
-                    {actionLoading ? 'Refreshing…' : '📋 Refresh topics'}
+                    {refreshLoading ? 'Refreshing…' : '📋 Refresh topics'}
                   </button>
                 )}
                 {selected.status !== 'quarantined' && (
