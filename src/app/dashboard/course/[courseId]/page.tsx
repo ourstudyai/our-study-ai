@@ -19,7 +19,7 @@ import {
 import { db } from '@/lib/firebase/config';
 
 type StudyMode = 'plain_explainer' | 'practice_questions' | 'exam_preparation' | 'research';
-type SideTab = 'materials' | 'past-questions' | 'aoc' | 'memory';
+type SideTab = 'materials' | 'past-questions' | 'aoc' | 'notes' | 'history';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -36,13 +36,7 @@ interface ChatSession {
   archived: boolean;
 }
 
-interface ArchivedSession {
-  id: string;
-  messages: ChatMessage[];
-  archivedAt: string;
-  mode: string;
-  messageCount: number;
-}
+
 
 const MODES: { id: StudyMode; label: string; icon: string; description: string }[] = [
   { id: 'plain_explainer', label: 'Plain Explainer', icon: '💡', description: 'Understand any concept in plain language' },
@@ -341,12 +335,12 @@ export default function CoursePage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [topicsOpen, setTopicsOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
   const [topics, setTopics] = useState<{ materialName: string; items: string[] }[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
-  const [archivedSessions, setArchivedSessions] = useState<ArchivedSession[]>([]);
-  const [viewingArchive, setViewingArchive] = useState<ArchivedSession | null>(null);
+
+
 
   const [modeHistories, setModeHistories] = useState<Record<string, ChatMessage[]>>({});
   const [streamingMessage, setStreamingMessage] = useState('')
@@ -481,15 +475,7 @@ export default function CoursePage() {
     finally { setSessionSaving(false); }
   };
 
-  const loadArchives = async () => {
-    if (!uid || !courseId) return;
-    try {
-      const prefix = courseId + '__' + activeMode + '__';
-      const snap = await getDocs(query(collection(db, 'users', uid, 'chatArchive'), orderBy('archivedAt', 'desc')));
-      const sessions = snap.docs.filter(d => d.id.startsWith(prefix)).map(d => ({ id: d.id, ...d.data() } as ArchivedSession));
-      setArchivedSessions(sessions);
-    } catch { }
-  };
+
 
   const loadTopics = async () => {
     if (!courseId) return;
@@ -675,7 +661,8 @@ export default function CoursePage() {
     { id: 'materials', label: 'Materials', icon: '📂' },
     { id: 'past-questions', label: 'Past Q', icon: '🗒' },
     { id: 'aoc', label: 'AOC', icon: '🎯' },
-    { id: 'memory', label: 'Memory', icon: '🧠' },
+    { id: 'notes', label: 'Notes', icon: '📝' },
+    { id: 'history', label: 'History', icon: '🕐' },
   ];
 
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
@@ -966,7 +953,8 @@ export default function CoursePage() {
               {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={setActiveContext} activeFileName={activeContext?.fileName ?? null} onSendMessage={sendMessage} />}
               {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
               {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
-              {activeSideTab === 'memory' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} />}
+              {activeSideTab === 'notes' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="notes" />}
+              {activeSideTab === 'history' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="history" />}
             </div>
           </div>
         )}
@@ -998,7 +986,8 @@ export default function CoursePage() {
               {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={ctx => { setActiveContext(ctx); if (ctx) setDrawerOpen(false); }} activeFileName={activeContext?.fileName ?? null} onSendMessage={text => { sendMessage(text); setDrawerOpen(false); }} />}
               {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
               {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
-              {activeSideTab === 'memory' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} />}
+              {activeSideTab === 'notes' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="notes" />}
+              {activeSideTab === 'history' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="history" />}
             </div>
           </div>
         </div>
@@ -1039,56 +1028,7 @@ export default function CoursePage() {
         </div>
       )}
 
-      {/* HISTORY DRAWER */}
-      {historyOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)' }} onClick={() => { setHistoryOpen(false); setViewingArchive(null); }}>
-          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '300px', background: 'var(--navy-card)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem' }}>
-                {viewingArchive ? 'Archived Session' : 'Chat History — ' + MODES.find(m => m.id === activeMode)?.label}
-              </span>
-              <button onClick={() => { if (viewingArchive) setViewingArchive(null); else setHistoryOpen(false); }}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer' }}>
-                {viewingArchive ? '←' : '✕'}
-              </button>
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-              {viewingArchive ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {viewingArchive.messages.map((msg, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                      <div style={{ maxWidth: '85%', borderRadius: '12px', padding: '8px 12px', fontSize: '0.78rem',
-                        background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy)',
-                        color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
-                        border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none' }}>
-                        {msg.content}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : archivedSessions.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '32px 0' }}>
-                  <p style={{ fontSize: '1.6rem', marginBottom: '8px' }}>🕐</p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No archived sessions yet for this mode.</p>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {archivedSessions.map(session => (
-                    <button key={session.id} onClick={() => setViewingArchive(session)}
-                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: '10px', background: 'var(--navy)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-                      <p style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 600, marginBottom: '2px' }}>
-                        {new Date(session.archivedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </p>
-                      <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{session.messageCount ?? session.messages?.length ?? 0} messages · Sem {semester}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+
 
       <SettingsPanel hideTrigger={true} externalOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
     </div>

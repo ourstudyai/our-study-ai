@@ -5,9 +5,9 @@ import { auth } from '@/lib/firebase/config';
 import { db } from '@/lib/firebase/config';
 import { onAuthStateChanged } from 'firebase/auth';
 
-export type Theme = 'sacred_academia' | 'dark' | 'light' | 'system' | 'monastic_green' | 'midnight_indigo' | 'parchment_scroll' | 'high_contrast';
-export type UIFont = 'dm_sans' | 'inter' | 'lora' | 'system';
-export type AIFont = 'lora' | 'playfair' | 'georgia' | 'merriweather' | 'source_serif' | 'literata';
+export type Theme = 'sacred_academia' | 'dark' | 'light' | 'system' | 'monastic_green' | 'midnight_indigo' | 'parchment_scroll' | 'high_contrast' | 'royal_crimson' | 'imperial_purple' | 'baroque_gold' | 'cathedral_slate' | 'leather_library' | 'roman_senate' | 'vespers_rose' | 'cabinet_oak';
+export type UIFont = 'dm_sans' | 'inter' | 'lora' | 'system' | 'cormorant' | 'eb_garamond' | 'crimson_pro' | 'spectral';
+export type AIFont = 'lora' | 'playfair' | 'georgia' | 'merriweather' | 'source_serif' | 'literata' | 'cormorant' | 'eb_garamond' | 'crimson_pro' | 'spectral' | 'im_fell' | 'cardo';
 
 export interface AppSettings {
     theme: Theme;

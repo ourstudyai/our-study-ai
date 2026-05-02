@@ -44,6 +44,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       dm_sans: "'DM Sans', system-ui, sans-serif",
       inter: "'Inter', system-ui, sans-serif",
       lora: "'Lora', Georgia, serif",
+      cormorant: "'Cormorant Garamond', Georgia, serif",
+      eb_garamond: "'EB Garamond', Georgia, serif",
+      crimson_pro: "'Crimson Pro', Georgia, serif",
+      spectral: "'Spectral', Georgia, serif",
       system: "system-ui, sans-serif",
     };
     const AI_FONTS: Record<string, string> = {
@@ -53,6 +57,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       merriweather: "'Merriweather', Georgia, serif",
       source_serif: "'Source Serif 4', Georgia, serif",
       literata: "'Literata', Georgia, serif",
+      cormorant: "'Cormorant Garamond', Georgia, serif",
+      eb_garamond: "'EB Garamond', Georgia, serif",
+      im_fell: "'IM Fell English', Georgia, serif",
+      crimson_pro: "'Crimson Pro', Georgia, serif",
+      spectral: "'Spectral', Georgia, serif",
+      cardo: "Cardo, Georgia, serif",
     };
     root.style.setProperty('--ui-font', UI_FONTS[settings.uiFont] ?? UI_FONTS.dm_sans);
     root.style.setProperty('--ai-font', AI_FONTS[settings.aiFont] ?? AI_FONTS.lora);
