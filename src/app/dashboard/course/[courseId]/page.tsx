@@ -662,7 +662,6 @@ export default function CoursePage() {
     { id: 'past-questions', label: 'Past Q', icon: '🗒' },
     { id: 'aoc', label: 'AOC', icon: '🎯' },
     { id: 'notes', label: 'Notes', icon: '📝' },
-    { id: 'history', label: 'History', icon: '🕐' },
   ];
 
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
@@ -706,11 +705,11 @@ export default function CoursePage() {
             title='Course topics'>
             📋
           </button>
-          <button onClick={() => setSettingsPanelOpen(true)}
+          <button onClick={() => setActiveSideTab('history')}
             className='flex-shrink-0 text-xs px-2 py-1 rounded border'
             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-            title='Appearance settings'>
-            ⚙️
+            title='Chat history'>
+            🕐
           </button>
           <button onClick={() => setSidebarOpen(!sidebarOpen)}
             className='hidden md:block flex-shrink-0 text-xs px-2 py-1 rounded border'
