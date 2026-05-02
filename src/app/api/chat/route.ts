@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { adminDb } from "@/lib/firebase/admin";
 import { getSystemPrompt } from "@/lib/gemini/system-prompts";
+import { searchTavily } from "@/lib/search/tavily";
 
 interface ChunkDoc {
   text: string;
@@ -161,9 +162,26 @@ export async function POST(req: NextRequest) {
       semesterSummary = `Relevant course material excerpts (answer primarily from these, use the exact headings and terminology as they appear):\n\n${ragContext}`;
     }
 
+    if (webSearchContext) {
+      semesterSummary = (semesterSummary ?? '') + webSearchContext;
+    }
+
     if (materialContext) {
       semesterSummary = (semesterSummary ? semesterSummary + '\n\n' : '') +
         `ACTIVE STUDY MATERIAL (student has loaded this for focused study — answer questions with this as primary reference):\n\n${materialContext}`;
+    }
+
+
+    // Web search for research mode
+    let webSearchContext = '';
+    if (mode === 'research') {
+      const webResults = await searchTavily(message, 5);
+      if (webResults.length > 0) {
+        webSearchContext = '\n\nWEB SEARCH RESULTS (external — cite URL, label as external source):\n' +
+          webResults.map((r, i) =>
+            `[WEB ${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 600)}`
+          ).join('\n\n');
+      }
     }
 
     const systemPrompt = getSystemPrompt(
