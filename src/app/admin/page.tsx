@@ -610,21 +610,7 @@ export default function AdminPage() {
         {tab === 'users' && <UsersPanel currentUserEmail={firebaseUser?.email ?? ''} />}
 
         {/* Reports tab */}
-        {tab === 'reports' && <div style={{padding: '24px 16px'}}>
-          <p style={{color:'var(--text-muted)', fontSize:'0.8rem', marginBottom: 16}}>Reports coming soon.</p>
-          <div style={{borderTop:'1px solid var(--border)', paddingTop: 16}}>
-            <p style={{fontSize:'0.75rem', fontWeight:700, color:'var(--text-secondary)', marginBottom:8}}>🔧 Admin Tools</p>
-            <p style={{fontSize:'0.72rem', color:'var(--text-muted)', marginBottom:12}}>Backfill library index — run once to make all approved materials visible in the Library.</p>
-            <button onClick={async () => {
-              const res = await fetch('/api/admin/backfill-indexed', {method:'POST'});
-              const d = await res.json();
-              alert(d.success ? `Done! ${d.updated} materials updated.` : 'Failed: ' + d.error);
-            }} style={{
-              padding:'9px 18px', background:'var(--gold)', color:'var(--navy)',
-              border:'none', borderRadius:8, fontWeight:700, fontSize:'0.8rem', cursor:'pointer'
-            }}>Run Library Backfill</button>
-          </div>
-        </div>}
+            {tab === 'reports' && <div style={{padding: '24px 16px'}}><ReportsPanel db={db} isChiefAdmin={isChiefAdmin} /></div>}
 
         {/* Timetables tab */}
         {tab === 'timetables' && <TimetablesPanel courses={courses} />}

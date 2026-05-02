@@ -323,6 +323,7 @@ export default function CoursePage() {
     const newHistory = [...chatHistory, userMsg];
     setModeHistories(prev => ({ ...prev, [activeMode]: newHistory }));
     setIsStreaming(true);
+    setIsAiLoading(true);
     setStreamingMessage('');
     try {
       const res = await fetch('/api/chat', {
@@ -357,13 +358,14 @@ export default function CoursePage() {
           }
         }
       }
-      const aiMsg: ChatMessage = { role: 'assistant', content: fullResponse, timestamp: new Date().toISOString() };
+      if (!fullResponse.trim()) { fullResponse = "I'm sorry, I wasn't able to generate a response. This may be because course materials aren't indexed yet. Please try rephrasing, or use the flag button to report this."; }
+    const aiMsg: ChatMessage = { role: 'assistant', content: fullResponse, timestamp: new Date().toISOString() };
       const finalHistory = [...newHistory, aiMsg];
       setModeHistories(prev => ({ ...prev, [activeMode]: finalHistory }));
       setStreamingMessage('');
       await saveSession(activeMode, finalHistory);
     } catch { }
-    finally { setIsStreaming(false); }
+    finally { setIsStreaming(false); setIsAiLoading(false); }
   };
 
   const regenerate = (aiMessageIndex: number) => {
