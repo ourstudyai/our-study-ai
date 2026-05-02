@@ -85,6 +85,7 @@ interface MessageActionsProps {
   courseName: string;
   onRegenerate: () => void;
   lastUserMsg: string;
+  autoSpeak?: boolean;
 }
 
 function stripMarkdown(text: string): string {
@@ -101,7 +102,7 @@ function stripMarkdown(text: string): string {
     .trim();
 }
 
-function MessageActions({ message, messageIndex, courseId, userId, userEmail, courseName, onRegenerate, lastUserMsg }: MessageActionsProps) {
+function MessageActions({ message, messageIndex, courseId, userId, userEmail, courseName, onRegenerate, lastUserMsg, autoSpeak }: MessageActionsProps) {
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -133,6 +134,20 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
   const saveTTSPrefs = (voice: string, rate: number) => {
     try { localStorage.setItem('ourstudyai_tts_prefs', JSON.stringify({ voice, rate })); } catch {}
   };
+
+  // Auto-speak when message arrives in auto-speech mode
+  useEffect(() => {
+    if (!autoSpeak || !message.content) return;
+    const utt = new SpeechSynthesisUtterance(stripMarkdown(message.content));
+    utt.rate = ttsRate;
+    if (ttsVoice) {
+      const found = window.speechSynthesis.getVoices().find(v => v.name === ttsVoice);
+      if (found) utt.voice = found;
+    }
+    utt.onend = () => setSpeaking(false);
+    window.speechSynthesis.cancel();
+    setTimeout(() => { window.speechSynthesis.speak(utt); setSpeaking(true); }, 100);
+  }, [autoSpeak, message.content]);
 
   const btnStyle = (active = false, danger = false): React.CSSProperties => ({
     background: 'none',
@@ -355,6 +370,16 @@ export default function CoursePage() {
   const [autoSend, setAutoSend] = useState(() => {
     try { return localStorage.getItem('ourstudyai_stt_autosend') === '1'; } catch { return false; }
   });
+  const [autoSpeak, setAutoSpeak] = useState(() => {
+    try { return localStorage.getItem('ourstudyai_autospeak') === '1'; } catch { return false; }
+  });
+  const toggleAutoSpeak = () => {
+    setAutoSpeak(prev => {
+      const next = !prev;
+      try { localStorage.setItem('ourstudyai_autospeak', next ? '1' : '0'); } catch {}
+      return next;
+    });
+  };
   const recognitionRef = useRef<any>(null);
 
   const handleSTT = () => {
@@ -374,29 +399,30 @@ export default function CoursePage() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
-    const baseInput = input;
+    let finalTranscript = '';
     recognition.onresult = (e: any) => {
       let interim = '';
-      let final = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          final += e.results[i][0].transcript;
+          finalTranscript += e.results[i][0].transcript + ' ';
         } else {
           interim += e.results[i][0].transcript;
         }
       }
-      if (final) {
-        if (autoSend) {
-          recognitionRef.current?.stop();
-          sendMessage((baseInput + ' ' + final).trim());
-        } else {
-          setInput(prev => (prev + ' ' + final).trim());
-        }
-      } else if (interim) {
-        setInput((baseInput + ' ' + interim).trim());
+      // Show live preview: committed finals + current interim
+      setInput((finalTranscript + interim).trim());
+    };
+    recognition.onspeechend = () => {
+      if (autoSend && finalTranscript.trim()) {
+        recognitionRef.current?.stop();
       }
     };
-    recognition.onend = () => setIsListening(false);
+    recognition.onend = () => {
+      setIsListening(false);
+      if (autoSend && finalTranscript.trim()) {
+        sendMessage(finalTranscript.trim());
+      }
+    };
     recognition.onerror = () => setIsListening(false);
     recognitionRef.current = recognition;
     recognition.start();
@@ -784,6 +810,7 @@ export default function CoursePage() {
                       courseName={course?.name ?? ''}
                       onRegenerate={() => regenerate(i)}
                       lastUserMsg={(() => { for (let j = i - 1; j >= 0; j--) { if (chatHistory[j].role === 'user') return chatHistory[j].content; } return ''; })()}
+                      autoSpeak={autoSpeak && i === chatHistory.length - 1 && !isStreaming}
                     />
                   </div>
                 )}
@@ -866,6 +893,11 @@ export default function CoursePage() {
                   style={{ fontSize: '0.52rem', padding: '1px 5px', borderRadius: '4px', border: 'none', cursor: 'pointer',
                     background: autoSend ? 'var(--gold)' : 'var(--border)', color: autoSend ? 'var(--navy)' : 'var(--text-muted)', fontWeight: 700, lineHeight: 1.4 }}>
                   {autoSend ? 'AUTO' : 'auto'}
+                </button>
+                <button onClick={toggleAutoSpeak} title={autoSpeak ? 'Auto-read ON' : 'Auto-read OFF'}
+                  style={{ fontSize: '0.52rem', padding: '1px 5px', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                    background: autoSpeak ? 'rgba(196,160,80,0.3)' : 'var(--border)', color: autoSpeak ? 'var(--gold)' : 'var(--text-muted)', fontWeight: 700, lineHeight: 1.4 }}>
+                  {autoSpeak ? '🔊' : '🔇'}
                 </button>
               </div>
               <button onClick={() => sendMessage()} disabled={isStreaming || !input.trim()}
