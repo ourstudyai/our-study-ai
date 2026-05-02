@@ -184,12 +184,48 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>
               <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', flex: 1 }}>Original Preview</span>
             </div>
-            <iframe
-              ref={iframeRef}
-              src={'/api/preview-proxy?materialId=' + encodeURIComponent(material.id)}
-              style={{ flex: 1, border: 'none', width: '100%', height: '100%', background: '#fff' }}
-              title="Material preview"
-            />
+            {freshUrl && (() => {
+              const url = freshUrl;
+              const lower = url.toLowerCase().split('?')[0];
+              const isPdf = lower.endsWith('.pdf');
+              const isImg = /\.(jpg|jpeg|png|gif|webp)$/.test(lower);
+              const isDocx = lower.endsWith('.docx') || lower.endsWith('.doc');
+              if (isPdf) return (
+                <iframe
+                  ref={iframeRef}
+                  src={'https://docs.google.com/viewer?url=' + encodeURIComponent(url) + '&embedded=true'}
+                  style={{ flex: 1, border: 'none', width: '100%', height: '100%', background: '#fff' }}
+                  title="PDF preview"
+                />
+              );
+              if (isImg) return (
+                <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12, background: '#111' }}>
+                  <img src={url} alt="preview" style={{ maxWidth: '100%', borderRadius: 8 }} />
+                </div>
+              );
+              if (isDocx) return (
+                <iframe
+                  ref={iframeRef}
+                  src={'https://docs.google.com/viewer?url=' + encodeURIComponent(url) + '&embedded=true'}
+                  style={{ flex: 1, border: 'none', width: '100%', height: '100%', background: '#fff' }}
+                  title="Document preview"
+                />
+              );
+              return (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Preview not available for this file type.</p>
+                  <a href={url} target="_blank" rel="noopener noreferrer"
+                    style={{ background: 'var(--gold)', color: 'var(--navy)', borderRadius: 8, padding: '10px 20px', fontWeight: 700, fontSize: '0.82rem', textDecoration: 'none' }}>
+                    Open File ↗
+                  </a>
+                </div>
+              );
+            })()}
+            {!freshUrl && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Loading preview...</p>
+              </div>
+            )}
           </div>
         )}
 

@@ -8,10 +8,10 @@ export async function POST(req: NextRequest) {
     const { targetUid, role, idToken } = await req.json();
     if (!targetUid || !role) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-    const session = req.cookies.get("session")?.value;
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const token = idToken || req.cookies.get("session")?.value;
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const decoded = await adminAuth.verifyIdToken(session);
+    const decoded = await adminAuth.verifyIdToken(token);
     const callerEmail = decoded.email || "";
     const callerSnap = await adminDb.collection("users").doc(decoded.uid).get();
     const callerRole = callerSnap.data()?.role || "student";

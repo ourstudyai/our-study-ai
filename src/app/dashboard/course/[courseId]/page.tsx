@@ -287,7 +287,7 @@ export default function CoursePage() {
       const { scrollTop, scrollHeight, clientHeight } = el;
       const distFromBottom = scrollHeight - scrollTop - clientHeight;
       setShowScrollDown(distFromBottom > 120);
-      setShowScrollUp(scrollTop > 200);
+      setShowScrollUp(scrollTop > 80);
     };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
@@ -395,13 +395,12 @@ export default function CoursePage() {
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
 
   const floatBtnStyle: React.CSSProperties = {
-    position: 'absolute', right: '14px',
-    width: '36px', height: '36px', borderRadius: '50%',
-    background: 'rgba(20,24,40,0.85)', border: '1px solid rgba(196,160,80,0.5)',
-    color: 'var(--gold)', fontSize: '1rem', cursor: 'pointer',
+    width: '40px', height: '40px', borderRadius: '50%',
+    background: 'rgba(20,24,40,0.92)', border: '2px solid var(--gold)',
+    color: 'var(--gold)', fontSize: '1.1rem', cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     backdropFilter: 'blur(6px)', transition: 'opacity 0.2s',
-    zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.6)',
   };
 
   return (
