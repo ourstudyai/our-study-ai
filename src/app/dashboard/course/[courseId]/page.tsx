@@ -81,44 +81,178 @@ interface MessageActionsProps {
   messageIndex: number;
   courseId: string;
   userId: string;
+  userEmail: string;
+  courseName: string;
   onRegenerate: () => void;
+  lastUserMsg: string;
 }
 
-function MessageActions({ message, messageIndex, courseId, userId, onRegenerate }: MessageActionsProps) {
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/`{1,3}[^`]*`{1,3}/g, '')
+    .replace(/\[(.+?)\]\(.+?\)/g, '$1')
+    .replace(/^>\s+/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/\n{2,}/g, '. ')
+    .trim();
+}
+
+function MessageActions({ message, messageIndex, courseId, userId, userEmail, courseName, onRegenerate, lastUserMsg }: MessageActionsProps) {
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
   const [copied, setCopied] = useState(false);
-  const btnStyle = (active = false): React.CSSProperties => ({
-    background: 'none', border: '1px solid ' + (active ? 'var(--gold)' : 'var(--border)'),
+  const [speaking, setSpeaking] = useState(false);
+  const [showDislikeNote, setShowDislikeNote] = useState(false);
+  const [dislikeNote, setDislikeNote] = useState('');
+  const [showFlagBox, setShowFlagBox] = useState(false);
+  const [flagNote, setFlagNote] = useState('');
+  const [flagSent, setFlagSent] = useState(false);
+  const [flagSending, setFlagSending] = useState(false);
+
+  const btnStyle = (active = false, danger = false): React.CSSProperties => ({
+    background: 'none',
+    border: '1px solid ' + (danger ? 'rgba(239,68,68,0.4)' : active ? 'var(--gold)' : 'var(--border)'),
     borderRadius: '6px', padding: '4px 8px', cursor: 'pointer',
-    color: active ? 'var(--gold)' : 'var(--text-muted)', fontSize: '0.78rem',
+    color: danger ? '#ef4444' : active ? 'var(--gold)' : 'var(--text-muted)', fontSize: '0.78rem',
     display: 'inline-flex', alignItems: 'center', gap: '4px', transition: 'all 0.15s ease',
   });
-  const sendFeedback = async (type: 'like' | 'dislike') => {
-    try { await addDoc(collection(db, 'feedback'), { type, messageContent: message.content, courseId, userId, timestamp: serverTimestamp() }); }
-    catch { }
+
+  const sendFeedback = async (type: 'like' | 'dislike', note?: string) => {
+    try {
+      await addDoc(collection(db, 'feedback'), {
+        type, messageContent: message.content, courseId, userId, userEmail,
+        note: note || '', timestamp: serverTimestamp(),
+      });
+    } catch { }
   };
+
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { }
   };
+
+  const handleTTS = () => {
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const utt = new SpeechSynthesisUtterance(stripMarkdown(message.content));
+    utt.onend = () => setSpeaking(false);
+    utt.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utt);
+    setSpeaking(true);
+  };
+
+  const handleDislike = () => {
+    if (!disliked) {
+      setDisliked(true);
+      setLiked(false);
+      setShowDislikeNote(true);
+    }
+  };
+
+  const submitDislike = async () => {
+    await sendFeedback('dislike', dislikeNote);
+    setShowDislikeNote(false);
+  };
+
+  const submitFlag = async () => {
+    if (!flagNote.trim()) return;
+    setFlagSending(true);
+    try {
+      await addDoc(collection(db, 'flags'), {
+        userId, userEmail, courseId, courseName,
+        question: lastUserMsg.substring(0, 500),
+        aiResponse: message.content.substring(0, 500),
+        studentDescription: flagNote,
+        status: 'open',
+        createdAt: serverTimestamp(),
+      });
+      setFlagSent(true);
+      setFlagNote('');
+      setTimeout(() => { setShowFlagBox(false); setFlagSent(false); }, 2000);
+    } catch { }
+    finally { setFlagSending(false); }
+  };
+
   return (
-    <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap', paddingLeft: '4px' }}>
-      <button style={btnStyle(liked)} onClick={() => { if (!liked) { setLiked(true); setDisliked(false); sendFeedback('like'); } }} title='Helpful'>
-        <i className='fa-regular fa-thumbs-up' />
-      </button>
-      <button style={btnStyle(disliked)} onClick={() => { if (!disliked) { setDisliked(true); setLiked(false); sendFeedback('dislike'); } }} title='Not helpful'>
-        <i className='fa-regular fa-thumbs-down' />
-      </button>
-      <button style={btnStyle(copied)} onClick={handleCopy} title='Copy'>
-        <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'} />
-        <span>{copied ? 'Copied' : 'Copy'}</span>
-      </button>
-      <button style={btnStyle()} onClick={onRegenerate} title='Retry'>
-        <i className='fa-solid fa-rotate-right' /><span>Retry</span>
-      </button>
-      <button style={btnStyle()} onClick={async () => { if (navigator.share) { try { await navigator.share({ text: message.content }); } catch { } } else handleCopy(); }} title='Share'>
-        <i className='fa-solid fa-share-from-square' />
-      </button>
+    <div style={{ paddingLeft: '4px', marginTop: '6px' }}>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        <button style={btnStyle(liked)} onClick={() => { if (!liked) { setLiked(true); setDisliked(false); setShowDislikeNote(false); sendFeedback('like'); } }} title='Helpful'>
+          <i className='fa-regular fa-thumbs-up' />
+        </button>
+        <button style={btnStyle(disliked)} onClick={handleDislike} title='Not helpful'>
+          <i className='fa-regular fa-thumbs-down' />
+        </button>
+        <button style={btnStyle(copied)} onClick={handleCopy} title='Copy'>
+          <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'} />
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+        <button onClick={handleTTS} title={speaking ? 'Stop reading' : 'Read aloud'}
+          style={{ ...btnStyle(speaking), color: speaking ? 'var(--gold)' : 'var(--text-muted)', border: '1px solid ' + (speaking ? 'var(--gold)' : 'var(--border)') }}>
+          <i className={speaking ? 'fa-solid fa-stop' : 'fa-solid fa-volume-high'} />
+        </button>
+        <button style={btnStyle()} onClick={onRegenerate} title='Retry'>
+          <i className='fa-solid fa-rotate-right' /><span>Retry</span>
+        </button>
+        <button style={btnStyle()} onClick={async () => { if (navigator.share) { try { await navigator.share({ text: message.content }); } catch { } } else handleCopy(); }} title='Share'>
+          <i className='fa-solid fa-share-from-square' />
+        </button>
+        <button style={btnStyle(showFlagBox, true)} onClick={() => setShowFlagBox(f => !f)} title='Flag this response'>
+          <i className='fa-solid fa-flag' />
+        </button>
+      </div>
+
+      {showDislikeNote && (
+        <div style={{ marginTop: '8px', display: 'flex', gap: '6px', alignItems: 'flex-end', maxWidth: '360px' }}>
+          <textarea
+            value={dislikeNote}
+            onChange={e => setDislikeNote(e.target.value)}
+            placeholder='What was wrong? (optional)'
+            rows={2}
+            style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none',
+              background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+          />
+          <button onClick={submitDislike}
+            style={{ padding: '6px 12px', borderRadius: '8px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+            Send
+          </button>
+        </div>
+      )}
+
+      {showFlagBox && (
+        <div style={{ marginTop: '8px', maxWidth: '360px', padding: '10px', borderRadius: '10px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+          <p style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 700, marginBottom: '6px' }}>🚩 Flag this response</p>
+          {flagSent ? (
+            <p style={{ fontSize: '0.78rem', color: 'var(--gold)' }}>✅ Flagged — thank you!</p>
+          ) : (
+            <>
+              <textarea
+                value={flagNote}
+                onChange={e => setFlagNote(e.target.value)}
+                placeholder='Describe the issue (required)...'
+                rows={3}
+                style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none', boxSizing: 'border-box',
+                  background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+              />
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                <button onClick={() => setShowFlagBox(false)}
+                  style={{ flex: 1, padding: '5px', borderRadius: '7px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button onClick={submitFlag} disabled={!flagNote.trim() || flagSending}
+                  style={{ flex: 1, padding: '5px', borderRadius: '7px', background: '#ef4444', color: '#fff', border: 'none', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', opacity: (!flagNote.trim() || flagSending) ? 0.5 : 1 }}>
+                  {flagSending ? 'Sending...' : 'Submit Flag'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -158,6 +292,32 @@ export default function CoursePage() {
   const userMsgRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevHistoryLenRef = useRef(0);
+
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const handleSTT = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) { alert('Speech recognition not supported in this browser. Try Chrome.'); return; }
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+    recognition.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      setInput(prev => prev ? prev + ' ' + transcript : transcript);
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  };
 
   const chatHistory = modeHistories[activeMode] ?? [];
   const year = userProfile?.year ?? 1;
@@ -523,7 +683,16 @@ export default function CoursePage() {
                 </div>
                 {msg.role === 'assistant' && (
                   <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                    <MessageActions message={msg} messageIndex={i} courseId={courseId} userId={uid} onRegenerate={() => regenerate(i)} />
+                    <MessageActions
+                      message={msg}
+                      messageIndex={i}
+                      courseId={courseId}
+                      userId={uid}
+                      userEmail={firebaseUser?.email ?? ''}
+                      courseName={course?.name ?? ''}
+                      onRegenerate={() => regenerate(i)}
+                      lastUserMsg={(() => { for (let j = i - 1; j >= 0; j--) { if (chatHistory[j].role === 'user') return chatHistory[j].content; } return ''; })()}
+                    />
                   </div>
                 )}
               </div>
@@ -589,6 +758,17 @@ export default function CoursePage() {
                   minWidth: 0, minHeight: '44px', maxHeight: '140px', boxSizing: 'border-box',
                 }}
               />
+              <button onClick={handleSTT} title={isListening ? 'Stop listening' : 'Speak'}
+                style={{
+                  flexShrink: 0, padding: '10px 12px', borderRadius: '12px',
+                  background: isListening ? '#ef4444' : 'var(--navy-card)',
+                  color: isListening ? '#fff' : 'var(--text-muted)',
+                  border: '1px solid ' + (isListening ? '#ef4444' : 'var(--border)'),
+                  fontSize: '1rem', cursor: 'pointer', transition: 'all 0.2s',
+                }}
+              >
+                <i className={isListening ? 'fa-solid fa-stop' : 'fa-solid fa-microphone'} />
+              </button>
               <button onClick={() => sendMessage()} disabled={isStreaming || !input.trim()}
                 style={{
                   flexShrink: 0, padding: '10px 16px', borderRadius: '12px',
