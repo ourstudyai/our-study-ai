@@ -17,28 +17,28 @@ interface SemanticChunk {
 
 /**
  * Strips headings that have no body text beneath them before the next heading.
- *
- * Rule: a heading is kept only if at least one non-blank, non-heading line
- * follows it before the next heading or end of document. A heading followed
- * immediately by another heading — or by nothing — is a TOC/orphan entry
- * and is removed. Bold text, inline formatting, and normal prose all count
- * as body text and protect the heading above them. No percentage boundary,
- * no minimum count — pure structural signal.
+ * A heading is kept only if at least one non-blank, non-heading line follows it
+ * before the next heading or end of document.
+ * Named section headings (Introduction, Conclusion, etc.) are always kept
+ * even if they lead directly into a subheading with no body text.
  */
 function stripTOC(markdown: string): string {
   const lines = markdown.split('\n');
   const headingPattern = /^#{1,4}\s+.+/;
+  const protectedHeadings = /^#{1,4}\s+(introduction|conclusion|preface|foreword|abstract|bibliography|references|appendix|overview|summary|acknowledgements?)/i;
   const toRemove = new Set<number>();
 
   for (let i = 0; i < lines.length; i++) {
-    if (!headingPattern.test(lines[i].trim())) continue;
+    const trimmed = lines[i].trim();
+    if (!headingPattern.test(trimmed)) continue;
+    if (protectedHeadings.test(trimmed)) continue;
 
     let hasBody = false;
     for (let j = i + 1; j < lines.length; j++) {
       const next = lines[j].trim();
-      if (next === '') continue;             // blank line — keep scanning
-      if (headingPattern.test(next)) break;  // next heading hit — no body found
-      hasBody = true;                        // any other non-blank line = body text
+      if (next === '') continue;            // blank lines — keep scanning
+      if (headingPattern.test(next)) break; // next heading — no body found
+      hasBody = true;                       // any prose line = body text
       break;
     }
 
