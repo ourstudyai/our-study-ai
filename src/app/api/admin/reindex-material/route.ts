@@ -15,6 +15,40 @@ interface SemanticChunk {
   wordCount: number;
 }
 
+/**
+ * Strips headings that have no body text beneath them before the next heading.
+ *
+ * Rule: a heading is kept only if at least one non-blank, non-heading line
+ * follows it before the next heading or end of document. A heading followed
+ * immediately by another heading — or by nothing — is a TOC/orphan entry
+ * and is removed. Bold text, inline formatting, and normal prose all count
+ * as body text and protect the heading above them. No percentage boundary,
+ * no minimum count — pure structural signal.
+ */
+function stripTOC(markdown: string): string {
+  const lines = markdown.split('\n');
+  const headingPattern = /^#{1,4}\s+.+/;
+  const toRemove = new Set<number>();
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!headingPattern.test(lines[i].trim())) continue;
+
+    let hasBody = false;
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j].trim();
+      if (next === '') continue;             // blank line — keep scanning
+      if (headingPattern.test(next)) break;  // next heading hit — no body found
+      hasBody = true;                        // any other non-blank line = body text
+      break;
+    }
+
+    if (!hasBody) toRemove.add(i);
+  }
+
+  if (toRemove.size === 0) return markdown;
+  return lines.filter((_, idx) => !toRemove.has(idx)).join('\n');
+}
+
 function semanticChunk(markdown: string): SemanticChunk[] {
   const lines = markdown.split('\n');
   const chunks: SemanticChunk[] = [];
@@ -53,7 +87,6 @@ function semanticChunk(markdown: string): SemanticChunk[] {
         wordCount: words.length,
       });
     } else {
-      // Split large sections at paragraph boundaries
       const paragraphs = fullText.split(/\n\n+/);
       let buffer: string[] = [];
       let bufferWords = 0;
@@ -96,7 +129,6 @@ function semanticChunk(markdown: string): SemanticChunk[] {
       flushSection();
       const level = headingMatch[1].length;
       const heading = headingMatch[2].trim();
-      // Pop stack to current level
       while (headingStack.length > 0 && headingStack[headingStack.length - 1].level >= level) {
         headingStack.pop();
       }
@@ -132,15 +164,13 @@ export async function POST(req: NextRequest) {
     const finalStatus = shouldIndex ? 'approved' : 'approved_hidden';
 
     if (shouldIndex) {
-      // Delete old chunks
       const oldChunks = await adminDb.collection(CHUNKS_COL)
         .where('materialId', '==', materialId).get();
       const deleteBatch = adminDb.batch();
       oldChunks.docs.forEach(d => deleteBatch.update(d.ref, { deleted: true }));
       await deleteBatch.commit();
 
-      // Semantic chunking
-      const chunks = semanticChunk(extractedText);
+      const chunks = semanticChunk(stripTOC(extractedText));
 
       const writeBatch = adminDb.batch();
       chunks.forEach((chunk, i) => {
