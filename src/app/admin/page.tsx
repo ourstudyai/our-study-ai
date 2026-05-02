@@ -82,7 +82,12 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
 
         const topContributors = Object.entries(contribCount)
           .sort((a, b) => (b[1] as number) - (a[1] as number))
-          .slice(0, 5);
+          .slice(0, 5)
+          .map(([uid, count]) => {
+            const u = users.find((x: any) => x.id === uid);
+            const label = u ? (u.displayName || u.email || uid) : uid;
+            return [label, count];
+          });
 
         // User stats
         const userByRole: Record<string, number> = {};
@@ -99,6 +104,20 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
           const lastSeen = u.lastSeen?.toMillis?.() || new Date(u.lastSeen || 0).getTime();
           if (lastSeen && now - lastSeen > oneWeek) inactiveCount++;
         });
+
+        // Top active users this week (by lastSeen within 7 days)
+        const activeThisWeek = users
+          .filter((u: any) => {
+            const lastSeen = u.lastSeen?.toMillis?.() || new Date(u.lastSeen || 0).getTime();
+            return lastSeen && now - lastSeen < oneWeek;
+          })
+          .sort((a: any, b: any) => {
+            const aT = a.lastSeen?.toMillis?.() || 0;
+            const bT = b.lastSeen?.toMillis?.() || 0;
+            return bT - aT;
+          })
+          .slice(0, 5)
+          .map((u: any) => [u.displayName || u.email || u.id, u.lastSeen?.toDate?.()?.toLocaleDateString?.() || 'recently']);
 
         // Course stats
         const courseByDept: Record<string, number> = {};
@@ -128,7 +147,7 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
         setData({
           mats, matByStatus, matByDept, matByType, topContributors, totalWords,
           users, userByRole, userByDept, newThisWeek, inactiveCount,
-          courses, courseByDept,
+          courses, courseByDept, activeThisWeek,
           flags, openFlags, resolvedFlags,
           reports,
           todaySessions, todayMins, totalSessions, totalMinutes,
@@ -202,6 +221,12 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
           <div style={{ marginTop: 10 }}>
             {Object.entries(data.userByDept).map(([dept, count]: any) => row(dept, count))}
           </div>
+          {data.activeThisWeek.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>Most Active This Week</p>
+              {data.activeThisWeek.map(([name, date]: any) => row(name, date))}
+            </div>
+          )}
         </>
       ))}
 
