@@ -64,8 +64,9 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, contentList, aiSummary });
-  } catch (err) {
-    console.error('index-material error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch (err: any) {
+    const message = err?.message || String(err);
+    console.error('index-material error:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

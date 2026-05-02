@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import SettingsPanel from '@/components/SettingsPanel';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { signOut } from '@/lib/firebase/auth';
@@ -28,6 +29,7 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
 
@@ -245,6 +247,14 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
         {navBtn('/library', '📚', 'Library')}
         {navBtn('/contribute', '📤', 'Contribute')}
         {isAdmin && navBtn('/admin', '🛡️', 'Admin Panel')}
+        <button
+          onClick={() => setShowSettings(true)}
+          className="w-full text-left p-3 rounded-xl mb-1 flex items-center gap-3 transition-all"
+          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+        >
+          <span>⚙️</span>
+          <span className="text-sm font-medium">Settings</span>
+        </button>
       </div>
 
       {/* Footer — profile button */}
@@ -264,5 +274,7 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
         </button>
       </div>
     </div>
+
+    <SettingsPanel externalOpen={showSettings} onClose={() => setShowSettings(false)} />
   );
 }
