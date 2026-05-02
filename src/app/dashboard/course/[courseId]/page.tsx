@@ -626,7 +626,7 @@ export default function CoursePage() {
           }
         }
       }
-      if (!fullResponse.trim()) { fullResponse = "I'm sorry, I wasn't able to generate a response. This may be because course materials aren't indexed yet. Please try rephrasing, or use the flag button to report this."; }
+      if (!fullResponse.trim()) { fullResponse = "No response was returned. This typically means the query did not match any indexed material for this course, or the model returned an empty completion. Try rephrasing your question, narrowing the scope, or switching modes. If the problem persists, use the flag button to report it."; }
     const aiMsg: ChatMessage = { role: 'assistant', content: fullResponse, timestamp: new Date().toISOString() };
       const finalHistory = [...newHistory, aiMsg];
       setModeHistories(prev => ({ ...prev, [activeMode]: finalHistory }));
@@ -1030,7 +1030,7 @@ export default function CoursePage() {
 
 
 
-      <SettingsPanel hideTrigger={true} externalOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
+      <SettingsPanel externalOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
     </div>
   );
 }
