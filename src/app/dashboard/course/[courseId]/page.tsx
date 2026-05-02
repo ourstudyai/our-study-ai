@@ -269,6 +269,13 @@ export default function CoursePage() {
         userMsgRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 50);
     }
+    // A new AI message was just added (history grew and last message is assistant)
+    if (currentLen > prevLen && chatHistory[currentLen - 1]?.role === 'assistant') {
+      const idx = currentLen - 1;
+      setTimeout(() => {
+        userMsgRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
+    }
     prevHistoryLenRef.current = currentLen;
   }, [chatHistory]);
 
@@ -532,7 +539,7 @@ export default function CoursePage() {
           )}
 
           {/* INPUT */}
-          <div className='flex-shrink-0 border-t' style={{ borderColor: 'var(--border)', padding: '8px 12px' }}>
+          <div className='flex-shrink-0 border-t' style={{ borderColor: 'var(--border)', padding: '8px 12px', paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
             <div className='md:hidden' style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
               <button onClick={() => setDrawerOpen(true)}
                 style={{ fontSize: '0.72rem', padding: '4px 10px', borderRadius: '8px', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--gold)', cursor: 'pointer' }}>
