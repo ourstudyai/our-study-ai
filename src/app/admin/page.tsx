@@ -228,11 +228,13 @@ export default function AdminPage() {
                         {m.confidence && <span style={{ fontSize: '0.62rem', color: m.confidence === 'high' ? '#22c55e' : '#eab308' }}>● {m.confidence}</span>}
                         {m.wordCount ? <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span> : null}
                       </div>
-                      {(m.suggestedCourseName || m.detectedCourseName) && (
-                        <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-                          📖 {m.suggestedCourseName || m.detectedCourseName}
+                      <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                          {m.confirmedCourseName
+                            ? <span>✅ {m.confirmedCourseName}</span>
+                            : (m.suggestedCourseName || m.detectedCourseName)
+                            ? <span style={{opacity:0.6}}>📖 {m.suggestedCourseName || m.detectedCourseName}</span>
+                            : null}
                         </p>
-                      )}
                     </div>
                     <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                       {isHighConf && <span style={{ fontSize: '0.6rem', background: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: 99, padding: '1px 6px' }}>Auto-ready</span>}
