@@ -9,7 +9,6 @@ import PastQuestionsPanel from '@/components/course/PastQuestionsPanel';
 import AOCPanel from '@/components/course/AOCPanel';
 import StudyMemoryPanel from '@/components/course/StudyMemoryPanel';
 import MaterialsPanel from '@/components/course/MaterialsPanel';
-import NotesPanel from '@/components/course/NotesPanel';
 import SettingsPanel from '@/components/SettingsPanel';
 import ReactMarkdown from 'react-markdown';
 import { useSettings } from '@/components/AppShell';
@@ -20,7 +19,7 @@ import {
 import { db } from '@/lib/firebase/config';
 
 type StudyMode = 'plain_explainer' | 'practice_questions' | 'exam_preparation' | 'research';
-type SideTab = 'materials' | 'past-questions' | 'aoc' | 'memory' | 'notes';
+type SideTab = 'materials' | 'past-questions' | 'aoc' | 'memory';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -222,7 +221,7 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
 
   return (
     <div style={{ paddingLeft: '4px', marginTop: '6px' }}>
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none' }}>
         <button style={btnStyle(liked)} onClick={handleLike} title='Helpful'>
           <i className='fa-regular fa-thumbs-up' />
         </button>
@@ -231,7 +230,6 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
         </button>
         <button style={btnStyle(copied)} onClick={handleCopy} title='Copy'>
           <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'} />
-          <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
         <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
           <button onClick={handleTTS} title={speaking ? 'Stop reading' : 'Read aloud'}
@@ -264,7 +262,7 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
           )}
         </div>
         <button style={btnStyle()} onClick={onRegenerate} title='Retry'>
-          <i className='fa-solid fa-rotate-right' /><span>Retry</span>
+          <i className='fa-solid fa-rotate-right' />
         </button>
         <button style={btnStyle()} onClick={async () => { if (navigator.share) { try { await navigator.share({ text: message.content }); } catch { } } else handleCopy(); }} title='Share'>
           <i className='fa-solid fa-share-from-square' />
@@ -344,6 +342,7 @@ export default function CoursePage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [topicsOpen, setTopicsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
   const [topics, setTopics] = useState<{ materialName: string; items: string[] }[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
   const [archivedSessions, setArchivedSessions] = useState<ArchivedSession[]>([]);
@@ -368,7 +367,6 @@ export default function CoursePage() {
 
   const [isListening, setIsListening] = useState(false);
   const [micPopoverOpen, setMicPopoverOpen] = useState(false);
-  const micLastTapRef = useRef<number>(0);
   const [autoSend, setAutoSend] = useState(() => {
     try { return localStorage.getItem('ourstudyai_stt_autosend') === '1'; } catch { return false; }
   });
@@ -383,6 +381,8 @@ export default function CoursePage() {
     });
   };
   const recognitionRef = useRef<any>(null);
+  const finalTranscriptRef = useRef('');
+  const micPressTimer = useRef<any>(null);
   const finalTranscriptRef = useRef('');
 
   const handleSTT = () => {
@@ -424,6 +424,7 @@ export default function CoursePage() {
       const finalText = finalTranscriptRef.current.trim();
       finalTranscriptRef.current = '';
       if (autoSend && finalText) {
+        setInput('');
         sendMessage(finalText);
       }
     };
@@ -673,7 +674,6 @@ export default function CoursePage() {
 
   const sideTabs: { id: SideTab; label: string; icon: string }[] = [
     { id: 'materials', label: 'Materials', icon: '📂' },
-    { id: 'notes', label: 'Notes', icon: '📝' },
     { id: 'past-questions', label: 'Past Q', icon: '🗒' },
     { id: 'aoc', label: 'AOC', icon: '🎯' },
     { id: 'memory', label: 'Memory', icon: '🧠' },
@@ -714,17 +714,17 @@ export default function CoursePage() {
               {sessionSaving ? '...' : '+ New'}
             </button>
           )}
-          <button onClick={() => { loadArchives(); setHistoryOpen(true); }}
-            className='flex-shrink-0 text-xs px-2 py-1 rounded border'
-            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-            title='View chat history'>
-            🕐
-          </button>
           <button onClick={() => { loadTopics(); setTopicsOpen(true); }}
             className='flex-shrink-0 text-xs px-2 py-1 rounded border'
             style={{ borderColor: 'var(--border)', color: 'var(--gold)' }}
             title='Course topics'>
-            🗂
+            📋
+          </button>
+          <button onClick={() => setSettingsPanelOpen(true)}
+            className='flex-shrink-0 text-xs px-2 py-1 rounded border'
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+            title='Appearance settings'>
+            ⚙️
           </button>
           <button onClick={() => setSidebarOpen(!sidebarOpen)}
             className='hidden md:block flex-shrink-0 text-xs px-2 py-1 rounded border'
@@ -850,7 +850,7 @@ export default function CoursePage() {
 
           {/* Floating scroll buttons */}
           {(showScrollUp || showScrollDown) && (
-            <div style={{ position: 'fixed', right: 14, top: '50vh', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 14, zIndex: 999 }}>
+            <div style={{ position: 'fixed', right: 14, top: '42vh', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 14, zIndex: 999 }}>
               {showScrollUp && (
                 <button onClick={scrollToTop} style={{ ...floatBtnStyle, position: 'static' }} title='Scroll to top'>↑</button>
               )}
@@ -891,12 +891,12 @@ export default function CoursePage() {
                       zIndex: 50, minWidth: '130px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
                     }}>
                       <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Voice options</p>
-                      <button onClick={() => { toggleAutoSend(); }}
+                      <button onClick={() => toggleAutoSend()}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: autoSend ? 'rgba(196,160,80,0.12)' : 'transparent', color: autoSend ? 'var(--gold)' : 'var(--text-secondary)', fontSize: '0.72rem', cursor: 'pointer' }}>
                         <span>Auto-send</span>
                         <span style={{ fontWeight: 700 }}>{autoSend ? 'ON' : 'off'}</span>
                       </button>
-                      <button onClick={() => { toggleAutoSpeak(); }}
+                      <button onClick={() => toggleAutoSpeak()}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: autoSpeak ? 'rgba(196,160,80,0.12)' : 'transparent', color: autoSpeak ? 'var(--gold)' : 'var(--text-secondary)', fontSize: '0.72rem', cursor: 'pointer' }}>
                         <span>Auto-read</span>
                         <span>{autoSpeak ? '🔊' : '🔇'}</span>
@@ -904,28 +904,27 @@ export default function CoursePage() {
                     </div>
                   )}
                   <button
-                    onClick={() => {
-                      const now = Date.now();
-                      if (now - micLastTapRef.current < 350) {
-                        setMicPopoverOpen(prev => !prev);
-                        micLastTapRef.current = 0;
-                      } else {
-                        micLastTapRef.current = now;
-                        setTimeout(() => {
-                          if (Date.now() - micLastTapRef.current >= 340) {
-                            handleSTT();
-                            setMicPopoverOpen(false);
-                          }
-                        }, 360);
+                    onMouseDown={() => { micPressTimer.current = setTimeout(() => { setMicPopoverOpen(prev => !prev); }, 400); }}
+                    onMouseUp={() => { clearTimeout(micPressTimer.current); }}
+                    onMouseLeave={() => { clearTimeout(micPressTimer.current); }}
+                    onTouchStart={() => { micPressTimer.current = setTimeout(() => { setMicPopoverOpen(prev => !prev); }, 400); }}
+                    onTouchEnd={(e) => {
+                      if (micPressTimer.current) {
+                        clearTimeout(micPressTimer.current);
+                        micPressTimer.current = null;
+                        if (!micPopoverOpen) { handleSTT(); }
                       }
+                      setMicPopoverOpen(false);
+                      e.preventDefault();
                     }}
-                    title={isListening ? 'Stop (double-tap for options)' : 'Speak (double-tap for options)'}
+                    onClick={() => { if (!micPopoverOpen) handleSTT(); else setMicPopoverOpen(false); }}
+                    title={isListening ? 'Stop · Hold for options' : 'Speak · Hold for options'}
                     style={{
                       padding: '10px 12px', borderRadius: '12px',
                       background: isListening ? '#ef4444' : micPopoverOpen ? 'rgba(196,160,80,0.2)' : 'var(--navy-card)',
                       color: isListening ? '#fff' : micPopoverOpen ? 'var(--gold)' : 'var(--text-muted)',
                       border: '1px solid ' + (isListening ? '#ef4444' : micPopoverOpen ? 'var(--gold)' : 'var(--border)'),
-                      fontSize: '1rem', cursor: 'pointer', transition: 'all 0.2s',
+                      fontSize: '1rem', cursor: 'pointer', transition: 'all 0.2s', userSelect: 'none',
                     }}
                   >
                     <i className={isListening ? 'fa-solid fa-stop' : 'fa-solid fa-microphone'} />
@@ -966,7 +965,6 @@ export default function CoursePage() {
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
               {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={setActiveContext} activeFileName={activeContext?.fileName ?? null} onSendMessage={sendMessage} />}
-              {activeSideTab === 'notes' && <NotesPanel courseId={courseId} userId={uid} />}
               {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
               {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
               {activeSideTab === 'memory' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} />}
@@ -999,7 +997,6 @@ export default function CoursePage() {
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
               {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={ctx => { setActiveContext(ctx); if (ctx) setDrawerOpen(false); }} activeFileName={activeContext?.fileName ?? null} onSendMessage={text => { sendMessage(text); setDrawerOpen(false); }} />}
-              {activeSideTab === 'notes' && <NotesPanel courseId={courseId} userId={uid} />}
               {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
               {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
               {activeSideTab === 'memory' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} />}
@@ -1094,7 +1091,7 @@ export default function CoursePage() {
         </div>
       )}
 
-      <SettingsPanel />
+      <SettingsPanel hideTrigger={true} externalOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
     </div>
   );
 }

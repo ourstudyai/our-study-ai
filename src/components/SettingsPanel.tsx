@@ -31,9 +31,11 @@ const AI_FONTS: { id: AIFont; label: string; sample: string; family: string }[] 
     { id: 'literata', label: 'Literata', sample: 'Built for comprehension', family: 'Literata, Georgia, serif' },
 ];
 
-export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: boolean }) {
+export default function SettingsPanel({ hideTrigger = false, externalOpen = false, onClose }: { hideTrigger?: boolean; externalOpen?: boolean; onClose?: () => void }) {
     const { settings, update } = useSettings();
     const [open, setOpen] = useState(false);
+    const isOpen = open || externalOpen;
+    const handleClose = () => { setOpen(false); if (onClose) onClose(); };
 
     return (
         <>
@@ -57,7 +59,7 @@ export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: b
                 </button>
             )}
 
-            {open && (
+            {isOpen && (
                 <div
                     style={{
                         position: 'fixed', inset: 0, zIndex: 200,
@@ -78,7 +80,7 @@ export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: b
                             <h2 style={{ fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '1.1rem', fontWeight: 700 }}>
                                 Appearance
                             </h2>
-                            <button onClick={() => setOpen(false)}
+                            <button onClick={handleClose}
                                 style={{ color: 'var(--text-muted)', fontSize: '1.2rem', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>✕</button>
                         </div>
 
@@ -152,9 +154,6 @@ export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: b
                         <SectionLabel top={20}>AI Response Font Size</SectionLabel>
                         <FontSizeControl value={settings.aiFontSize} onChange={v => update({ aiFontSize: v })} label="AI" />
 
-                        <SectionLabel top={20}>Settings Button Position</SectionLabel>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '8px' }}>Distance from top of screen</p>
-                        <PositionSlider value={settings.settingsBtnTop} min={60} max={600} onChange={v => update({ settingsBtnTop: v })} unit="px from top" />
 
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textAlign: 'center', marginTop: '20px' }}>
                             Settings saved automatically
