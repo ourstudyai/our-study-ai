@@ -831,7 +831,7 @@ export default function AdminPage() {
                     {actionLoading ? 'Re-indexing…' : '↺ Re-index chunks'}
                   </button>
                 )}
-                {selected.status === 'approved' && selected.extractedText && (
+                {selected.status === 'approved' && (
                   <button onClick={async () => {
                     if (refreshLoading) return;
                     setRefreshLoading(true);
@@ -841,8 +841,11 @@ export default function AdminPage() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ materialId: selected.id, action: 'add' }),
                       });
-                      if (res.ok) { alert('✅ Topics refreshed.'); }
-                      else { const d = await res.json(); alert('❌ Failed: ' + (d.error || res.status)); }
+                      const d = await res.json();
+                      if (res.ok) { alert('✅ Topics refreshed successfully.'); }
+                      else { alert('❌ Failed: ' + (d.error || `Status ${res.status}`)); }
+                    } catch (e) {
+                      alert('❌ Network error: ' + e.message);
                     } finally { setRefreshLoading(false); }
                   }} disabled={refreshLoading || actionLoading} style={{
                     width: '100%', padding: '11px', background: 'transparent',
