@@ -844,8 +844,8 @@ export default function AdminPage() {
                       const d = await res.json();
                       if (res.ok) { alert('✅ Topics refreshed successfully.'); }
                       else { alert('❌ Failed: ' + (d.error || `Status ${res.status}`)); }
-                    } catch (e) {
-                      alert('❌ Network error: ' + e.message);
+                    } catch (e: any) {
+                      alert('❌ Network error: ' + e?.message);
                     } finally { setRefreshLoading(false); }
                   }} disabled={refreshLoading || actionLoading} style={{
                     width: '100%', padding: '11px', background: 'transparent',
