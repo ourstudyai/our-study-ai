@@ -225,6 +225,7 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
   );
 
   return (
+  <>
     <div className="fixed inset-0 z-50 md:hidden flex flex-col animate-fade-in" style={{ background: 'var(--navy)' }}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
@@ -276,5 +277,6 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
     </div>
 
     <SettingsPanel externalOpen={showSettings} onClose={() => setShowSettings(false)} />
+  </>
   );
 }
