@@ -531,11 +531,15 @@ export default function CoursePage() {
           </div>
 
           {/* Floating scroll buttons */}
-          {showScrollUp && (
-            <button onClick={scrollToTop} style={{ ...floatBtnStyle, bottom: '96px' }} title='Scroll to top'>↑</button>
-          )}
-          {showScrollDown && (
-            <button onClick={scrollToBottom} style={{ ...floatBtnStyle, bottom: '52px' }} title='Scroll to bottom'>↓</button>
+          {(showScrollUp || showScrollDown) && (
+            <div style={{ position: 'absolute', right: 14, bottom: 80, display: 'flex', flexDirection: 'column', gap: 6, zIndex: 20 }}>
+              {showScrollUp && (
+                <button onClick={scrollToTop} style={{ ...floatBtnStyle, position: 'static' }} title='Scroll to top'>↑</button>
+              )}
+              {showScrollDown && (
+                <button onClick={scrollToBottom} style={{ ...floatBtnStyle, position: 'static' }} title='Scroll to bottom'>↓</button>
+              )}
+            </div>
           )}
 
           {/* INPUT */}

@@ -68,14 +68,17 @@ export default function AdminPage() {
   const [reassignCourseId, setReassignCourseId] = useState('');
 
   async function handleReassign(materialId: string, courseId: string, courseName: string) {
-    const idToken = await firebaseUser?.getIdToken(true);
-    const res = await fetch('/api/reassign-material', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ materialId, courseId, courseName, mode: 'primary', idToken }),
-    });
-    if (res.ok) { alert('Reassigned successfully!'); setReassigning(null); setReassignCourseId(''); await load(); }
-    else { const d = await res.json(); alert('Failed: ' + (d.error || res.status)); }
+    try {
+      const idToken = await firebaseUser?.getIdToken(true);
+      if (!idToken) { alert('Not authenticated. Please refresh and try again.'); return; }
+      const res = await fetch('/api/reassign-material', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materialId, courseId, courseName, mode: 'primary', idToken }),
+      });
+      if (res.ok) { alert('Reassigned successfully!'); setReassigning(null); setReassignCourseId(''); await load(); }
+      else { const d = await res.json(); alert('Failed: ' + (d.error || res.status)); }
+    } catch (e: any) { alert('Error: ' + e.message); }
   }
 
   const load = useCallback(async () => {
