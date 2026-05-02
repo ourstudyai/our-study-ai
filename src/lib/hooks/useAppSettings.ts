@@ -1,6 +1,6 @@
 // src/lib/hooks/useAppSettings.ts
 import { useState, useEffect, useCallback } from 'react';
-import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth } from '@/lib/firebase/config';
 import { db } from '@/lib/firebase/config';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -13,7 +13,6 @@ export interface AppSettings {
     theme: Theme;
     uiFontSize: number;
     aiFontSize: number;
-    chatInputBottom: number;
     settingsBtnTop: number;
     uiFont: UIFont;
     aiFont: AIFont;
@@ -23,7 +22,6 @@ const DEFAULTS: AppSettings = {
     theme: 'sacred_academia',
     uiFontSize: 20,
     aiFontSize: 18,
-    chatInputBottom: 24,
     settingsBtnTop: 167,
     uiFont: 'dm_sans',
     aiFont: 'lora',
@@ -36,7 +34,6 @@ export function useAppSettings() {
     const [mounted, setMounted] = useState(false);
     const [uid, setUid] = useState<string | null>(null);
 
-    // Load from localStorage first, then sync from Firestore
     useEffect(() => {
         try {
             const raw = localStorage.getItem(KEY);
@@ -45,7 +42,6 @@ export function useAppSettings() {
         setMounted(true);
     }, []);
 
-    // Watch auth state and sync settings from Firestore
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (user) => {
             if (!user) { setUid(null); return; }
@@ -67,7 +63,6 @@ export function useAppSettings() {
         setSettings(prev => {
             const next = { ...prev, ...patch };
             try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* ignore */ }
-            // Save to Firestore if signed in
             if (uid) {
                 const ref = doc(db, 'users', uid);
                 updateDoc(ref, { settings: next }).catch(() => {});

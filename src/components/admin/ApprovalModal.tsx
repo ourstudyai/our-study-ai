@@ -28,13 +28,12 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
   const [freshUrl, setFreshUrl] = useState('');
   const [landscape, setLandscape] = useState(false);
 
-  const previewRef = useRef<HTMLIFrameElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const syncingRef = useRef(false);
 
   const selectedCourse = courses.find(c => c.id === selectedCourseId);
 
-  // Load R2 fileUrl directly — Cloudinary removed
   useEffect(() => {
     const url = (material as any).fileUrl || '';
     if (url) { setFreshUrl(url); return; }
@@ -50,11 +49,51 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
     (c.code || '').toLowerCase().includes(search.toLowerCase())
   );
 
+  // Scroll sync: textarea scroll → iframe scroll
   function handleTextScroll(e: React.UIEvent<HTMLTextAreaElement>) {
     if (syncingRef.current) return;
     syncingRef.current = true;
+    const el = e.currentTarget;
+    const pct = el.scrollTop / (el.scrollHeight - el.clientHeight);
+    try {
+      const iframeDoc = iframeRef.current?.contentWindow?.document;
+      if (iframeDoc) {
+        const body = iframeDoc.body;
+        const maxScroll = body.scrollHeight - (iframeRef.current?.clientHeight ?? 0);
+        iframeDoc.documentElement.scrollTop = pct * maxScroll;
+      }
+    } catch { }
     requestAnimationFrame(() => { syncingRef.current = false; });
   }
+
+  // Scroll sync: iframe scroll → textarea scroll
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !landscape) return;
+    const onIframeScroll = () => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      try {
+        const iframeDoc = iframe.contentWindow?.document;
+        if (iframeDoc && textRef.current) {
+          const scrollTop = iframeDoc.documentElement.scrollTop;
+          const maxScroll = iframeDoc.body.scrollHeight - iframe.clientHeight;
+          const pct = maxScroll > 0 ? scrollTop / maxScroll : 0;
+          const ta = textRef.current;
+          ta.scrollTop = pct * (ta.scrollHeight - ta.clientHeight);
+        }
+      } catch { }
+      requestAnimationFrame(() => { syncingRef.current = false; });
+    };
+    const attach = () => {
+      try { iframe.contentWindow?.addEventListener('scroll', onIframeScroll, { passive: true }); } catch { }
+    };
+    iframe.addEventListener('load', attach);
+    return () => {
+      iframe.removeEventListener('load', attach);
+      try { iframe.contentWindow?.removeEventListener('scroll', onIframeScroll); } catch { }
+    };
+  }, [landscape]);
 
   const handleApprove = async () => {
     if (!canApprove) return;
@@ -140,20 +179,17 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
 
       <div style={{ flex: 1, display: 'flex', flexDirection: landscape ? 'row' : 'column', overflow: 'hidden', minHeight: 0 }}>
 
-        {landscape && freshUrl && (
+        {landscape && (
           <div style={{ flex: 1, minHeight: 0, minWidth: 0, borderRight: '1px solid var(--border)', background: '#0a0a0f', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>
               <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', flex: 1 }}>Original Preview</span>
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 }}>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center' }}>
-                R2 files cannot be embedded directly.
-              </p>
-              <a href={freshUrl} target="_blank" rel="noopener noreferrer"
-                style={{ background: 'var(--gold)', color: 'var(--navy)', borderRadius: 8, padding: '10px 20px', fontWeight: 700, fontSize: '0.85rem', textDecoration: 'none' }}>
-                Open Original in New Tab ↗
-              </a>
-            </div>
+            <iframe
+              ref={iframeRef}
+              src={'/api/preview-proxy?materialId=' + encodeURIComponent(material.id)}
+              style={{ flex: 1, border: 'none', width: '100%', height: '100%', background: '#fff' }}
+              title="Material preview"
+            />
           </div>
         )}
 

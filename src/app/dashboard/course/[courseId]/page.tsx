@@ -142,18 +142,21 @@ export default function CoursePage() {
   const [archivedSessions, setArchivedSessions] = useState<ArchivedSession[]>([]);
   const [viewingArchive, setViewingArchive] = useState<ArchivedSession | null>(null);
 
-  // Per-mode chat histories stored in memory
   const [modeHistories, setModeHistories] = useState<Record<string, ChatMessage[]>>({});
   const [streamingMessage, setStreamingMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [input, setInput] = useState('');
   const [sessionSaving, setSessionSaving] = useState(false);
-
-  // Active material context
   const [activeContext, setActiveContext] = useState<{ fileName: string; extractedText: string } | null>(null);
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // Scroll state
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const [showScrollUp, setShowScrollUp] = useState(false);
+
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const userMsgRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevHistoryLenRef = useRef(0);
 
   const chatHistory = modeHistories[activeMode] ?? [];
   const year = userProfile?.year ?? 1;
@@ -162,7 +165,6 @@ export default function CoursePage() {
 
   const sessionKey = (mode: string) => courseId + '__' + mode + '__' + year + '__' + semester;
 
-  // Load session from Firestore for a given mode
   const loadSession = async (mode: string) => {
     if (!uid || !courseId) return;
     try {
@@ -175,68 +177,42 @@ export default function CoursePage() {
     } catch { }
   };
 
-  // Save session to Firestore
   const saveSession = useCallback(async (mode: string, messages: ChatMessage[]) => {
     if (!uid || !courseId) return;
     try {
       const ref = doc(db, 'users', uid, 'chatSessions', sessionKey(mode));
-      await setDoc(ref, {
-        messages,
-        updatedAt: new Date().toISOString(),
-        year, semester, mode, archived: false,
-      });
+      await setDoc(ref, { messages, updatedAt: new Date().toISOString(), year, semester, mode, archived: false });
     } catch { }
   }, [uid, courseId, year, semester]);
 
-  // New chat — archive current, start fresh
   const handleNewChat = async () => {
     if (chatHistory.length === 0) return;
     setSessionSaving(true);
     try {
-      const archiveRef = doc(db, 'users', uid, 'chatArchive',
-        sessionKey(activeMode) + '__' + Date.now());
-      await setDoc(archiveRef, {
-        messages: chatHistory,
-        archivedAt: new Date().toISOString(),
-        mode: activeMode, year, semester,
-        messageCount: chatHistory.length,
-      });
+      const archiveRef = doc(db, 'users', uid, 'chatArchive', sessionKey(activeMode) + '__' + Date.now());
+      await setDoc(archiveRef, { messages: chatHistory, archivedAt: new Date().toISOString(), mode: activeMode, year, semester, messageCount: chatHistory.length });
       const sessionRef = doc(db, 'users', uid, 'chatSessions', sessionKey(activeMode));
-      await setDoc(sessionRef, {
-        messages: [],
-        updatedAt: new Date().toISOString(),
-        year, semester, mode: activeMode, archived: false,
-      });
+      await setDoc(sessionRef, { messages: [], updatedAt: new Date().toISOString(), year, semester, mode: activeMode, archived: false });
       setModeHistories(prev => ({ ...prev, [activeMode]: [] }));
     } catch { }
     finally { setSessionSaving(false); }
   };
 
-  // Load archived sessions for current mode
   const loadArchives = async () => {
     if (!uid || !courseId) return;
     try {
       const prefix = courseId + '__' + activeMode + '__';
-      const snap = await getDocs(
-        query(collection(db, 'users', uid, 'chatArchive'), orderBy('archivedAt', 'desc'))
-      );
-      const sessions = snap.docs
-        .filter(d => d.id.startsWith(prefix))
-        .map(d => ({ id: d.id, ...d.data() } as ArchivedSession));
+      const snap = await getDocs(query(collection(db, 'users', uid, 'chatArchive'), orderBy('archivedAt', 'desc')));
+      const sessions = snap.docs.filter(d => d.id.startsWith(prefix)).map(d => ({ id: d.id, ...d.data() } as ArchivedSession));
       setArchivedSessions(sessions);
     } catch { }
   };
 
-  // Topics loader
   const loadTopics = async () => {
     if (!courseId) return;
     setTopicsLoading(true);
     try {
-      const snap = await getDocs(query(
-        collection(db, 'materials'),
-        where('confirmedCourseId', '==', courseId),
-        where('status', '==', 'approved')
-      ));
+      const snap = await getDocs(query(collection(db, 'materials'), where('confirmedCourseId', '==', courseId), where('status', '==', 'approved')));
       const result: { materialName: string; items: string[] }[] = [];
       snap.docs.forEach(d => {
         const data = d.data();
@@ -282,10 +258,33 @@ export default function CoursePage() {
     loadSession(activeMode);
   }, [uid, courseId, activeMode, userProfile]);
 
-  // Scroll to bottom
+  // Scroll to user message when a new user message is added
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, streamingMessage]);
+    const currentLen = chatHistory.length;
+    const prevLen = prevHistoryLenRef.current;
+    // A new user message was just added (history grew and last message is user)
+    if (currentLen > prevLen && chatHistory[currentLen - 1]?.role === 'user') {
+      const idx = currentLen - 1;
+      setTimeout(() => {
+        userMsgRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
+    prevHistoryLenRef.current = currentLen;
+  }, [chatHistory]);
+
+  // Track scroll position to show/hide floating buttons
+  useEffect(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const distFromBottom = scrollHeight - scrollTop - clientHeight;
+      setShowScrollDown(distFromBottom > 120);
+      setShowScrollUp(scrollTop > 200);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -294,6 +293,16 @@ export default function CoursePage() {
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 140) + 'px';
     }
   }, [input]);
+
+  const scrollToBottom = () => {
+    const el = chatContainerRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  };
+
+  const scrollToTop = () => {
+    const el = chatContainerRef.current;
+    if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const sendMessage = async (text?: string) => {
     const message = text || input;
@@ -378,6 +387,16 @@ export default function CoursePage() {
 
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
 
+  const floatBtnStyle: React.CSSProperties = {
+    position: 'absolute', right: '14px',
+    width: '32px', height: '32px', borderRadius: '50%',
+    background: 'rgba(196,160,80,0.15)', border: '1px solid rgba(196,160,80,0.35)',
+    color: 'var(--gold)', fontSize: '0.85rem', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    backdropFilter: 'blur(4px)', transition: 'opacity 0.2s',
+    zIndex: 10,
+  };
+
   return (
     <div className='flex flex-col w-full' style={{ height: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', overflow: 'hidden', maxWidth: '100vw' }}>
 
@@ -455,10 +474,14 @@ export default function CoursePage() {
       <div className='flex min-h-0' style={{ flex: 1, overflow: 'hidden' }}>
 
         {/* Chat area */}
-        <div className='flex flex-col min-h-0' style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        <div className='flex flex-col min-h-0' style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
 
           {/* Messages */}
-          <div className='flex-1 overflow-y-auto py-3 space-y-3' style={{ padding: '12px 16px', overflowX: 'hidden' }}>
+          <div
+            ref={chatContainerRef}
+            className='flex-1 overflow-y-auto'
+            style={{ padding: '12px 16px', overflowX: 'hidden' }}
+          >
             {isEmpty && (
               <div style={{ height: '32vh', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
                 <div style={{ textAlign: 'center', width: '100%', maxWidth: '320px', padding: '0 24px', boxSizing: 'border-box' }}>
@@ -470,7 +493,7 @@ export default function CoursePage() {
               </div>
             )}
             {chatHistory.map((msg, i) => (
-              <div key={i} style={{ width: '100%', overflowX: 'hidden' }}>
+              <div key={i} ref={el => { userMsgRefs.current[i] = el; }} style={{ width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                   <div style={{
                     maxWidth: '82%', wordBreak: 'break-word',
@@ -491,15 +514,22 @@ export default function CoursePage() {
               </div>
             ))}
             {streamingMessage && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ maxWidth: '82%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
                   <MarkdownRenderer content={streamingMessage} />
                   <span style={{ display: 'inline-block', width: '6px', height: '16px', marginLeft: '4px', background: 'var(--gold)', animation: 'pulse 1s infinite' }} />
                 </div>
               </div>
             )}
-            <div ref={bottomRef} />
           </div>
+
+          {/* Floating scroll buttons */}
+          {showScrollUp && (
+            <button onClick={scrollToTop} style={{ ...floatBtnStyle, bottom: '72px' }} title='Scroll to top'>↑</button>
+          )}
+          {showScrollDown && (
+            <button onClick={scrollToBottom} style={{ ...floatBtnStyle, bottom: '36px' }} title='Scroll to bottom'>↓</button>
+          )}
 
           {/* INPUT */}
           <div className='flex-shrink-0 border-t' style={{ borderColor: 'var(--border)', padding: '8px 12px' }}>

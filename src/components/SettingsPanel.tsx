@@ -82,7 +82,6 @@ export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: b
                                 style={{ color: 'var(--text-muted)', fontSize: '1.2rem', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>✕</button>
                         </div>
 
-                        {/* Theme */}
                         <SectionLabel>Theme</SectionLabel>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
                             {THEMES.map(t => (
@@ -105,7 +104,6 @@ export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: b
                             ))}
                         </div>
 
-                        {/* UI Font */}
                         <SectionLabel>Interface Font</SectionLabel>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
                             {UI_FONTS.map(f => (
@@ -127,7 +125,6 @@ export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: b
                             ))}
                         </div>
 
-                        {/* AI Response Font */}
                         <SectionLabel>AI Response Font</SectionLabel>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
                             {AI_FONTS.map(f => (
@@ -149,20 +146,12 @@ export default function SettingsPanel({ hideTrigger = false }: { hideTrigger?: b
                             ))}
                         </div>
 
-                        {/* Interface Font Size */}
                         <SectionLabel>Interface Font Size</SectionLabel>
                         <FontSizeControl value={settings.uiFontSize} onChange={v => update({ uiFontSize: v })} label="UI" />
 
-                        {/* AI Font Size */}
                         <SectionLabel top={20}>AI Response Font Size</SectionLabel>
                         <FontSizeControl value={settings.aiFontSize} onChange={v => update({ aiFontSize: v })} label="AI" />
 
-                        {/* Chat Input Position */}
-                        <SectionLabel top={20}>Chat Input Position</SectionLabel>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '8px' }}>Distance from bottom of screen</p>
-                        <PositionSlider value={settings.chatInputBottom} min={16} max={420} onChange={v => update({ chatInputBottom: v })} unit="px from bottom" />
-
-                        {/* Settings Button Position */}
                         <SectionLabel top={20}>Settings Button Position</SectionLabel>
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '8px' }}>Distance from top of screen</p>
                         <PositionSlider value={settings.settingsBtnTop} min={60} max={600} onChange={v => update({ settingsBtnTop: v })} unit="px from top" />
