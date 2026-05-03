@@ -8,6 +8,7 @@ import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase/config';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { saveReport } from '@/lib/firestore/materials';
+import ShareReceiver from '@/components/contribute/ShareReceiver';
 
 interface Course {
   id: string; name: string; code: string; department: string; year: number; semester: number;
@@ -65,6 +66,12 @@ export default function ContributePage() {
   const [carefulDone, setCarefulDone] = useState(false);
 
   const [detectFiles, setDetectFiles] = useState<File[]>([]);
+
+  // Share target — receives files from OS share sheet
+  const handleSharedFiles = (files: File[]) => {
+    setCarefulFiles(prev => [...prev, ...files]);
+    setActiveMode('careful');
+  };
   const [detectStatuses, setDetectStatuses] = useState<Record<string, FileStatus>>({});
   const [detectUploading, setDetectUploading] = useState(false);
 
@@ -262,6 +269,7 @@ export default function ContributePage() {
 
   return (
     <AppNav>
+      <ShareReceiver onFilesReceived={handleSharedFiles} />
       <div style={{ minHeight: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', padding: '24px 16px' }}>
         <div style={{ maxWidth: '520px', margin: '0 auto' }}>
           <button onClick={() => router.push('/dashboard')} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', marginBottom: '16px', padding: 0 }}>Back to dashboard</button>
@@ -445,5 +453,6 @@ export default function ContributePage() {
         </div>
       </div>
     </AppNav>
+    </>
   );
 }
