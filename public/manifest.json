@@ -1,5 +1,5 @@
 {
-  "name": "Lux Studiorum — Catholic Seminary",
+  "name": "Lux Studiorum \u2014 Catholic Seminary",
   "short_name": "Lux Studiorum",
   "description": "AI-powered academic study platform for seminary students.",
   "start_url": "/dashboard",
@@ -21,5 +21,27 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "share_target": {
+    "action": "/contribute?shared=1",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "application/pdf",
+            "image/*",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+          ]
+        }
+      ]
+    }
+  }
 }
