@@ -399,15 +399,14 @@ export default function CoursePage() {
     recognition.interimResults = true;
     recognition.lang = 'en-US';
     finalTranscriptRef.current = '';
+    let lastProcessedIndex = -1;
     recognition.onresult = (e: any) => {
       let interim = '';
-      // Only process from resultIndex to avoid duplicating already-final results
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          // Only append if this exact transcript isn't already at the end
-          const t = e.results[i][0].transcript;
-          if (!finalTranscriptRef.current.endsWith(t + ' ')) {
-            finalTranscriptRef.current += t + ' ';
+          if (i > lastProcessedIndex) {
+            finalTranscriptRef.current += e.results[i][0].transcript + ' ';
+            lastProcessedIndex = i;
           }
         } else {
           interim += e.results[i][0].transcript;
