@@ -401,9 +401,14 @@ export default function CoursePage() {
     finalTranscriptRef.current = '';
     recognition.onresult = (e: any) => {
       let interim = '';
+      // Only process from resultIndex to avoid duplicating already-final results
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          finalTranscriptRef.current += e.results[i][0].transcript + ' ';
+          // Only append if this exact transcript isn't already at the end
+          const t = e.results[i][0].transcript;
+          if (!finalTranscriptRef.current.endsWith(t + ' ')) {
+            finalTranscriptRef.current += t + ' ';
+          }
         } else {
           interim += e.results[i][0].transcript;
         }

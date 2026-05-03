@@ -67,6 +67,16 @@ export default function ContributePage() {
 
   const [detectFiles, setDetectFiles] = useState<File[]>([]);
   const [sharedFiles, setSharedFiles] = useState<File[]>([]);
+  const [shareHint, setShareHint] = useState(0);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      setShareHint(e.detail.count);
+      setActiveMode('detect');
+    };
+    window.addEventListener('share-target-hint', handler);
+    return () => window.removeEventListener('share-target-hint', handler);
+  }, []);
 
   const handleSharedFiles = (files: File[]) => {
     setSharedFiles(files);
@@ -280,13 +290,21 @@ export default function ContributePage() {
           <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '4px' }}>Contribute Materials</h1>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '24px' }}>Signed in as <span style={{ color: 'var(--gold)' }}>{firebaseUser?.email}</span></p>
 
-          {sharedFiles.length > 0 && (
+          {(sharedFiles.length > 0 || shareHint > 0) && (
             <div style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
               <span style={{ fontSize: '1.2rem' }}>📎</span>
               <div>
-                <p style={{ fontSize: '0.82rem', fontWeight: 700, color: '#c4b5fd', marginBottom: '4px' }}>{sharedFiles.length} file{sharedFiles.length > 1 ? 's' : ''} received from share</p>
+                <p style={{ fontSize: '0.82rem', fontWeight: 700, color: '#c4b5fd', marginBottom: '4px' }}>
+                  {sharedFiles.length > 0
+                    ? `${sharedFiles.length} file${sharedFiles.length > 1 ? 's' : ''} received`
+                    : `${shareHint} file${shareHint > 1 ? 's' : ''} shared — please re-select below`}
+                </p>
                 <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sharedFiles.map(f => f.name).join(', ')}</p>
-                <p style={{ fontSize: '0.7rem', color: '#a78bfa', marginTop: '4px' }}>Switched to Auto-detect — scroll down to submit</p>
+                <p style={{ fontSize: '0.7rem', color: '#a78bfa', marginTop: '4px' }}>
+                  {sharedFiles.length > 0
+                    ? 'Switched to Auto-detect — scroll down to submit'
+                    : 'Your browser could not pass the files directly. Tap the file picker below and re-select them.'}
+                </p>
               </div>
             </div>
           )}
