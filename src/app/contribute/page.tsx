@@ -453,6 +453,5 @@ export default function ContributePage() {
         </div>
       </div>
     </AppNav>
-    </>
   );
 }
