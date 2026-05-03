@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import MiniLoader from '@/components/MiniLoader';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 
@@ -70,7 +71,7 @@ export default function AOCPanel({ courseId, onStudy }: Props) {
         outline: 'none', marginBottom: '10px',
     };
 
-    if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Loading AOC...</p>;
+    if (loading) return <MiniLoader label="Loading AOC..." />;
 
     if (items.length === 0) return (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>

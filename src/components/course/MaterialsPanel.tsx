@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import MiniLoader from '@/components/MiniLoader';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { Material } from '@/lib/firestore/materials';
@@ -55,7 +56,7 @@ export default function MaterialsPanel({ courseId }: Props) {
 
   if (loading) return (
     <div style={{ padding: '24px 16px', textAlign: 'center' }}>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading materials...</p>
+      <MiniLoader label="Loading materials..." />
     </div>
   );
 

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import MiniLoader from '@/components/MiniLoader';
 import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, where, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -185,7 +186,7 @@ export default function StudyMemoryPanel({ courseId, chatHistory, defaultSection
                 )}
 
                 {notesLoading ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Loading notes...</p>
+                    <MiniLoader label="Loading notes..." />
                 ) : filteredNotes.length === 0 ? (
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                         {notes.length === 0 ? 'No notes yet. Add your first note above.' : 'No notes match your search.'}
@@ -250,7 +251,7 @@ export default function StudyMemoryPanel({ courseId, chatHistory, defaultSection
     return (
         <div>
             {archivesLoading ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', padding: '16px 0' }}>Loading history...</p>
+                <MiniLoader label="Loading history..." />
             ) : archives.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '32px 0' }}>
                     <p style={{ fontSize: '1.8rem', marginBottom: '8px' }}>🕐</p>

@@ -7,6 +7,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import AppNav from '@/components/AppNav';
 import { db } from '@/lib/firebase/config';
 import LuxLoader from '@/components/LuxLoader';
+import MiniLoader from '@/components/MiniLoader';
 import {
   collection, getDocs, query, orderBy, where,
   addDoc, deleteDoc, doc, serverTimestamp, updateDoc,
@@ -371,7 +372,7 @@ export default function LibraryPage() {
 
         {/* ── Material grid ───────────────────────────────────────────── */}
         {loading ? (
-          <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '60px 0' }}>Loading library...</p>
+          <MiniLoader label="Loading materials..." />
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
             <p style={{ fontSize: '2rem', marginBottom: '12px' }}>📭</p>

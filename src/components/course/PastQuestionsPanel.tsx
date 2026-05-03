@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import MiniLoader from '@/components/MiniLoader';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 
@@ -79,7 +80,7 @@ export default function PastQuestionsPanel({ courseId, onStudy }: Props) {
         transition: 'border-color 0.15s',
     };
 
-    if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Loading past questions...</p>;
+    if (loading) return <MiniLoader label="Loading past questions..." />;
 
     if (questions.length === 0) return (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
