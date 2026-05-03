@@ -66,11 +66,15 @@ export default function ContributePage() {
   const [carefulDone, setCarefulDone] = useState(false);
 
   const [detectFiles, setDetectFiles] = useState<File[]>([]);
+  const [sharedFiles, setSharedFiles] = useState<File[]>([]);
 
-  // Share target — receives files from OS share sheet
   const handleSharedFiles = (files: File[]) => {
-    setCarefulFiles(prev => [...prev, ...files]);
-    setActiveMode('careful');
+    setSharedFiles(files);
+    setActiveMode('detect'); // Auto-detect is best for shared files
+    setDetectFiles(prev => {
+      const ex = new Set(prev.map(f => f.name));
+      return [...prev, ...files.filter(f => !ex.has(f.name))];
+    });
   };
   const [detectStatuses, setDetectStatuses] = useState<Record<string, FileStatus>>({});
   const [detectUploading, setDetectUploading] = useState(false);
@@ -275,6 +279,17 @@ export default function ContributePage() {
           <button onClick={() => router.push('/dashboard')} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', marginBottom: '16px', padding: 0 }}>Back to dashboard</button>
           <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '4px' }}>Contribute Materials</h1>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '24px' }}>Signed in as <span style={{ color: 'var(--gold)' }}>{firebaseUser?.email}</span></p>
+
+          {sharedFiles.length > 0 && (
+            <div style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <span style={{ fontSize: '1.2rem' }}>📎</span>
+              <div>
+                <p style={{ fontSize: '0.82rem', fontWeight: 700, color: '#c4b5fd', marginBottom: '4px' }}>{sharedFiles.length} file{sharedFiles.length > 1 ? 's' : ''} received from share</p>
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sharedFiles.map(f => f.name).join(', ')}</p>
+                <p style={{ fontSize: '0.7rem', color: '#a78bfa', marginTop: '4px' }}>Switched to Auto-detect — scroll down to submit</p>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
             <button onClick={() => setActiveMode('careful')}
