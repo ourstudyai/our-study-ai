@@ -80,7 +80,6 @@ export default function LibraryPage() {
 
   // Library open/closed toggle (supreme + chief admin only)
   const [libraryOpen, setLibraryOpen] = useState<boolean | null>(null);
-  const [togglingLibrary, setTogglingLibrary] = useState(false);
 
   // Access gate
   useEffect(() => {
@@ -147,6 +146,10 @@ export default function LibraryPage() {
         if (isAdmin) {
           const wSnap = await getDocs(collection(db, 'approved_index_emails'));
           setWhitelistEmails(wSnap.docs.map(d => ({ id: d.id, email: (d.data() as { email: string }).email })));
+        }
+        if (isChiefOrSupreme) {
+          const ls = await getDoc(doc(db, 'settings', 'library'));
+          setLibraryOpen(ls.exists() ? ls.data()?.open === true : false);
         }
         if (isChiefOrSupreme) {
           const libSnap = await getDoc(doc(db, 'settings', 'library'));
@@ -282,22 +285,8 @@ export default function LibraryPage() {
 
   async function toggleLibraryOpen() {
     setTogglingLibrary(true);
-    try {
-      const newVal = !libraryOpen;
-      await setDoc(doc(db, 'settings', 'library'), { open: newVal }, { merge: true });
-      setLibraryOpen(newVal);
-    } finally {
-      setTogglingLibrary(false);
-    }
-  }
-
-  async function toggleLibraryOpen() {
-    setTogglingLibrary(true);
-    try {
-      const nv = !libraryOpen;
-      await setDoc(doc(db, 'settings', 'library'), { open: nv }, { merge: true });
-      setLibraryOpen(nv);
-    } finally { setTogglingLibrary(false); }
+    try { const nv = !libraryOpen; await setDoc(doc(db,'settings','library'),{open:nv},{merge:true}); setLibraryOpen(nv); }
+    finally { setTogglingLibrary(false); }
   }
 
   function exportList(filtered: IndexedMaterial[]) {
@@ -334,8 +323,6 @@ export default function LibraryPage() {
     });
   }, [materials, search, sort, filterDept, filterYear, filterSem, filterCat]);
 
-  function tog(set: Set<string>, key: string): Set<string> { const n = new Set(set); n.has(key) ? n.delete(key) : n.add(key); return n; }
-
   const grouped = useMemo(() => {
     const map: Record<string, Record<string, Record<string, Record<string, IndexedMaterial[]>>>> = {};
     for (const m of filtered) {
@@ -354,6 +341,24 @@ export default function LibraryPage() {
 
   const CAT_LABEL: Record<string,string> = { notes:'📒 Lecture Notes', past_questions:'📝 Past Questions', aoc:'📌 AOC', syllabus:'📋 Syllabus', textbook:'📘 Textbook', other:'📄 Other' };
   const CAT_ORDER = ['notes','past_questions','syllabus','aoc','textbook','other'];
+
+  function tog(set: Set<string>, key: string): Set<string> { const n = new Set(set); n.has(key) ? n.delete(key) : n.add(key); return n; }
+
+  const grouped = useMemo(() => {
+    const map: Record<string,Record<string,Record<string,Record<string,IndexedMaterial[]>>>> = {};
+    for (const m of filtered) {
+      const dept = m.department || 'Unassigned';
+      const yr   = String(m.year ?? '—');
+      const sem  = String(m.semester ?? '—');
+      const cat  = m.category || 'other';
+      if (!map[dept])               map[dept] = {};
+      if (!map[dept][yr])           map[dept][yr] = {};
+      if (!map[dept][yr][sem])      map[dept][yr][sem] = {};
+      if (!map[dept][yr][sem][cat]) map[dept][yr][sem][cat] = [];
+      map[dept][yr][sem][cat].push(m);
+    }
+    return map;
+  }, [filtered]);
 
   const isNew = (m: IndexedMaterial) => {
     if (!m.indexedAt) return false;
