@@ -1,5 +1,6 @@
 // src/components/MiniLoader.tsx
 'use client';
+import React from 'react';
 export default function MiniLoader({ label }: { label?: string }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'32px 0', gap:'12px' }}>
