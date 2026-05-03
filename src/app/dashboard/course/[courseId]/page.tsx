@@ -395,24 +395,22 @@ export default function CoursePage() {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
     finalTranscriptRef.current = '';
-    let lastProcessedIndex = -1;
     recognition.onresult = (e: any) => {
+      let final = '';
       let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      for (let i = 0; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          if (i > lastProcessedIndex) {
-            finalTranscriptRef.current += e.results[i][0].transcript + ' ';
-            lastProcessedIndex = i;
-          }
+          final += e.results[i][0].transcript + ' ';
         } else {
           interim += e.results[i][0].transcript;
         }
       }
-      setInput((finalTranscriptRef.current + interim).trim());
+      finalTranscriptRef.current = final;
+      setInput((final + interim).trim());
     };
     recognition.onspeechend = () => {
       if (autoSend && finalTranscriptRef.current.trim()) {
