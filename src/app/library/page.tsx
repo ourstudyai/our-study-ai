@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import AppNav from '@/components/AppNav';
 import { db } from '@/lib/firebase/config';
+import LuxLoader from '@/components/LuxLoader';
 import {
   collection, getDocs, query, orderBy, where,
   addDoc, deleteDoc, doc, serverTimestamp, updateDoc,
@@ -296,7 +297,7 @@ export default function LibraryPage() {
 
   if (authLoading || !accessChecked) return (
     <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)' }}>
-      <p style={{ color: 'var(--gold)' }}>Loading...</p>
+      <LuxLoader label="Loading library..." />
     </div>
   );
 

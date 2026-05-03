@@ -11,6 +11,7 @@ import StudyMemoryPanel from '@/components/course/StudyMemoryPanel';
 import MaterialsPanel from '@/components/course/MaterialsPanel';
 import SettingsPanel from '@/components/SettingsPanel';
 import ReactMarkdown from 'react-markdown';
+import LuxLoader from '@/components/LuxLoader';
 import { useSettings } from '@/components/AppShell';
 import {
   collection, addDoc, serverTimestamp, getDocs, query, where,
@@ -378,6 +379,7 @@ export default function CoursePage() {
   const recognitionRef = useRef<any>(null);
   const finalTranscriptRef = useRef('');
   const micPressTimer = useRef<any>(null);
+  const micLongPressed = useRef(false);
 
   const handleSTT = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -647,11 +649,7 @@ export default function CoursePage() {
     sendMessage(lastUserMsg);
   };
 
-  if (loading) return (
-    <div className='min-h-screen flex items-center justify-center' style={{ background: 'var(--navy)' }}>
-      <p style={{ color: 'var(--gold)' }}>Loading course...</p>
-    </div>
-  );
+  if (loading) return <LuxLoader label="Loading course..." />;
   if (!course) return (
     <div className='min-h-screen flex items-center justify-center' style={{ background: 'var(--navy)' }}>
       <p style={{ color: 'var(--text-muted)' }}>Course not found.</p>
@@ -893,17 +891,14 @@ export default function CoursePage() {
                     onMouseDown={() => { micPressTimer.current = setTimeout(() => { setMicPopoverOpen(prev => !prev); }, 400); }}
                     onMouseUp={() => { clearTimeout(micPressTimer.current); }}
                     onMouseLeave={() => { clearTimeout(micPressTimer.current); }}
-                    onTouchStart={() => { micPressTimer.current = setTimeout(() => { setMicPopoverOpen(prev => !prev); }, 400); }}
+                    onTouchStart={() => { micLongPressed.current = false; micPressTimer.current = setTimeout(() => { micLongPressed.current = true; setMicPopoverOpen(prev => !prev); }, 400); }}
                     onTouchEnd={(e) => {
-                      if (micPressTimer.current) {
-                        clearTimeout(micPressTimer.current);
-                        micPressTimer.current = null;
-                        if (!micPopoverOpen) { handleSTT(); }
-                      }
-                      setMicPopoverOpen(false);
                       e.preventDefault();
+                      if (micPressTimer.current) { clearTimeout(micPressTimer.current); micPressTimer.current = null; }
+                      if (!micLongPressed.current && !micPopoverOpen) { handleSTT(); }
+                      micLongPressed.current = false;
                     }}
-                    onClick={() => { if (!micPopoverOpen) handleSTT(); else setMicPopoverOpen(false); }}
+                    onClick={() => {}}
                     title={isListening ? 'Stop · Hold for options' : 'Speak · Hold for options'}
                     style={{
                       padding: '10px 12px', borderRadius: '12px',

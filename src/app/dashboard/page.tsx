@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getFilteredCourses, getAllCourses } from '@/lib/firestore/courses';
 import { Course, Department } from '@/lib/types';
+import LuxLoader from '@/components/LuxLoader';
 import { db } from '@/lib/firebase/config';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 
@@ -177,7 +178,7 @@ export default function DashboardPage() {
 
       {/* Course grid */}
       {loading ? (
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading courses...</p>
+        <LuxLoader label="Loading courses..." />
       ) : (
         <>
           {/* My Courses */}
