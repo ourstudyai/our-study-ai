@@ -1,3 +1,34 @@
+
+// Share Target handler
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method !== 'POST') return;
+  if (!url.searchParams.get('shared')) return;
+
+  event.respondWith((async () => {
+    try {
+      const fd = await event.request.formData();
+      const files = fd.getAll('files').filter(f => f instanceof File);
+      if (files.length) {
+        const cache = await caches.open('share-target-v1');
+        await cache.put('/_share_files_meta', new Response(JSON.stringify({
+          names: files.map(f => f.name),
+          types: files.map(f => f.type),
+          timestamp: Date.now(),
+        })));
+        for (let i = 0; i < files.length; i++) {
+          const buf = await files[i].arrayBuffer();
+          await cache.put(`/_share_file_${i}`, new Response(buf, {
+            headers: { 'Content-Type': files[i].type }
+          }));
+        }
+      }
+    } catch(e) { console.error('[SW] share error', e); }
+    return Response.redirect('/contribute?shared=1', 303);
+  })());
+});
+
+
 const CACHE_NAME = 'ourstudyai-v3';
 
 const STATIC_ASSETS = [
