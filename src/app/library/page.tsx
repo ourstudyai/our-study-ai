@@ -409,7 +409,8 @@ export default function LibraryPage() {
 
         {/* ── Controls ────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search materials, topics, courses...style={{ flex: '2 1 200px', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '9px', padding: '9px 13px', color: 'var(--text-primary)', fontSize: '0.82rem' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search materials, topics, courses..."
+            style={{ flex: '2 1 200px', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '9px', padding: '9px 13px', color: 'var(--text-primary)', fontSize: '0.82rem' }} />
           <select value={sort} onChange={e => setSort(e.target.value as SortKey)}
             style={{ flex: '1 1 130px', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '9px', padding: '9px 10px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
             <option value="recent">Most recent</option>
@@ -692,7 +693,8 @@ export default function LibraryPage() {
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                   <input value={newEmail} onChange={e => setNewEmail(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addWhitelistEmail()}
-                    placeholder="Add email address...style={{ flex: 1, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '0.82rem' }} />
+                    placeholder="Add email address..."
+                    style={{ flex: 1, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '0.82rem' }} />
                   <button onClick={addWhitelistEmail} disabled={addingEmail || !newEmail.trim()}
                     style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: '8px', padding: '8px 16px', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', opacity: (!newEmail.trim() || addingEmail) ? 0.5 : 1 }}>
                     {addingEmail ? '...' : 'Add'}
