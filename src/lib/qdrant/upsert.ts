@@ -1,7 +1,7 @@
 import { qdrant, COLLECTION_NAME, ensureCollection } from './client';
 import { embedText } from './embed';
 
-export interface ChunkPayload {
+export interface ChunkPayload { [key: string]: unknown;
   materialId: string;
   courseId: string;
   chunkIndex: number;
