@@ -112,7 +112,7 @@ export default function LibraryPage() {
 
         setMaterials(enriched);
         const _d=[...new Set(enriched.map((m:any)=>m.department).filter(Boolean))].sort() as string[];
-        if(_d.length){setOpenDepts(new Set([_d[0]]));const _y=[...new Set(enriched.filter((m:any)=>m.department===_d[0]).map((m:any)=>String(m.year)).filter((v:string)=>v!=='undefined'))].sort() as string[];if(_y.length){setOpenYears(new Set([`${_d[0]}|${_y[0]}`]));const _s=[...new Set(enriched.filter((m:any)=>m.department===_d[0]&&String(m.year)===_y[0]).map((m:any)=>String(m.semester)).filter((v:string)=>v!=='undefined'))].sort() as string[];if(_s.length)setOpenSems(new Set([\`${_d[0]}|${_y[0]}|${_s[0]}\`]));}}        
+        if(_d.length){setOpenDepts(new Set([_d[0]]));const _y=[...new Set(enriched.filter((m:any)=>m.department===_d[0]).map((m:any)=>String(m.year)).filter((v:string)=>v!=='undefined'))].sort() as string[];if(_y.length){setOpenYears(new Set([`${_d[0]}|${_y[0]}`]));const _s=[...new Set(enriched.filter((m:any)=>m.department===_d[0]&&String(m.year)===_y[0]).map((m:any)=>String(m.semester)).filter((v:string)=>v!=='undefined'))].sort() as string[];if(_s.length)setOpenSems(new Set([`${_d[0]}|${_y[0]}|${_s[0]}`]));}}        
 
         // Load viewed from localStorage
         const storedViewed = JSON.parse(localStorage.getItem('sjr_viewed') ?? '[]');
