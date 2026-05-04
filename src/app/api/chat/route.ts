@@ -8,6 +8,7 @@ import Groq from "groq-sdk";
 import { adminDb } from "@/lib/firebase/admin";
 import { getSystemPrompt } from "@/lib/gemini/system-prompts";
 import { searchTavily } from "@/lib/search/tavily";
+import { hybridSearch } from "@/lib/qdrant/search";
 
 interface ChunkDoc {
   text: string;
