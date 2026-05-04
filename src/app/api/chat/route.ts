@@ -107,9 +107,7 @@ export async function POST(req: NextRequest) {
               const pathLabel = r.fullPath ? `[${r.fullPath}]` : `[${r.heading ?? 'Section'}]`;
               return `${pathLabel}
 ${r.text}`;
-            }).join('
-
-');
+            }).join("\n\n");
             suggestedPaths = Array.from(new Set(qdrantResults.slice(0, 5).map(r => r.fullPath ?? r.heading ?? '').filter(Boolean)));
             lowConfidence = qdrantResults[0]?.score < 0.015;
           }
