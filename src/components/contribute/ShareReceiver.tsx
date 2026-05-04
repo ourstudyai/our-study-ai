@@ -5,9 +5,29 @@ interface Props {
   onFilesReceived: (files: File[]) => void;
 }
 
+// Set consumer immediately at module level so it fires before React hydration
+let _pendingFiles: File[] | null = null;
+if (typeof window !== 'undefined' && 'launchQueue' in window) {
+  (window as any).launchQueue.setConsumer(async (launchParams: any) => {
+    if (!launchParams.files?.length) return;
+    const files: File[] = [];
+    for (const handle of launchParams.files) {
+      try { files.push(await handle.getFile()); } catch(e) { console.error(e); }
+    }
+    if (files.length) _pendingFiles = files;
+  });
+}
+
 export default function ShareReceiver({ onFilesReceived }: Props) {
   useEffect(() => {
-    // Method 1: launchQueue (Chrome's native share target API)
+    // Deliver any files that arrived before component mounted
+    if (_pendingFiles?.length) {
+      onFilesReceived(_pendingFiles);
+      _pendingFiles = null;
+      return;
+    }
+
+    // Re-set consumer for files that arrive after mount
     if ('launchQueue' in window) {
       (window as any).launchQueue.setConsumer(async (launchParams: any) => {
         if (!launchParams.files?.length) return;
@@ -19,18 +39,16 @@ export default function ShareReceiver({ onFilesReceived }: Props) {
       });
     }
 
-    // Method 2: Read files posted to our handler via sessionStorage
-    // The share-handler API route stores file info in the URL
+    // URL hint fallback (count only, no actual files)
     const params = new URLSearchParams(window.location.search);
-    const shared = params.get('shared');
-    const count = params.get('count');
-    if (shared && count && Number(count) > 0) {
-      // Files came through but we lost them — show the file picker highlighted
-      // so user knows to pick the files they just shared
-      const event = new CustomEvent('share-target-hint', { detail: { count: Number(count) } });
-      window.dispatchEvent(event);
+    if (params.get('shared') && params.get('count')) {
+      const count = Number(params.get('count'));
+      if (count > 0) {
+        const event = new CustomEvent('share-target-hint', { detail: { count } });
+        window.dispatchEvent(event);
+      }
     }
-  }, []);
+  }, [onFilesReceived]);
 
   return null;
 }
