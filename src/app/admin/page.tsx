@@ -893,7 +893,7 @@ export default function AdminPage() {
                   </button>
                 )}
                 {selected.status !== 'quarantined' && (
-                  <button onClick={() => handleQuarantine(selected)} disabled={actionLoading} style={{
+                  <button onClick={() => { if (!window.confirm('Quarantine this material? It will be hidden from students.')) return; handleQuarantine(selected); }} disabled={actionLoading} style={{
                     width: '100%', padding: '10px', background: 'transparent',
                     border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10,
                     color: '#fca5a5', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
@@ -1311,6 +1311,8 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
 
   async function setRole(uid: string, role: string) {
     if (!isChiefAdmin) { alert('Only chief admin can change roles.'); return; }
+    if (role === 'chief_admin' && !window.confirm('Promote this user to Chief Admin? They will have full administrative access.')) return;
+    if (role === 'student' && !window.confirm('Remove this admin role? They will lose all admin access.')) return;
     setActionLoading(uid);
     try {
       const res = await fetch('/api/admin/set-role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUid: uid, role, idToken: await firebaseUser?.getIdToken(true) }) });
@@ -1321,6 +1323,7 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
 
   async function handleDeactivate(uid: string) {
     if (!isChiefAdmin) { alert('Only chief admin can deactivate users.'); return; }
+    if (uid === firebaseUser?.uid) { alert('You cannot deactivate your own account.'); return; }
     if (!window.confirm('Deactivate this user? They will not be able to log in.')) return;
     setActionLoading(uid);
     try {
@@ -1340,6 +1343,7 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
 
   async function handleDelete(uid: string) {
     if (!isChiefAdmin) { alert('Only chief admin can delete users. Please contact chief admin.'); return; }
+    if (uid === firebaseUser?.uid) { alert('You cannot delete your own account.'); return; }
     setActionLoading(uid);
     try {
       await updateDoc(doc(db, 'users', uid), { isActive: false, deletedAt: new Date().toISOString(), fcmToken: null });

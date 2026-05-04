@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
         cb.set(r, { materialId, courseId, category: mat.category ?? 'general', chunkIndex: idx, text: t, wordCount: t.split(/\s+/).length, deleted: false, createdAt: FieldValue.serverTimestamp() });
       });
       await cb.commit();
-      await matRef.update({ indexed: true });
+      await matRef.update({ indexed: true, status: 'approved' });
     }
     return NextResponse.json({ success: true });
   } catch (e: any) {

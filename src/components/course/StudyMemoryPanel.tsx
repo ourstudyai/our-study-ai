@@ -111,6 +111,7 @@ export default function StudyMemoryPanel({ courseId, chatHistory, defaultSection
     };
 
     const deleteNote = async (noteId: string) => {
+        if (!window.confirm('Delete this note? This cannot be undone.')) return;
         try {
             await deleteDoc(doc(db, 'notes', noteId));
             setNotes(prev => prev.filter(n => n.id !== noteId));

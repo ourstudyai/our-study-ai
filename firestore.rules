@@ -1,0 +1,103 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() { return request.auth != null; }
+    function isOwner(uid) { return request.auth.uid == uid; }
+    function userRole() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+    function isAdmin() { return userRole() in ['admin', 'chief_admin']; }
+    function isChiefAdmin() { return userRole() == 'chief_admin'; }
+    function isSupreme() { return request.auth.token.email == 'ourstudyai@gmail.com'; }
+    function isAdminOrSupreme() { return isSupreme() || isAdmin(); }
+
+    // Users - read own, admin reads all, only supreme/chief can write roles
+    match /users/{uid} {
+      allow read: if isAuth() && (isOwner(uid) || isAdminOrSupreme());
+      allow create: if isAuth() && isOwner(uid);
+      allow update: if isAuth() && (
+        (isOwner(uid) && !('role' in request.resource.data.diff(resource.data).affectedKeys())) ||
+        isChiefAdmin() || isSupreme()
+      );
+      allow delete: if isSupreme();
+    }
+
+    // Courses - anyone authenticated reads, only admins write
+    match /courses/{id} {
+      allow read: if isAuth();
+      allow write: if isAdminOrSupreme();
+    }
+
+    // Materials - students read approved only, admins read all, contribute writes pending
+    match /materials/{id} {
+      allow read: if isAuth() && (resource.data.status == 'approved' || isAdminOrSupreme());
+      allow create: if isAuth();
+      allow update: if isAdminOrSupreme();
+      allow delete: if isChiefAdmin() || isSupreme();
+    }
+
+    // Material chunks - authenticated read, admin write only
+    match /material_chunks/{id} {
+      allow read: if isAuth();
+      allow write: if isAdminOrSupreme();
+    }
+
+    // Notes - owner only
+    match /notes/{id} {
+      allow read, write: if isAuth() && isOwner(resource.data.userId);
+      allow create: if isAuth() && isOwner(request.resource.data.userId);
+    }
+
+    // Bookmarks - owner only
+    match /bookmarks/{id} {
+      allow read, write: if isAuth() && isOwner(resource.data.userId);
+      allow create: if isAuth() && isOwner(request.resource.data.userId);
+    }
+
+    // Feedback - authenticated write, admin read
+    match /feedback/{id} {
+      allow create: if isAuth();
+      allow read: if isAdminOrSupreme();
+    }
+
+    // Flags - authenticated create, admin manage
+    match /flags/{id} {
+      allow create: if isAuth();
+      allow read, update: if isAdminOrSupreme();
+      allow delete: if isSupreme();
+    }
+
+    // Upload reports - admin only
+    match /upload_reports/{id} {
+      allow read: if isAdminOrSupreme();
+      allow write: if isAuth();
+    }
+
+    // Assignments - admin write, authenticated read
+    match /assignments/{id} {
+      allow read: if isAuth();
+      allow write: if isAdminOrSupreme();
+    }
+
+    // Timetables - admin write, authenticated read
+    match /timetables/{id} {
+      allow read: if isAuth();
+      allow write: if isAdminOrSupreme();
+    }
+
+    // Admin notifications - admin only
+    match /admin_notifications/{id} {
+      allow read, write: if isAdminOrSupreme();
+    }
+
+    // Analytics - supreme only
+    match /analytics/{id} {
+      allow read: if isSupreme();
+      allow write: if isAuth();
+    }
+
+    // Approved index emails - admin only
+    match /approved_index_emails/{id} {
+      allow read, write: if isAdminOrSupreme();
+    }
+  }
+}
