@@ -323,21 +323,6 @@ export default function LibraryPage() {
     });
   }, [materials, search, sort, filterDept, filterYear, filterSem, filterCat]);
 
-  const grouped = useMemo(() => {
-    const map: Record<string, Record<string, Record<string, Record<string, IndexedMaterial[]>>>> = {};
-    for (const m of filtered) {
-      const dept = m.department || 'Unassigned';
-      const yr   = String(m.year   ?? '—');
-      const sem  = String(m.semester ?? '—');
-      const cat  = m.category || 'other';
-      if (!map[dept])              map[dept] = {};
-      if (!map[dept][yr])          map[dept][yr] = {};
-      if (!map[dept][yr][sem])     map[dept][yr][sem] = {};
-      if (!map[dept][yr][sem][cat]) map[dept][yr][sem][cat] = [];
-      map[dept][yr][sem][cat].push(m);
-    }
-    return map;
-  }, [filtered]);
 
   const CAT_LABEL: Record<string,string> = { notes:'📒 Lecture Notes', past_questions:'📝 Past Questions', aoc:'📌 AOC', syllabus:'📋 Syllabus', textbook:'📘 Textbook', other:'📄 Other' };
   const CAT_ORDER = ['notes','past_questions','syllabus','aoc','textbook','other'];
