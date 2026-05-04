@@ -69,11 +69,6 @@ export async function searchTavily(query: string, maxResults = 5): Promise<Tavil
         search_depth: 'advanced',
         max_results: maxResults,
         include_answer: false,
-        include_domains: [
-          'vatican.va', 'newadvent.org', 'jstor.org', 'philpapers.org',
-          'iep.utm.edu', 'plato.stanford.edu', 'catholiceducation.org',
-          'catholicculture.org', 'ewtn.com',
-        ],
       }),
     });
     if (!res.ok) return [];
