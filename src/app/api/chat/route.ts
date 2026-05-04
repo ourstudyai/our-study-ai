@@ -102,15 +102,15 @@ export async function POST(req: NextRequest) {
             suggestedPaths = Array.from(new Set(docs.slice(0, 5).map(d => d.data().fullPath ?? d.data().heading ?? '').filter(Boolean)));
           }
         } else {
-          const qdrantResults = await hybridSearch(message, courseId, 12);
+          const qdrantResults = await hybridSearch(message, courseId, 5);
           if (qdrantResults.length > 0) {
             ragContext = qdrantResults.map(r => {
               const pathLabel = r.fullPath ? `[${r.fullPath}]` : `[${r.heading ?? 'Section'}]`;
               return `${pathLabel}
-${r.text}`;
+${r.text.slice(0, 1200)}`;
             }).join("\n\n");
             suggestedPaths = Array.from(new Set(qdrantResults.slice(0, 5).map(r => r.fullPath ?? r.heading ?? '').filter(Boolean)));
-            lowConfidence = qdrantResults[0]?.score < 0.015;
+            lowConfidence = qdrantResults[0]?.score < 0.005;
           }
         }
       } catch (err) {
@@ -165,7 +165,7 @@ ${r.text}`;
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: systemPrompt },
-        ...(Array.isArray(conversationHistory) ? conversationHistory : []),
+        ...(Array.isArray(conversationHistory) ? conversationHistory.slice(-6) : []),
         { role: "user", content: message },
       ],
       stream: true,

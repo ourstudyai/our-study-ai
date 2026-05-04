@@ -631,13 +631,13 @@ export default function CoursePage() {
           }
         }
       }
-      if (!fullResponse.trim()) { fullResponse = "No response was returned. This typically means the query did not match any indexed material for this course, or the model returned an empty completion. Try rephrasing your question, narrowing the scope, or switching modes. If the problem persists, use the flag button to report it."; }
+      if (!fullResponse.trim()) { fullResponse = "I didn't catch that — something interrupted the response. Try asking again."; }
     const aiMsg: ChatMessage = { role: 'assistant', content: fullResponse, timestamp: new Date().toISOString() };
       const finalHistory = [...newHistory, aiMsg];
       setModeHistories(prev => ({ ...prev, [activeMode]: finalHistory }));
       setStreamingMessage('');
       await saveSession(activeMode, finalHistory);
-    } catch { }
+    } catch (err) { console.error('[sendMessage error]', err); }
     finally { setIsStreaming(false); setIsAiLoading(false); }
   };
 
