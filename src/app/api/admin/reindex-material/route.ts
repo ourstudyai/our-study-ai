@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { MaterialCategory } from '@/lib/processing/classifier';
 import { FieldValue } from 'firebase-admin/firestore';
+import { upsertChunks, deleteChunksByMaterial } from '@/lib/qdrant/upsert';
 
 const CHUNKS_COL = 'material_chunks';
 const WORD_CEILING = 1500;
@@ -169,6 +170,7 @@ export async function POST(req: NextRequest) {
       const deleteBatch = adminDb.batch();
       oldChunks.docs.forEach(d => deleteBatch.update(d.ref, { deleted: true }));
       await deleteBatch.commit();
+      await deleteChunksByMaterial(materialId);
 
       const chunks = semanticChunk(stripTOC(extractedText));
 
@@ -190,6 +192,21 @@ export async function POST(req: NextRequest) {
         });
       });
       await writeBatch.commit();
+      await upsertChunks(
+        chunks.map((chunk, i) => ({
+          id: `${materialId}-${i}`,
+          payload: {
+            materialId,
+            courseId,
+            chunkIndex: i,
+            heading: chunk.heading,
+            fullPath: chunk.fullPath,
+            ancestorHeadings: chunk.ancestorHeadings,
+            text: chunk.text,
+            category: category as string,
+          },
+        }))
+      );
       console.log(`[reindex] ${chunks.length} semantic chunks written for ${materialId}`);
     }
 

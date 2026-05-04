@@ -101,44 +101,17 @@ export async function POST(req: NextRequest) {
             suggestedPaths = Array.from(new Set(docs.slice(0, 5).map(d => d.data().fullPath ?? d.data().heading ?? '').filter(Boolean)));
           }
         } else {
-          const snap = await adminDb.collection('material_chunks')
-            .where('courseId', '==', courseId)
-            .limit(80)
-            .get();
-          if (!snap.empty) {
-            const stopWords = new Set(['that','this','with','from','they','have','what','will','your','been','were','when','there','their','about','which','would','could','should','does','into','more','also','than','then','them','these','those','some','such','only','very','just','like','well','even','each','much','most','over','after','before','other','same','both','here','where','while','through','between','because','however','therefore','although','without']);
-            const queryTerms = message.toLowerCase()
-              .replace(/[^a-z0-9\s]/g, ' ')
-              .split(/\s+/)
-              .filter((w: string) => w.length > 2 && !stopWords.has(w));
-            const docs = snap.docs.filter(d => !d.data().deleted);
-            const scored = docs
-              .map(d => ({
-                chunk: d.data() as ChunkDoc,
-                score: scoreChunk(d.data() as ChunkDoc, queryTerms),
-              }))
-              .filter(s => s.score > 0)
-              .sort((a, b) => b.score - a.score);
-            const topScore = scored[0]?.score ?? 0;
-            const secondScore = scored[1]?.score ?? 0;
-            const top3Total = scored.slice(0, 3).reduce((sum, s) => sum + s.score, 0);
-            const absolutelyLow = topScore < 5;
-            const noStandout = topScore > 0 && (topScore - secondScore) < 3;
-            lowConfidence = absolutelyLow && noStandout && top3Total < 10;
+          const qdrantResults = await hybridSearch(message, courseId, 12);
+          if (qdrantResults.length > 0) {
+            ragContext = qdrantResults.map(r => {
+              const pathLabel = r.fullPath ? `[${r.fullPath}]` : `[${r.heading ?? 'Section'}]`;
+              return `${pathLabel}
+${r.text}`;
+            }).join('
 
-          if (scored.length > 0) {
-            const top = scored.slice(0, 12);
-
-            // Collect suggested headings for fallback message
-            suggestedPaths = Array.from(
-              new Set(scored.slice(0, 5).map(s => s.chunk.fullPath ?? s.chunk.heading ?? "").filter(Boolean))
-            );
-
-            ragContext = top.map((s, i) => {
-              const pathLabel = s.chunk.fullPath ? `[${s.chunk.fullPath}]` : `[Chunk ${i + 1}]`;
-              return `${pathLabel}\n${s.chunk.text}`;
-            }).join("\n\n");
-            }
+');
+            suggestedPaths = Array.from(new Set(qdrantResults.slice(0, 5).map(r => r.fullPath ?? r.heading ?? '').filter(Boolean)));
+            lowConfidence = qdrantResults[0]?.score < 0.015;
           }
         }
       } catch (err) {
