@@ -19,6 +19,16 @@ service cloud.firestore {
         isChiefAdmin() || isSupreme()
       );
       allow delete: if isSupreme();
+
+      match /chatSessions/{sessionId} {
+        allow read, write: if isAuth() && isOwner(uid);
+      }
+      match /chatArchive/{archiveId} {
+        allow read, write: if isAuth() && isOwner(uid);
+      }
+      match /notes/{noteId} {
+        allow read, write: if isAuth() && isOwner(uid);
+      }
     }
 
     // Courses - anyone authenticated reads, only admins write
