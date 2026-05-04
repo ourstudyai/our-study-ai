@@ -69,17 +69,14 @@ export default function LibraryPage() {
   const [openYears, setOpenYears] = useState<Set<string>>(new Set());
   const [openSems,  setOpenSems]  = useState<Set<string>>(new Set());
   const [openCats,  setOpenCats]  = useState<Set<string>>(new Set());
+  const [libraryOpen, setLibraryOpen] = useState<boolean|null>(null);
+  const [togglingLibrary, setTogglingLibrary] = useState(false);
 
   // Admin email whitelist manager
   const [whitelistEmails, setWhitelistEmails] = useState<{ id: string; email: string }[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [whitelistOpen, setWhitelistOpen] = useState(false);
   const [addingEmail, setAddingEmail] = useState(false);
-  const [libraryOpen, setLibraryOpen] = useState<boolean|null>(null);
-  const [togglingLibrary, setTogglingLibrary] = useState(false);
-
-  // Library open/closed toggle (supreme + chief admin only)
-  const [libraryOpen, setLibraryOpen] = useState<boolean | null>(null);
 
   // Access gate
   useEffect(() => {
@@ -87,14 +84,8 @@ export default function LibraryPage() {
     if (!firebaseUser) { router.replace('/login'); return; }
     async function checkAccess() {
       if (isAdmin) { setHasAccess(true); setAccessChecked(true); return; }
-      // General access: read settings/library open flag
-      const settingsSnap = await getDoc(doc(db, 'settings', 'library'));
-      const open = settingsSnap.exists() ? settingsSnap.data()?.open === true : false;
-      if (open) {
-        setHasAccess(true);
-      } else {
-        router.replace('/library/restricted');
-      }
+      const ss = await getDoc(doc(db, 'settings', 'library'));
+      if (ss.exists() && ss.data()?.open === true) { setHasAccess(true); } else { router.replace('/library/restricted'); }
       setAccessChecked(true);
     }
     checkAccess();
@@ -120,18 +111,8 @@ export default function LibraryPage() {
         });
 
         setMaterials(enriched);
-
-        // Auto-open first dept > year > sem
-        const _d = Array.from(new Set(enriched.map((m:any)=>m.department).filter(Boolean))).sort() as string[];
-        if (_d.length) {
-          setOpenDepts(new Set([_d[0]]));
-          const _y = Array.from(new Set(enriched.filter((m:any)=>m.department===_d[0]).map((m:any)=>String(m.year)).filter((v:string)=>v!=='undefined'))).sort() as string[];
-          if (_y.length) {
-            setOpenYears(new Set([`${_d[0]}|${_y[0]}`]));
-            const _s = Array.from(new Set(enriched.filter((m:any)=>m.department===_d[0]&&String(m.year)===_y[0]).map((m:any)=>String(m.semester)).filter((v:string)=>v!=='undefined'))).sort() as string[];
-            if (_s.length) setOpenSems(new Set([`${_d[0]}|${_y[0]}|${_s[0]}`]));
-          }
-        }
+        const _d=[...new Set(enriched.map((m:any)=>m.department).filter(Boolean))].sort() as string[];
+        if(_d.length){setOpenDepts(new Set([_d[0]]));const _y=[...new Set(enriched.filter((m:any)=>m.department===_d[0]).map((m:any)=>String(m.year)).filter((v:string)=>v!=='undefined'))].sort() as string[];if(_y.length){setOpenYears(new Set([`${_d[0]}|${_y[0]}`]));const _s=[...new Set(enriched.filter((m:any)=>m.department===_d[0]&&String(m.year)===_y[0]).map((m:any)=>String(m.semester)).filter((v:string)=>v!=='undefined'))].sort() as string[];if(_s.length)setOpenSems(new Set([\`${_d[0]}|${_y[0]}|${_s[0]}\`]));}}        
 
         // Load viewed from localStorage
         const storedViewed = JSON.parse(localStorage.getItem('sjr_viewed') ?? '[]');
@@ -150,14 +131,6 @@ export default function LibraryPage() {
         if (isChiefOrSupreme) {
           const ls = await getDoc(doc(db, 'settings', 'library'));
           setLibraryOpen(ls.exists() ? ls.data()?.open === true : false);
-        }
-        if (isChiefOrSupreme) {
-          const libSnap = await getDoc(doc(db, 'settings', 'library'));
-          setLibraryOpen(libSnap.exists() ? libSnap.data()?.open === true : false);
-        }
-        if (isChiefOrSupreme) {
-          const libSnap = await getDoc(doc(db, 'settings', 'library'));
-          setLibraryOpen(libSnap.exists() ? libSnap.data()?.open === true : false);
         }
       } finally {
         setLoading(false);
@@ -285,7 +258,7 @@ export default function LibraryPage() {
 
   async function toggleLibraryOpen() {
     setTogglingLibrary(true);
-    try { const nv = !libraryOpen; await setDoc(doc(db,'settings','library'),{open:nv},{merge:true}); setLibraryOpen(nv); }
+    try { const nv=!libraryOpen; await setDoc(doc(db,'settings','library'),{open:nv},{merge:true}); setLibraryOpen(nv); }
     finally { setTogglingLibrary(false); }
   }
 
@@ -323,28 +296,16 @@ export default function LibraryPage() {
     });
   }, [materials, search, sort, filterDept, filterYear, filterSem, filterCat]);
 
-
-  const CAT_LABEL: Record<string,string> = { notes:'📒 Lecture Notes', past_questions:'📝 Past Questions', aoc:'📌 AOC', syllabus:'📋 Syllabus', textbook:'📘 Textbook', other:'📄 Other' };
-  const CAT_ORDER = ['notes','past_questions','syllabus','aoc','textbook','other'];
-
-  function tog(set: Set<string>, key: string): Set<string> { const n = new Set(set); n.has(key) ? n.delete(key) : n.add(key); return n; }
-
+  function tog(set: Set<string>, key: string): Set<string> { const n=new Set(set); n.has(key)?n.delete(key):n.add(key); return n; }
   const grouped = useMemo(() => {
     const map: Record<string,Record<string,Record<string,Record<string,IndexedMaterial[]>>>> = {};
     for (const m of filtered) {
-      const dept = m.department || 'Unassigned';
-      const yr   = String(m.year ?? '—');
-      const sem  = String(m.semester ?? '—');
-      const cat  = m.category || 'other';
-      if (!map[dept])               map[dept] = {};
-      if (!map[dept][yr])           map[dept][yr] = {};
-      if (!map[dept][yr][sem])      map[dept][yr][sem] = {};
-      if (!map[dept][yr][sem][cat]) map[dept][yr][sem][cat] = [];
+      const dept=m.department||'Unassigned'; const yr=String(m.year??'-'); const sem=String(m.semester??'-'); const cat=m.category||'other';
+      if(!map[dept])map[dept]={}; if(!map[dept][yr])map[dept][yr]={}; if(!map[dept][yr][sem])map[dept][yr][sem]={}; if(!map[dept][yr][sem][cat])map[dept][yr][sem][cat]=[];
       map[dept][yr][sem][cat].push(m);
     }
     return map;
   }, [filtered]);
-
   const isNew = (m: IndexedMaterial) => {
     if (!m.indexedAt) return false;
     return Date.now() - new Date(m.indexedAt as string).getTime() < 7 * 24 * 60 * 60 * 1000;
@@ -357,6 +318,8 @@ export default function LibraryPage() {
   const CAT_COLORS: Record<string, string> = {
     notes: '#c4a050', past_questions: '#818cf8', aoc: '#f472b6', syllabus: '#2dd4bf', textbook: '#34d399',
   };
+  const CAT_LABEL: Record<string,string> = { notes:'Lecture Notes', past_questions:'Past Questions', aoc:'AOC', syllabus:'Syllabus', textbook:'Textbook', other:'Other' };
+  const CAT_ORDER = ['notes','past_questions','syllabus','aoc','textbook','other'];
 
   if (authLoading || !accessChecked) return (
     <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)' }}>
@@ -432,7 +395,7 @@ export default function LibraryPage() {
           )}
         </div>
 
-        {/* ── Grouped: dept → year → sem → category ───────────────── */}
+        {/* ── Grouped: dept > year > sem > category ─────────────── */}
         {loading ? (
           <MiniLoader label="Loading materials..." />
         ) : filtered.length === 0 ? (
@@ -442,10 +405,10 @@ export default function LibraryPage() {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Try adjusting your filters or check back later.</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
           {Object.keys(grouped).sort().map(dept => {
-            const dOpen = openDepts.has(dept);
-            const dCount = Object.values(grouped[dept]).flatMap(y=>Object.values(y).flatMap(s=>Object.values(s).flat())).length;
+            const dOpen=openDepts.has(dept);
+            const dCount=Object.values(grouped[dept]).flatMap(y=>Object.values(y).flatMap(s=>Object.values(s).flat())).length;
             return (
               <div key={dept} style={{ border:'1px solid var(--border)', borderRadius:12, overflow:'hidden' }}>
                 <button onClick={()=>setOpenDepts(s=>tog(s,dept))} style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'13px 16px', background:'var(--navy-card)', border:'none', cursor:'pointer' }}>
@@ -455,30 +418,30 @@ export default function LibraryPage() {
                 </button>
                 {dOpen && <div style={{ padding:'0 12px 12px' }}>
                   {Object.keys(grouped[dept]).sort((a,b)=>Number(a)-Number(b)).map(yr => {
-                    const yk = `${dept}|${yr}`; const yOpen = openYears.has(yk);
-                    const yCount = Object.values(grouped[dept][yr]).flatMap(s=>Object.values(s).flat()).length;
+                    const yk=`${dept}|${yr}`; const yOpen=openYears.has(yk);
+                    const yCount=Object.values(grouped[dept][yr]).flatMap(s=>Object.values(s).flat()).length;
                     return (
                       <div key={yr} style={{ marginTop:8, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
                         <button onClick={()=>setOpenYears(s=>tog(s,yk))} style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'10px 14px', background:'rgba(196,160,80,0.04)', border:'none', cursor:'pointer' }}>
                           <span style={{ color:'var(--text-muted)', fontSize:'0.8rem' }}>{yOpen?'▾':'▸'}</span>
-                          <span style={{ fontWeight:700, fontSize:'0.85rem', color:'var(--text-primary)', flex:1 }}>Year {yr==='—'?'Unknown':yr}</span>
+                          <span style={{ fontWeight:700, fontSize:'0.85rem', color:'var(--text-primary)', flex:1 }}>Year {yr==='-'?'Unknown':yr}</span>
                           <span style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>{yCount}</span>
                         </button>
                         {yOpen && <div style={{ padding:'0 10px 10px' }}>
                           {Object.keys(grouped[dept][yr]).sort().map(sem => {
-                            const sk = `${dept}|${yr}|${sem}`; const sOpen = openSems.has(sk);
-                            const sCount = Object.values(grouped[dept][yr][sem]).flat().length;
+                            const sk=`${dept}|${yr}|${sem}`; const sOpen=openSems.has(sk);
+                            const sCount=Object.values(grouped[dept][yr][sem]).flat().length;
                             return (
                               <div key={sem} style={{ marginTop:8, border:'1px solid rgba(196,160,80,0.12)', borderRadius:8, overflow:'hidden' }}>
                                 <button onClick={()=>setOpenSems(s=>tog(s,sk))} style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:'rgba(196,160,80,0.03)', border:'none', cursor:'pointer' }}>
                                   <span style={{ color:'var(--text-muted)', fontSize:'0.75rem' }}>{sOpen?'▾':'▸'}</span>
-                                  <span style={{ fontWeight:600, fontSize:'0.8rem', color:'var(--text-secondary)', flex:1 }}>Semester {sem==='—'?'Unknown':sem}</span>
+                                  <span style={{ fontWeight:600, fontSize:'0.8rem', color:'var(--text-secondary)', flex:1 }}>Semester {sem==='-'?'Unknown':sem}</span>
                                   <span style={{ fontSize:'0.68rem', color:'var(--text-muted)' }}>{sCount}</span>
                                 </button>
                                 {sOpen && <div style={{ padding:'8px 10px 10px' }}>
                                   {CAT_ORDER.filter(cat=>grouped[dept][yr][sem][cat]?.length).map(cat => {
-                                    const ck = `${dept}|${yr}|${sem}|${cat}`; const cOpen = openCats.has(ck);
-                                    const items = grouped[dept][yr][sem][cat];
+                                    const ck=`${dept}|${yr}|${sem}|${cat}`; const cOpen=openCats.has(ck);
+                                    const items=grouped[dept][yr][sem][cat];
                                     return (
                                       <div key={cat} style={{ marginTop:6 }}>
                                         <button onClick={()=>setOpenCats(s=>tog(s,ck))} style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'transparent', border:'none', borderBottom:'1px solid rgba(196,160,80,0.1)', cursor:'pointer' }}>
@@ -633,39 +596,35 @@ export default function LibraryPage() {
                     )}
                   </div>
                 </div>
-              );
-            })}
+                                          })}
+                                        </div>}
+                                      </div>
+                                    );
+                                  })}
+                                </div>}
+                              </div>
+                            );
+                          })}
+                        </div>}
+                      </div>
+                    );
+                  })}
+                </div>}
+              </div>
+            );
+          })}
           </div>
         )}
 
-        {/* ── Library open/close toggle (supreme + chief admin only) ── */}
         {isChiefOrSupreme && (
-          <div style={{ marginTop: '32px', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px 18px' }}>
+          <div style={{ marginTop:32, borderTop:'1px solid var(--border)', paddingTop:20 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--navy-card)', border:'1px solid var(--border)', borderRadius:12, padding:'14px 18px' }}>
               <div>
-                <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
-                  📚 Library General Access
-                </p>
-                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  {libraryOpen === null ? 'Loading...' : libraryOpen ? 'Open — all logged-in users can access the library' : 'Closed — only admins can access the library'}
-                </p>
+                <p style={{ fontSize:'0.82rem', fontWeight:700, color:'var(--text-primary)', marginBottom:2 }}>Library General Access</p>
+                <p style={{ fontSize:'0.72rem', color:'var(--text-muted)' }}>{libraryOpen===null?'Loading...':libraryOpen?'Open - all logged-in users can access':'Closed - admins only'}</p>
               </div>
-              <button
-                onClick={toggleLibraryOpen}
-                disabled={togglingLibrary || libraryOpen === null}
-                style={{
-                  padding: '8px 20px',
-                  borderRadius: '9px',
-                  border: 'none',
-                  fontWeight: 700,
-                  fontSize: '0.8rem',
-                  cursor: togglingLibrary ? 'not-allowed' : 'pointer',
-                  opacity: togglingLibrary || libraryOpen === null ? 0.5 : 1,
-                  background: libraryOpen ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.12)',
-                  color: libraryOpen ? '#fca5a5' : '#86efac',
-                  transition: 'all 0.2s',
-                }}>
-                {togglingLibrary ? '...' : libraryOpen ? '🔒 Close Library' : '🔓 Open Library'}
+              <button onClick={toggleLibraryOpen} disabled={togglingLibrary||libraryOpen===null} style={{ padding:'8px 20px', borderRadius:9, border:'none', fontWeight:700, fontSize:'0.8rem', cursor:'pointer', opacity:togglingLibrary||libraryOpen===null?0.5:1, background:libraryOpen?'rgba(239,68,68,0.12)':'rgba(34,197,94,0.12)', color:libraryOpen?'#fca5a5':'#86efac' }}>
+                {togglingLibrary?'...':libraryOpen?'Close Library':'Open Library'}
               </button>
             </div>
           </div>
