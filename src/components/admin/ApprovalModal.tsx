@@ -143,14 +143,16 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
   const handleDelete = async () => {
     setLoading(true); setStatus('Deleting...');
     try {
-      await fetch('/api/admin/delete-material', {
+      const res = await fetch('/api/admin/delete-material', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ materialId: material.id, publicId: (material as any).publicId || null }),
       });
+      if (!res.ok) throw new Error('Server returned ' + res.status);
       setStatus('Deleted.');
       setTimeout(onDone, 600);
-    } catch { setStatus('Delete failed.'); }
+    } catch (err) { setStatus('Delete failed. ' + (err as Error).message); }
     finally { setLoading(false); }
   };
 

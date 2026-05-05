@@ -295,6 +295,7 @@ export default function LibraryPage() {
     lecture_notes: '#c4a050', past_questions: '#818cf8', aoc: '#f472b6', syllabus: '#2dd4bf',
   };
 
+  if (authLoading || (!accessChecked && hasAccess === false && !isAdmin)) return null;
   if (authLoading || !accessChecked) return (
     <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)' }}>
       <LuxLoader label="Loading library..." />
