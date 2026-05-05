@@ -301,6 +301,14 @@ export default function LibraryPage() {
   };
 
   if (authLoading || !accessChecked) return (
+    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)', flexDirection: 'column', gap: 12, padding: 24 }}>
+      <LuxLoader label="Loading library..." />
+      <div style={{ color: 'var(--gold)', fontSize: '0.7rem', textAlign: 'center', opacity: 0.8 }}>
+        authLoading: {String(authLoading)} | accessChecked: {String(accessChecked)} | hasAccess: {String(hasAccess)} | isAdmin: {String(isAdmin)} | role: {userProfile?.role ?? 'null'}
+      </div>
+    </div>
+  );
+  if (false) return (
     <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)' }}>
       <LuxLoader label="Loading library..." />
     </div>
