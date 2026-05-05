@@ -1,4 +1,10 @@
-// System Prompts — Lux Studiorum
+import os
+
+# ── FILE 1: system-prompts.ts ──────────────────────────────────────────────
+
+system_prompts_path = "src/lib/gemini/system-prompts.ts"
+
+system_prompts_content = r"""// System Prompts — Lux Studiorum
 import { StudyMode } from '@/lib/types';
 
 const UNIVERSAL_RULES = `
@@ -21,15 +27,15 @@ UNIVERSAL RULES:
 6. FORMATTING: Use proper markdown formatting — **bold** for emphasis, *italics* for foreign terms and titles, numbered lists for sequences, bullet points for non-sequential items. Never leave raw asterisks or markdown symbols visible in your output. Format as a scholarly document would appear in print.
 - TOPIC AND SUBTOPIC TITLES: Always reproduce topic and subtopic headings EXACTLY as they appear in the course material — word for word, same capitalisation. Never paraphrase or summarise a heading.
 7. CONTINUITY: Never ask the student to repeat themselves. You have the full conversation history.
-8. PERSONA: You are a brilliant, warm senior student who knows this course deeply and genuinely cares that your friend understands it — not just passes.
-You think out loud alongside the student. You don't perform knowledge — you share it naturally.
-You speak the way a trusted friend explains something over coffee: plain, precise, never padded, never cold.
-You use correct technical and theological terms because precision matters — but you always land the meaning in plain language immediately after.
-When something is hard, you slow down and work through it step by step — without dumbing it down.
-When something is genuinely contested or uncertain, you say so plainly. You never fake confidence.
-You treat the student as intelligent and fully capable of understanding difficult material with the right guidance.
-You are never clinical, never mechanical, never bureaucratic. Every response should feel like it came from a person who actually cares.
-You can hold any kind of conversation — academic, casual, personal — like a friend who happens to know this material inside out.
+8. PERSONA: You are a knowledgeable senior student who knows this course inside out.
+You think alongside the student — not lecturing down at them.
+You use the correct technical and theological terms precisely, but you explain them
+like an insider helping a friend think through hard material.
+You are warm, direct, and never padded. You never perform enthusiasm.
+When something is complex, you break it down step by step without dumbing it down.
+When something is contested, you say so honestly.
+You treat the student as intelligent and capable.
+You can hold any conversation — academic, casual, or personal — like a trusted friend who happens to know this material deeply.
 9. CONTEXT: You are an AI study companion at Lux Studiorum — a Catholic seminary study platform. Your home base is the student's course materials, but you are not confined to them. You can discuss anything the student brings up. When course material is relevant, lead with it. When it isn't, be a good conversation partner.
 10. KNOWLEDGE: Your knowledge base is broad. Use it freely for casual conversation. For actual knowledge inquiries where no course material exists, offer to use it and wait for permission. Never pretend ignorance you don't have.
 `;
@@ -155,3 +161,106 @@ After the report, briefly explain each incorrect answer with the correct informa
       return `Answer the student's question clearly and accurately using course materials. Cite your sources.`;
   }
 }
+"""
+
+with open(system_prompts_path, 'w') as f:
+    f.write(system_prompts_content)
+print(f"✅ Written: {system_prompts_path}")
+
+
+# ── FILE 2: tavily.ts ──────────────────────────────────────────────────────
+
+tavily_path = "src/lib/search/tavily.ts"
+
+tavily_content = r"""// src/lib/search/tavily.ts
+// Tavily web search for Research mode — Firestore cache (7-day TTL) + analytics
+
+import { adminDb } from '@/lib/firebase/admin';
+
+export interface TavilyResult {
+  title: string;
+  url: string;
+  content: string;
+  score: number;
+}
+
+const CACHE_COL = 'search_cache';
+const TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function normalize(q: string) {
+  return q.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+async function logAnalytics(field: string) {
+  try {
+    const { FieldValue } = await import('firebase-admin/firestore');
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+    await adminDb.collection('analytics').doc('tavily').set({
+      [`${field}_${today}`]: FieldValue.increment(1),
+      [`total_${field}`]: FieldValue.increment(1),
+      ...(field === 'searches' ? { last_search: new Date().toISOString() } : {}),
+    }, { merge: true });
+  } catch (_) {}
+}
+
+async function getCached(key: string): Promise<TavilyResult[] | null> {
+  try {
+    const snap = await adminDb.collection(CACHE_COL).doc(key).get();
+    if (!snap.exists) return null;
+    const data = snap.data()!;
+    if (Date.now() - data.cachedAt > TTL_MS) {
+      snap.ref.delete().catch(() => {});
+      return null;
+    }
+    logAnalytics('cache_hits');
+    return data.results as TavilyResult[];
+  } catch {
+    return null;
+  }
+}
+
+async function setCached(key: string, results: TavilyResult[]) {
+  try {
+    await adminDb.collection(CACHE_COL).doc(key).set({ results, cachedAt: Date.now() });
+  } catch (_) {}
+}
+
+export async function searchTavily(query: string, maxResults = 5): Promise<TavilyResult[]> {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) return [];
+
+  const key = normalize(query).slice(0, 500);
+  const cached = await getCached(key);
+  if (cached) return cached;
+
+  try {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        search_depth: 'advanced',
+        max_results: maxResults,
+        include_answer: false,
+      }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const results = (data.results ?? []) as TavilyResult[];
+    if (results.length > 0) {
+      setCached(key, results).catch(() => {});
+      logAnalytics('searches');
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+"""
+
+with open(tavily_path, 'w') as f:
+    f.write(tavily_content)
+print(f"✅ Written: {tavily_path}")
+
+print("\n✅ All done. Run: git add src/lib/gemini/system-prompts.ts src/lib/search/tavily.ts")

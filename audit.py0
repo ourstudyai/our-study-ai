@@ -1,0 +1,71 @@
+cat > /workspaces/our-study-ai/audit.py << 'EOF'
+import os
+with open('/workspaces/our-study-ai/.env.local') as f:
+    for line in f:
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            k, v = line.split('=', 1)
+            os.environ[k] = v.strip('"')
+
+import requests
+from google.oauth2 import service_account
+from google.auth.transport.requests import Request
+
+QDRANT_URL = os.environ.get("QDRANT_URL", "").rstrip("/")
+QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "")
+COLLECTION = "lux_chunks"
+PROJECT_ID = os.environ.get("FIREBASE_ADMIN_PROJECT_ID", "")
+CLIENT_EMAIL = os.environ.get("FIREBASE_ADMIN_CLIENT_EMAIL", "")
+PRIVATE_KEY = os.environ.get("FIREBASE_ADMIN_PRIVATE_KEY", "").replace("\\n", "\n")
+
+creds = service_account.Credentials.from_service_account_info(
+    {"type": "service_account", "project_id": PROJECT_ID,
+     "private_key": PRIVATE_KEY, "client_email": CLIENT_EMAIL,
+     "token_uri": "https://oauth2.googleapis.com/token"},
+    scopes=["https://www.googleapis.com/auth/datastore"]
+)
+creds.refresh(Request())
+token = creds.token
+
+print("Fetching materials from Firestore...")
+r = requests.get(f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/materials?pageSize=300", headers={"Authorization": f"Bearer {token}"})
+docs = r.json().get("documents", [])
+print(f"Found {len(docs)} materials")
+
+materials = {}
+for d in docs:
+    mid = d["name"].split("/")[-1]
+    fields = d.get("fields", {})
+    def fval(f): return fields.get(f, {}).get("stringValue")
+    materials[mid] = {"id": mid, "fileName": fval("fileName"), "status": fval("status"), "confirmedCourseId": fval("confirmedCourseId")}
+
+print("Fetching Qdrant vectors...")
+qdrant_map = {}
+offset = None
+total = 0
+while True:
+    body = {"limit": 100, "with_payload": True, "with_vector": False}
+    if offset: body["offset"] = offset
+    resp = requests.post(f"{QDRANT_URL}/collections/{COLLECTION}/points/scroll", headers={"api-key": QDRANT_API_KEY, "Content-Type": "application/json"}, json=body)
+    result = resp.json().get("result", {})
+    points = result.get("points", [])
+    total += len(points)
+    for p in points:
+        mid = p.get("payload", {}).get("materialId")
+        cid = p.get("payload", {}).get("courseId")
+        if mid:
+            qdrant_map.setdefault(mid, set()).add(cid)
+    offset = result.get("next_page_offset")
+    if not offset: break
+print(f"Found {total} vectors across {len(qdrant_map)} materials")
+
+print("Checking chunk quality in Firestore...")
+cr = requests.get(f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/material_chunks?pageSize=300", headers={"Authorization": f"Bearer {token}"})
+chunk_quality = {}
+for c in cr.json().get("documents", []):
+    fields = c.get("fields", {})
+    mid = fields.get("materialId", {}).get("stringValue")
+    deleted = fields.get("deleted", {}).get("booleanValue", False)
+    if deleted or not mid: continue
+    has_heading = bool(fields0
+

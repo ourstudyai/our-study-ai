@@ -8,6 +8,11 @@ const qstash = new Client({ token: process.env.QSTASH_TOKEN! });
 
 export async function POST(req: NextRequest) {
   try {
+    const session = (await import("next/headers")).cookies().get("session")?.value;
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    try { await (await import("@/lib/firebase/admin")).adminAuth.verifySessionCookie(session, true); }
+    catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+
     const {
       key,
       fileHash,

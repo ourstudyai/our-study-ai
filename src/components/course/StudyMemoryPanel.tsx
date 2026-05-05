@@ -51,7 +51,7 @@ export default function StudyMemoryPanel({ courseId, chatHistory, defaultSection
 
     // ── Load notes ───────────────────────────────────────────────────────────
     useEffect(() => {
-        if (!firebaseUser || defaultSection !== 'notes') return;
+        if (!firebaseUser?.uid) return;
         const fetchNotes = async () => {
             try {
                 const q = query(
@@ -69,7 +69,7 @@ export default function StudyMemoryPanel({ courseId, chatHistory, defaultSection
             }
         };
         fetchNotes();
-    }, [courseId, firebaseUser, defaultSection]);
+    }, [courseId, firebaseUser?.uid]);
 
     // ── Load archives ────────────────────────────────────────────────────────
     useEffect(() => {
