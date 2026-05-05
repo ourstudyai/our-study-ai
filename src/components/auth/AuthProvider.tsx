@@ -36,14 +36,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Safety net — authLoading never stays true forever
-    const safetyTimer = setTimeout(() => setLoading(false), 4000);
+    // Safety net — loading never stays true forever
+    const safetyTimer = setTimeout(() => setLoading(false), 5000);
+
     const unsubscribe = onIdTokenChanged(auth, async (user) => {
       setFirebaseUser(user);
 
       if (user) {
         try {
-          const idToken = await user.getIdToken().then(idToken =>
+          // Refresh session cookie in background — non-blocking
+          user.getIdToken().then(idToken =>
             fetch('/api/auth/session', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -54,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           const profile = await Promise.race([
             getUserProfile(user.uid),
-            new Promise<null>(resolve => setTimeout(() => resolve(null), 5000))
+            new Promise<null>(resolve => setTimeout(() => resolve(null), 4000))
           ]);
           setUserProfile(profile);
 
@@ -78,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserProfile(null);
       }
 
+      clearTimeout(safetyTimer);
       setLoading(false);
     });
 
