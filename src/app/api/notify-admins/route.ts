@@ -14,6 +14,10 @@ export type NotificationType =
 
 export async function POST(req: NextRequest) {
   try {
+    const secret = req.headers.get('x-internal-secret');
+    if (!secret || secret !== process.env.INTERNAL_API_SECRET) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { type, title, body, data } = await req.json();
 
     // Get target FCM tokens from Firestore

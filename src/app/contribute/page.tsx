@@ -133,6 +133,7 @@ export default function ContributePage() {
 
     const sigRes = await fetch('/api/cloudinary-signature', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fileName: file.name, folder, fileHash, mimeType: file.type }),
     });
@@ -183,6 +184,7 @@ export default function ContributePage() {
         });
         const res = await fetch('/api/process-upload', {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key, fileHash, fileName: file.name, mimeType: file.type, uploadedBy: firebaseUser.uid, uploadedByRole: 'student', uploaderEmail, suggestedCourseName: courseName, suggestedCourseId: courseId, category: selectedCategory }),
         });
@@ -224,6 +226,7 @@ export default function ContributePage() {
         });
         const res = await fetch('/api/process-upload', {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key, fileHash, fileName: file.name, mimeType: file.type, uploadedBy: firebaseUser.uid, uploadedByRole: 'student', uploaderEmail, suggestedCourseName: null, suggestedCourseId: null, category: 'other' }),
         });

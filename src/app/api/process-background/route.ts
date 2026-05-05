@@ -12,6 +12,21 @@ const redis = new Redis({
 
 export async function POST(req: NextRequest) {
   try {
+    // Verify this came from QStash
+    const signature = req.headers.get('upstash-signature');
+    if (!signature) {
+      return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
+    }
+    const { Receiver } = await import('@upstash/qstash');
+    const receiver = new Receiver({
+      currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY!,
+      nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY!,
+    });
+    const rawBody = await req.text();
+    const isValid = await receiver.verify({ signature, body: rawBody }).catch(() => false);
+    if (!isValid) {
+      return NextResponse.json({ error: 'Invalid QStash signature' }, { status: 401 });
+    }
     const {
       materialId,
       fileUrl,
@@ -20,7 +35,7 @@ export async function POST(req: NextRequest) {
       category,
       suggestedCourseId,
       suggestedCourseName,
-    } = await req.json();
+    } = JSON.parse(rawBody);
 
     if (!materialId || !fileUrl) {
       return NextResponse.json({ error: "Missing materialId or fileUrl." }, { status: 400 });
@@ -89,7 +104,7 @@ export async function POST(req: NextRequest) {
     try {
       await fetch(`https://our-study-ai.vercel.app/api/notify-admins`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-internal-secret": process.env.INTERNAL_API_SECRET! },
         body: JSON.stringify({
           type: "new_upload",
           title: "📄 New Upload",

@@ -601,6 +601,7 @@ export default function CoursePage() {
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message, courseId, mode: activeMode,
