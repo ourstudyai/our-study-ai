@@ -146,6 +146,15 @@ function semanticChunk(markdown: string): SemanticChunk[] {
 
 export async function POST(req: NextRequest) {
   try {
+    const session = (await import('next/headers')).cookies().get('session')?.value;
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    let _decoded: any;
+    try { _decoded = await (await import('@/lib/firebase/admin')).adminAuth.verifySessionCookie(session, true); }
+    catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
+    const _uDoc = await (await import('@/lib/firebase/admin')).adminDb.collection('users').doc(_decoded.uid).get();
+    const _role = _uDoc.data()?.role;
+    if (!(_role === 'admin' || _role === 'chief_admin' || _decoded.email === 'ourstudyai@gmail.com')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
     const {
       materialId, courseId, courseName, category,
       extractedText, indexDisplayName, department,
