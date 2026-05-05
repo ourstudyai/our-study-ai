@@ -36,6 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // Safety net — authLoading never stays true forever
+    const safetyTimer = setTimeout(() => setLoading(false), 4000);
     const unsubscribe = onIdTokenChanged(auth, async (user) => {
       setFirebaseUser(user);
 
@@ -79,7 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => { unsubscribe(); clearTimeout(safetyTimer); };
   }, []);
 
   return (
