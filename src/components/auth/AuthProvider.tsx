@@ -50,7 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             })
           ).catch(e => console.warn('[AuthProvider] session refresh failed:', e));
 
-          const profile = await getUserProfile(user.uid);
+          const profile = await Promise.race([
+            getUserProfile(user.uid),
+            new Promise<null>(resolve => setTimeout(() => resolve(null), 5000))
+          ]);
           setUserProfile(profile);
 
           // Register FCM token for admins
