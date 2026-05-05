@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { adminDb } from '@/lib/firebase/admin';
 import { MaterialCategory } from '@/lib/processing/classifier';
 import { FieldValue } from 'firebase-admin/firestore';

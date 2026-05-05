@@ -4,12 +4,19 @@ export const dynamic = "force-dynamic";
 // Polling endpoint — client calls this every 3s to check if processing is done
 
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { adminAuth } from "@/lib/firebase/admin";
 import { getMaterial } from "@/lib/firestore/materials";
 
 export async function GET(
     _req: NextRequest,
     { params }: { params: { materialId: string } }
 ) {
+    const session = cookies().get("session")?.value;
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    try { await adminAuth.verifySessionCookie(session, true); }
+    catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+
     try {
         const material = await getMaterial(params.materialId);
         if (!material) {
