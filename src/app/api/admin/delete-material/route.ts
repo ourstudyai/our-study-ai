@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { adminDb, adminAuth } from "@/lib/firebase/admin";
-import { deleteChunksByMaterial } from "@/lib/firestore/materials";
 import { r2Client, R2_BUCKET } from "@/lib/r2";
 import { cookies } from "next/headers";
 
@@ -19,7 +18,13 @@ export async function POST(req: NextRequest) {
 
     const { materialId, publicId } = await req.json();
     if (!materialId) return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
-    await deleteChunksByMaterial(materialId);
+    // Delete chunks using adminDb (client SDK has no auth in server context)
+    const chunksSnap = await adminDb.collection('material_chunks')
+      .where('materialId', '==', materialId)
+      .get();
+    const batch = adminDb.batch();
+    chunksSnap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
     if (publicId) {
       try { await r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: publicId })); }
       catch (err) { console.warn("[delete-material] R2 delete failed:", err); }
