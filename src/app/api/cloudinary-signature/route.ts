@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = cookies().get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    try { await adminAuth.verifySessionCookie(session, true); }
+    try { await adminAuth.verifyIdToken(session); }
     catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
 
     const { fileName, folder, fileHash, checkOnly, mimeType } = await req.json();

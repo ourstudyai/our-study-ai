@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = (await import("next/headers")).cookies().get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    try { await (await import("@/lib/firebase/admin")).adminAuth.verifySessionCookie(session, true); }
+    try { await (await import("@/lib/firebase/admin")).adminAuth.verifyIdToken(session); }
     catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
 
     const {

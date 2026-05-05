@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import MiniLoader from '@/components/MiniLoader';
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useAuth } from '@/components/auth/AuthProvider';
 
@@ -57,11 +57,12 @@ export default function StudyMemoryPanel({ courseId, chatHistory, defaultSection
                 const q = query(
                     collection(db, 'notes'),
                     where('courseId', '==', courseId),
-                    where('userId', '==', firebaseUser.uid),
-                    orderBy('createdAt', 'desc')
+                    where('userId', '==', firebaseUser.uid)
                 );
                 const snap = await getDocs(q);
-                setNotes(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Note[]);
+                const loaded = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Note[];
+                loaded.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+                setNotes(loaded);
             } catch (err) {
                 console.error(err);
             } finally {

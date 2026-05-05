@@ -14,7 +14,7 @@ export async function GET(
 ) {
     const session = cookies().get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    try { await adminAuth.verifySessionCookie(session, true); }
+    try { await adminAuth.verifyIdToken(session); }
     catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
 
     try {

@@ -1,11 +1,20 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { adminDb } from "@/lib/firebase/admin";
+import { adminDb, adminAuth } from "@/lib/firebase/admin";
+import { cookies } from "next/headers";
 import { r2Client, R2_BUCKET } from "@/lib/r2";
 
 export async function POST(req: NextRequest) {
   try {
+    const session = cookies().get("session")?.value;
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    let _d: any;
+    try { _d = await adminAuth.verifyIdToken(session); } catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    const _u = await adminDb.collection("users").doc(_d.uid).get();
+    const _r = _u.data()?.role;
+    if (!(_r === "admin" || _r === "chief_admin" || _d.email === "ourstudyai@gmail.com")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const { materialId } = await req.json();
     if (!materialId) return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
 

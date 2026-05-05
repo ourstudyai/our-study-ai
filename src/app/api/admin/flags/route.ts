@@ -7,7 +7,7 @@ export async function PATCH(request: NextRequest) {
     const session = cookies().get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let decoded: any;
-    try { decoded = await adminAuth.verifySessionCookie(session, true); }
+    try { decoded = await adminAuth.verifyIdToken(session); }
     catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
     const userDoc = await adminDb.collection("users").doc(decoded.uid).get();
     const role = userDoc.data()?.role;

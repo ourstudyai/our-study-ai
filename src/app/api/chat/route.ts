@@ -5,7 +5,8 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { adminDb } from "@/lib/firebase/admin";
+import { adminDb, adminAuth } from "@/lib/firebase/admin";
+import { cookies } from "next/headers";
 import { getSystemPrompt } from "@/lib/gemini/system-prompts";
 import { searchTavily } from "@/lib/search/tavily";
 import { hybridSearch } from "@/lib/qdrant/search";
@@ -48,6 +49,10 @@ function scoreChunk(chunk: ChunkDoc, queryTerms: string[]): number {
 export async function POST(req: NextRequest) {
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
   try {
+    const session = cookies().get("session")?.value;
+    if (!session) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    try { await adminAuth.verifyIdToken(session); } catch { return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }); }
+
     const body = await req.json();
     const { message, courseId, courseName, courseDescription, mode, conversationHistory, materialContext } = body;
 
