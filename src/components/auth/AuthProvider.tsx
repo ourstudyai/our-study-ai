@@ -41,13 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (user) {
         try {
-          const idToken = await user.getIdToken();
-          await fetch('/api/auth/session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ idToken }),
-          });
+          const idToken = await user.getIdToken().then(idToken =>
+            fetch('/api/auth/session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ idToken }),
+            })
+          ).catch(e => console.warn('[AuthProvider] session refresh failed:', e));
 
           const profile = await getUserProfile(user.uid);
           setUserProfile(profile);
