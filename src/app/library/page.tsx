@@ -77,14 +77,19 @@ export default function LibraryPage() {
     if (authLoading) return;
     if (!firebaseUser) { router.replace('/login'); return; }
     async function checkAccess() {
-      if (isAdmin) { setHasAccess(true); setAccessChecked(true); return; }
+      console.log('[library] checkAccess start, isAdmin:', isAdmin, 'userProfile:', userProfile?.role);
+      if (isAdmin) { setHasAccess(true); setAccessChecked(true); console.log('[library] admin fast path'); return; }
       const ss = await getDoc(doc(db, 'settings', 'library'));
+      console.log('[library] settings/library exists:', ss.exists(), 'open:', ss.data()?.open);
       if (ss.exists() && ss.data()?.open === true) {
         setHasAccess(true);
+        console.log('[library] hasAccess set true');
       } else {
+        console.log('[library] redirecting to restricted');
         router.replace('/library/restricted');
       }
       setAccessChecked(true);
+      console.log('[library] accessChecked set true');
     }
     checkAccess();
   }, [authLoading, firebaseUser, isAdmin, router]);
