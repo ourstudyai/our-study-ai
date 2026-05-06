@@ -12,11 +12,22 @@ async function ensurePQCollections() {
     await qdrant.createCollection(PQ_COLLECTION, {
       vectors: { size: 1024, distance: 'Cosine' },
     });
+    await qdrant.createPayloadIndex(PQ_COLLECTION, { field_name: 'materialId', field_schema: 'keyword' });
+    await qdrant.createPayloadIndex(PQ_COLLECTION, { field_name: 'courseId', field_schema: 'keyword' });
+  } else {
+    // Ensure indexes exist even if collection was created without them
+    try { await qdrant.createPayloadIndex(PQ_COLLECTION, { field_name: 'materialId', field_schema: 'keyword' }); } catch {}
+    try { await qdrant.createPayloadIndex(PQ_COLLECTION, { field_name: 'courseId', field_schema: 'keyword' }); } catch {}
   }
   if (!names.includes(AOC_COLLECTION)) {
     await qdrant.createCollection(AOC_COLLECTION, {
       vectors: { size: 1024, distance: 'Cosine' },
     });
+    await qdrant.createPayloadIndex(AOC_COLLECTION, { field_name: 'materialId', field_schema: 'keyword' });
+    await qdrant.createPayloadIndex(AOC_COLLECTION, { field_name: 'courseId', field_schema: 'keyword' });
+  } else {
+    try { await qdrant.createPayloadIndex(AOC_COLLECTION, { field_name: 'materialId', field_schema: 'keyword' }); } catch {}
+    try { await qdrant.createPayloadIndex(AOC_COLLECTION, { field_name: 'courseId', field_schema: 'keyword' }); } catch {}
   }
 }
 
