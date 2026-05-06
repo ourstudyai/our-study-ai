@@ -25,6 +25,8 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [shouldIndex, setShouldIndex] = useState(true);
+  const [aocYear, setAocYear] = useState<number | ''>('');
+  const [parsePreview, setParsePreview] = useState('');
   const [freshUrl, setFreshUrl] = useState('');
   const [landscape, setLandscape] = useState(true);
 
@@ -42,7 +44,7 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
       .catch(() => {});
   }, [material]);
 
-  const canApprove = selectedCourseId && ocrText.trim().length > 0;
+  const canApprove = selectedCourseId && ocrText.trim().length > 0 && (category !== 'aoc' || aocYear !== '');
 
   const filteredCourses = courses.filter(c =>
     !search || c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -114,9 +116,12 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
           year: course?.year || null,
           semester: course?.semester || null,
           shouldIndex,
+          aocYear: category === 'aoc' ? aocYear : undefined,
         }),
       });
       if (!res.ok) throw new Error('Reindex failed');
+      const resJson = await res.json().catch(() => ({}));
+      if (resJson.parsePreview) setParsePreview(resJson.parsePreview);
       setStatus(shouldIndex ? 'Approved and indexed.' : 'Approved (not indexed).');
       setTimeout(onDone, 800);
     } catch { setStatus('Error. Try again.'); }
@@ -276,6 +281,19 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
                 <input value={displayName} onChange={e => setDisplayName(e.target.value)} style={inp} placeholder='Name shown to students' />
               </div>
             </div>
+            {category === 'aoc' && (
+              <div>
+                <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 4 }}>AOC Year <span style={{ color: '#ef4444' }}>*</span></p>
+                <input
+                  type="number"
+                  value={aocYear}
+                  onChange={e => setAocYear(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="e.g. 2024"
+                  style={{ ...inp, width: '120px' }}
+                />
+              </div>
+            )}
+            {parsePreview && <p style={{ fontSize: '0.72rem', color: 'var(--gold)', textAlign: 'center' }}>📊 {parsePreview}</p>}
             {status && <p style={{ fontSize: '0.72rem', color: status.includes('Error') || status.includes('failed') ? '#ef4444' : 'var(--gold)', textAlign: 'center' }}>{status}</p>}
             <div style={{ display: 'flex', gap: 6 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 4 }}>

@@ -63,6 +63,9 @@ service cloud.firestore {
       allow create: if isAuth() && isOwner(request.resource.data.userId);
     }
 
+    match /past_questions/{id} { allow read: if isAuth(); allow write: if isAdminOrSupreme(); }
+    match /aoc/{id} { allow read: if isAuth(); allow write: if isAdminOrSupreme(); }
+
     // Feedback - authenticated write, admin read
     match /feedback/{id} {
       allow create: if isAuth();

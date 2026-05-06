@@ -9,6 +9,7 @@ import PastQuestionsPanel from '@/components/course/PastQuestionsPanel';
 import AOCPanel from '@/components/course/AOCPanel';
 import StudyMemoryPanel from '@/components/course/StudyMemoryPanel';
 import MaterialsPanel from '@/components/course/MaterialsPanel';
+import FullPageViewer from '@/components/course/FullPageViewer';
 import SettingsPanel from '@/components/SettingsPanel';
 import ReactMarkdown from 'react-markdown';
 import LuxLoader from '@/components/LuxLoader';
@@ -350,7 +351,7 @@ export default function CoursePage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [input, setInput] = useState('');
   const [sessionSaving, setSessionSaving] = useState(false);
-  const [activeContext, setActiveContext] = useState<{ fileName: string; extractedText: string } | null>(null);
+  const [viewerContent, setViewerContent] = useState<{ mode: any; data: any; relatedDocs?: any[] } | null>(null);
 
   // Scroll state
   const [showScrollDown, setShowScrollDown] = useState(false);
@@ -608,7 +609,7 @@ export default function CoursePage() {
           courseName: course?.name,
           courseDescription: course?.description,
           conversationHistory: chatHistory.map(m => ({ role: m.role, content: m.content })),
-          materialContext: activeContext?.extractedText ?? null,
+
         }),
       });
       const reader = res.body?.getReader();
@@ -743,15 +744,7 @@ export default function CoursePage() {
           ))}
         </div>
 
-        {/* Active context banner */}
-        {activeContext && (
-          <div style={{ padding: '4px 12px 6px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(196,160,80,0.08)', borderTop: '1px solid rgba(196,160,80,0.2)' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--gold)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              📂 {activeContext.fileName} · active in chat
-            </span>
-            <button onClick={() => setActiveContext(null)} style={{ flexShrink: 0, background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
-          </div>
-        )}
+
       </div>
 
       {/* MAIN CONTENT */}
@@ -948,10 +941,10 @@ export default function CoursePage() {
               ))}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={setActiveContext} activeFileName={activeContext?.fileName ?? null} onSendMessage={sendMessage} />}
-              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
-              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => sendMessage(text)} />}
-              {activeSideTab === 'notes' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="notes" />}
+              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onOpenViewer={(mode, data, related) => setViewerContent({ mode, data, relatedDocs: related })} />}
+              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onOpenViewer={(mode, data, related) => setViewerContent({ mode, data, relatedDocs: related })} />}
+              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onOpenViewer={(mode, data, related) => setViewerContent({ mode, data, relatedDocs: related })} />}
+              {activeSideTab === 'notes' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="notes" onOpenViewer={(mode, data, related) => setViewerContent({ mode, data, relatedDocs: related })} />}
               {activeSideTab === 'history' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="history" />}
             </div>
           </div>
@@ -981,10 +974,10 @@ export default function CoursePage() {
               <button onClick={() => setDrawerOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer', flexShrink: 0, marginLeft: '8px' }}>✕</button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onActivate={ctx => { setActiveContext(ctx); if (ctx) setDrawerOpen(false); }} activeFileName={activeContext?.fileName ?? null} onSendMessage={text => { sendMessage(text); setDrawerOpen(false); }} />}
-              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
-              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onStudy={text => { sendMessage(text); setDrawerOpen(false); }} />}
-              {activeSideTab === 'notes' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="notes" />}
+              {activeSideTab === 'materials' && <MaterialsPanel courseId={courseId} onOpenViewer={(mode, data, related) => { setViewerContent({ mode, data, relatedDocs: related }); setDrawerOpen(false); }} />}
+              {activeSideTab === 'past-questions' && <PastQuestionsPanel courseId={courseId} onOpenViewer={(mode, data, related) => { setViewerContent({ mode, data, relatedDocs: related }); setDrawerOpen(false); }} />}
+              {activeSideTab === 'aoc' && <AOCPanel courseId={courseId} onOpenViewer={(mode, data, related) => { setViewerContent({ mode, data, relatedDocs: related }); setDrawerOpen(false); }} />}
+              {activeSideTab === 'notes' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="notes" onOpenViewer={(mode, data, related) => { setViewerContent({ mode, data, relatedDocs: related }); setDrawerOpen(false); }} />}
               {activeSideTab === 'history' && <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="history" />}
             </div>
           </div>
@@ -1028,6 +1021,15 @@ export default function CoursePage() {
 
 
 
+      {viewerContent && (
+        <FullPageViewer
+          mode={viewerContent.mode}
+          data={viewerContent.data}
+          relatedDocs={viewerContent.relatedDocs}
+          onClose={() => setViewerContent(null)}
+          onSendMessage={text => { sendMessage(text); setViewerContent(null); }}
+        />
+      )}
       <SettingsPanel externalOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
       {/* HISTORY OVERLAY — standalone, above everything */}
       {historyOverlayOpen && (

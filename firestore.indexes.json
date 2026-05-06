@@ -1,0 +1,37 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "past_questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "reoccurrenceCount", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "past_questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "years", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
+      "collectionGroup": "aoc",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "reoccurrenceCount", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "aoc",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "years", "arrayConfig": "CONTAINS" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

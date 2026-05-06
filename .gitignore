@@ -71,3 +71,5 @@ node_modules/
 .vercel
 .env*.local
 .next/
+serviceAccount.json
+serviceAccount.json
