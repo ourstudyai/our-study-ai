@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { MaterialCategory } from '@/lib/processing/classifier';
@@ -238,9 +239,16 @@ export async function POST(req: NextRequest) {
         await deleteBatch.commit();
         await deletePQVectorsByMaterial(materialId, PQ_COLLECTION);
         const parsed = parsePastQuestions(extractedText);
-        const { written } = await processPastQuestions(parsed, courseId, materialId);
-        parsePreview = `${written} question${written !== 1 ? 's' : ''} parsed`;
-        console.log(`[reindex] past_questions: ${written} items for ${materialId}`);
+        let pqWritten = 0;
+        try {
+          const { written } = await processPastQuestions(parsed, courseId, materialId);
+          pqWritten = written;
+          parsePreview = `${pqWritten} question${pqWritten !== 1 ? 's' : ''} parsed`;
+        } catch (pqErr) {
+          console.error('[reindex] processPastQuestions error:', pqErr);
+          parsePreview = 'Approved (vector index pending)';
+        }
+        console.log(`[reindex] past_questions: ${pqWritten} items for ${materialId}`);
       } else if (category === 'aoc') {
         if (!aocYear) return NextResponse.json({ error: 'aocYear required for AOC' }, { status: 400 });
         const oldDocs = await adminDb.collection('aoc').where('materialId', '==', materialId).get();
@@ -249,9 +257,16 @@ export async function POST(req: NextRequest) {
         await deleteBatch.commit();
         await deletePQVectorsByMaterial(materialId, AOC_COLLECTION);
         const topics = parseAOCTopics(extractedText);
-        const { written } = await processAOCTopics(topics, courseId, materialId, Number(aocYear));
-        parsePreview = `${written} topic${written !== 1 ? 's' : ''} parsed`;
-        console.log(`[reindex] aoc: ${written} items for ${materialId}`);
+        let aocWritten = 0;
+        try {
+          const { written } = await processAOCTopics(topics, courseId, materialId, Number(aocYear));
+          aocWritten = written;
+          parsePreview = `${aocWritten} topic${aocWritten !== 1 ? 's' : ''} parsed`;
+        } catch (aocErr) {
+          console.error('[reindex] processAOCTopics error:', aocErr);
+          parsePreview = 'Approved (vector index pending)';
+        }
+        console.log(`[reindex] aoc: ${aocWritten} items for ${materialId}`);
       } else {
         const oldChunks = await adminDb.collection(CHUNKS_COL).where('materialId', '==', materialId).get();
         const deleteBatch = adminDb.batch();
