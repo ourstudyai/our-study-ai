@@ -1,5 +1,5 @@
 import { qdrant, COLLECTION_NAME, ensureCollection } from './client';
-import { embedText } from './embed';
+import { embedText, embedBatch } from './embed';
 
 export interface ChunkPayload { [key: string]: unknown;
   materialId: string;
@@ -23,13 +23,12 @@ export async function upsertChunk(id: string, payload: ChunkPayload) {
 
 export async function upsertChunks(chunks: { id: string; payload: ChunkPayload }[]) {
   await ensureCollection();
-  const points = await Promise.all(
-    chunks.map(async (c) => ({
-      id: stringToUint(c.id),
-      vector: await embedText(c.payload.text),
-      payload: c.payload,
-    }))
-  );
+  const vectors = await embedBatch(chunks.map(c => c.payload.text));
+  const points = chunks.map((c, i) => ({
+    id: stringToUint(c.id),
+    vector: vectors[i],
+    payload: c.payload,
+  }));
   await qdrant.upsert(COLLECTION_NAME, { wait: true, points });
 }
 

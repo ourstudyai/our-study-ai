@@ -1,4 +1,9 @@
 export async function embedText(text: string): Promise<number[]> {
+  const vectors = await embedBatch([text]);
+  return vectors[0];
+}
+
+export async function embedBatch(texts: string[]): Promise<number[][]> {
   const res = await fetch('https://api.mistral.ai/v1/embeddings', {
     method: 'POST',
     headers: {
@@ -7,7 +12,7 @@ export async function embedText(text: string): Promise<number[]> {
     },
     body: JSON.stringify({
       model: 'mistral-embed',
-      input: [text],
+      input: texts,
     }),
   });
 
@@ -17,5 +22,5 @@ export async function embedText(text: string): Promise<number[]> {
   }
 
   const data = await res.json();
-  return data.data[0].embedding;
+  return data.data.map((d: { embedding: number[] }) => d.embedding);
 }
