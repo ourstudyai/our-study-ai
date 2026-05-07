@@ -1108,7 +1108,7 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', code: '', department: 'philosophy', year: 1, semester: 1, description: '', sharedWith: '', published: true });
+  const [form, setForm] = useState({ name: '', code: '', department: 'philosophy', year: 1, semester: 1, description: '', published: true });
 
   const grouped = courses.reduce<Record<string, Course[]>>((acc, c) => {
     const key = `${c.department.charAt(0).toUpperCase() + c.department.slice(1)} · Year ${c.year} · Sem ${c.semester}`;
@@ -1119,13 +1119,13 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
 
   function openEdit(c: any) {
     setEditId(c.id);
-    setForm({ name: c.name, code: c.code || '', department: c.department, year: c.year, semester: c.semester, description: c.description || '', sharedWith: (c.sharedWith || []).join(', '), published: c.published !== false });
+    setForm({ name: c.name, code: c.code || '', department: c.department, year: c.year, semester: c.semester, description: c.description || '', published: c.published !== false });
     setShowForm(true);
   }
 
   function openAdd() {
     setEditId(null);
-    setForm({ name: '', code: '', department: 'philosophy', year: 1, semester: 1, description: '', sharedWith: '', published: true });
+    setForm({ name: '', code: '', department: 'philosophy', year: 1, semester: 1, description: '', published: true });
     setShowForm(true);
   }
 
@@ -1133,7 +1133,7 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
     if (!form.name) return;
     setSaving(true);
     try {
-      const data = { name: form.name, code: form.code, department: form.department, year: Number(form.year), semester: Number(form.semester), description: form.description, published: form.published, sharedWith: form.sharedWith ? form.sharedWith.split(',').map((s: string) => s.trim()).filter(Boolean) : [] };
+      const data = { name: form.name, code: form.code, department: form.department, year: Number(form.year), semester: Number(form.semester), description: form.description, published: form.published };
       if (editId) {
         await updateDoc(doc(db, 'courses', editId), data);
       } else {
@@ -1185,7 +1185,7 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
               <option value={2}>Sem 2</option>
             </select>
           </div>
-          <input style={inputStyle} placeholder="Shared with course IDs (comma-separated, optional)" value={form.sharedWith} onChange={e => setForm(f => ({...f, sharedWith: e.target.value}))} />
+
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 12, cursor: 'pointer' }}>
             <input type="checkbox" checked={form.published} onChange={e => setForm(f => ({...f, published: e.target.checked}))} />
             Published (visible to students)

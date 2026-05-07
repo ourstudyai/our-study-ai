@@ -337,6 +337,14 @@ export async function POST(req: NextRequest) {
 
     await adminDb.collection('materials').doc(materialId).update({ status: finalStatus, confirmedCourseId: courseId, confirmedCourseName: courseName, extractedText, indexed: shouldIndex, indexedAt: shouldIndex ? new Date().toISOString() : null, indexDisplayName: indexDisplayName || null, department: department || null, year: year || null, semester: semester || null, wordCount: extractedText.split(/\s+/).filter(Boolean).length, updatedAt: new Date().toISOString() });
 
+    // Auto-generate summary in background (fire and forget)
+    if (shouldIndex && extractedText) {
+      fetch(`${APP_URL}/api/index-material`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materialId, action: 'add' }),
+      }).catch(() => {});
+    }
     return NextResponse.json({ ok: true, status: finalStatus, parsePreview });
   } catch (err) {
     console.error('[reindex-material]', err);

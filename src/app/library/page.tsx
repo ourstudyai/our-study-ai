@@ -28,6 +28,7 @@ interface IndexedMaterial {
   category: string;
   confirmedCourseId?: string;
   confirmedCourseName?: string;
+  sharedCourseIds?: string[];
   department?: string;
   year?: number;
   semester?: number;
@@ -428,6 +429,14 @@ export default function LibraryPage() {
                       {m.indexDisplayName || m.fileName}
                     </h2>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{m.confirmedCourseName || '—'}</p>
+                    {m.sharedCourseIds && m.sharedCourseIds.length > 0 && (
+                      <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                        Also in: {m.sharedCourseIds.map((id, i) => {
+                          const c = (courses as any[]).find((x: any) => x.id === id);
+                          return c ? `${c.name} (Y${c.year} S${c.semester})` : id;
+                        }).join(', ')}
+                      </p>
+                    )}
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       {m.department && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.department.charAt(0).toUpperCase() + m.department.slice(1)}</span>}
                       {m.year && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Year {m.year}</span>}

@@ -36,7 +36,8 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
         setItems(data);
         setAllItems(data);
         if (data.length > 0) {
-          const maxYear = Math.max(...data.map(i => i.year ?? i.years?.[0] ?? 0));
+          const validYears = data.map(i => i.year ?? i.years?.[0] ?? 0).filter(y => y > 1900 && isFinite(y));
+          const maxYear = validYears.length > 0 ? Math.max(...validYears) : 0;
           setExpandedYears(new Set([maxYear]));
         }
       } catch (err) { console.error(err); }
@@ -66,7 +67,7 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
     if (!byYear[yr]) byYear[yr] = [];
     byYear[yr].push(item);
   });
-  const sortedYears = Object.keys(byYear).map(Number).sort((a, b) => b - a);
+  const sortedYears = Object.keys(byYear).map(Number).filter(y => y > 1900 && isFinite(y)).sort((a, b) => b - a);
   const byFrequency = [...filtered].sort((a, b) => (b.reoccurrenceCount ?? 0) - (a.reoccurrenceCount ?? 0));
 
   const inp: React.CSSProperties = {

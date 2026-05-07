@@ -66,7 +66,7 @@ export default function PastQuestionsPanel({ courseId, onOpenViewer }: Props) {
     if (!byYear[yr]) byYear[yr] = [];
     byYear[yr].push(q);
   });
-  const sortedYears = Object.keys(byYear).map(Number).sort((a, b) => b - a);
+  const sortedYears = Object.keys(byYear).map(Number).filter(y => y > 1900 && isFinite(y)).sort((a, b) => b - a);
 
   const inp: React.CSSProperties = {
     width: '100%', borderRadius: '8px', padding: '6px 10px',
