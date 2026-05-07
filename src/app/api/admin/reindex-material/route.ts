@@ -235,40 +235,24 @@ export async function POST(req: NextRequest) {
 
     if (shouldIndex) {
       if (category === 'past_questions') {
-        const oldDocs = await adminDb.collection('past_questions').where('materialId', '==', materialId).get();
-        const deleteBatch = adminDb.batch();
-        oldDocs.docs.forEach(d => deleteBatch.delete(d.ref));
-        await deleteBatch.commit();
-        await deletePQVectorsByMaterial(materialId, PQ_COLLECTION);
         const parsed = parsePastQuestions(extractedText);
-        let pqWritten = 0;
-        try {
-          const { written } = await processPastQuestions(parsed, courseId, materialId);
-          pqWritten = written;
-          parsePreview = `${pqWritten} question${pqWritten !== 1 ? 's' : ''} parsed`;
-        } catch (pqErr) {
-          console.error('[reindex] processPastQuestions error:', pqErr);
-          parsePreview = 'Approved (vector index pending)';
-        }
-        console.log(`[reindex] past_questions: ${pqWritten} items for ${materialId}`);
+        parsePreview = `${parsed.length} question${parsed.length !== 1 ? 's' : ''} queued for indexing`;
+        await fetch(`${QSTASH_URL}/${APP_URL}/api/index-pq-aoc`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.QSTASH_TOKEN}` },
+          body: JSON.stringify({ type: 'past_questions', courseId, materialId, items: parsed }),
+        });
+        console.log(`[reindex] past_questions: ${parsed.length} items enqueued for ${materialId}`);
       } else if (category === 'aoc') {
         if (!aocYear) return NextResponse.json({ error: 'aocYear required for AOC' }, { status: 400 });
-        const oldDocs = await adminDb.collection('aoc').where('materialId', '==', materialId).get();
-        const deleteBatch = adminDb.batch();
-        oldDocs.docs.forEach(d => deleteBatch.delete(d.ref));
-        await deleteBatch.commit();
-        await deletePQVectorsByMaterial(materialId, AOC_COLLECTION);
         const topics = parseAOCTopics(extractedText);
-        let aocWritten = 0;
-        try {
-          const { written } = await processAOCTopics(topics, courseId, materialId, Number(aocYear));
-          aocWritten = written;
-          parsePreview = `${aocWritten} topic${aocWritten !== 1 ? 's' : ''} parsed`;
-        } catch (aocErr) {
-          console.error('[reindex] processAOCTopics error:', aocErr);
-          parsePreview = 'Approved (vector index pending)';
-        }
-        console.log(`[reindex] aoc: ${aocWritten} items for ${materialId}`);
+        parsePreview = `${topics.length} topic${topics.length !== 1 ? 's' : ''} queued for indexing`;
+        await fetch(`${QSTASH_URL}/${APP_URL}/api/index-pq-aoc`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.QSTASH_TOKEN}` },
+          body: JSON.stringify({ type: 'aoc', courseId, materialId, aocYear: Number(aocYear), topics }),
+        });
+        console.log(`[reindex] aoc: ${topics.length} topics enqueued for ${materialId}`);
       } else {
         const oldChunks = await adminDb.collection(CHUNKS_COL).where('materialId', '==', materialId).get();
         const deleteBatch = adminDb.batch();
