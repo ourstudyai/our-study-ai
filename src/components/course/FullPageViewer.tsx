@@ -14,12 +14,11 @@ interface Props {
 }
 
 export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, onSendMessage, onSaveEdit, onDeleteNote }: Props) {
-  const [variationsOpen, setVariationsOpen] = useState(false);
-  const [relatedOpen, setRelatedOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editText, setEditText] = useState(data?.text ?? '');
   const [saving, setSaving] = useState(false);
   const [delConfirm, setDelConfirm] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const overlay: React.CSSProperties = {
     position: 'fixed', inset: 0, zIndex: 200,
@@ -45,32 +44,41 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
     display: 'inline-block',
   });
 
-  const collapsible = (label: string, open: boolean, toggle: () => void, count: number) => (
-    <button onClick={toggle} style={{
-      width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '8px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600,
-      background: 'var(--navy-card)', border: '1px solid var(--border)',
-      color: 'var(--gold)', cursor: 'pointer', marginBottom: '6px',
-    }}>
-      <span>{label} ({count})</span>
-      <span>{open ? '▲' : '▼'}</span>
-    </button>
-  );
+  const copyText = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1500);
+    });
+  };
 
-  const actionBtn = (label: string, onClick: () => void, gold = false): React.CSSProperties => ({
-    padding: '10px 16px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 700,
-    background: gold ? 'var(--gold)' : 'transparent',
-    color: gold ? 'var(--navy)' : 'var(--text-secondary)',
-    border: gold ? 'none' : '1px solid var(--border)',
-    cursor: 'pointer',
-  });
+  const CopyBlock = ({ text, label, id }: { text: string; label: string; id: string }) => (
+    <div
+      onClick={() => copyText(text, id)}
+      style={{
+        padding: '10px 12px', borderRadius: '8px', fontSize: '0.78rem',
+        background: copied === id ? 'rgba(196,160,80,0.1)' : 'var(--surface)',
+        border: '1px solid ' + (copied === id ? 'var(--gold)' : 'var(--border)'),
+        color: 'var(--text-primary)', cursor: 'pointer', lineHeight: 1.6,
+        position: 'relative', userSelect: 'text',
+      }}
+    >
+      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginRight: '6px' }}>{label}</span>
+      {text}
+      <span style={{ position: 'absolute', top: '6px', right: '8px', fontSize: '0.62rem', color: copied === id ? 'var(--gold)' : 'var(--text-muted)' }}>
+        {copied === id ? '✓ Copied' : '⎘'}
+      </span>
+    </div>
+  );
 
   // ── PAST QUESTIONS ───────────────────────────────────────────────────────
   if (mode === 'past-questions') {
     const q = data;
-    const years: number[] = q.years ?? (q.examYear ? [q.examYear] : []);
-    const variationTexts: string[] = (q.variations ?? []).map((v: any) => typeof v === 'string' ? v : v?.text).filter((v: any) => v && v !== q.questionText);
-    const related = relatedDocs ?? [];
+    const years: number[] = (q.years ?? (q.examYear ? [q.examYear] : [])).filter((y: number) => y > 1900 && isFinite(y));
+    const variationTexts: string[] = (q.variations ?? [])
+      .map((v: any) => typeof v === 'string' ? v : v?.text)
+      .filter((v: any) => v && v.length > 5 && v !== q.questionText);
+    const related = (relatedDocs ?? []).filter((r: any) => r?.questionText && r.questionText.length < 300 && !/bigard|seminary|time allow|answer \w+ question/i.test(r.questionText));
+    const hasExtra = variationTexts.length > 0 || related.length > 0;
 
     return (
       <div style={overlay}>
@@ -85,44 +93,37 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
               <span style={badge('×' + q.reoccurrenceCount, true)}>×{q.reoccurrenceCount}</span>
             )}
           </div>
+
           <p style={{ fontSize: '0.9rem', lineHeight: 1.8, marginBottom: '20px', color: 'var(--text-primary)' }}>
             {q.questionText}
           </p>
 
-          {(variationTexts.length > 0 || related.length > 0) && (
-            <div style={{ marginBottom: '20px', padding: '12px', background: 'var(--navy-card)', borderRadius: '10px', border: '1px solid var(--border)' }}>
-              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Related & Variations ({variationTexts.length + related.length})
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {variationTexts.map((v, i) => (
-                  <div key={'v' + i} style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: '0.78rem', color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginRight: '6px' }}>Variation</span>{v}
-                  </div>
-                ))}
-                {related.map((r, i) => (
-                  <div key={'r' + i} style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: '0.78rem', color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginRight: '6px' }}>Related</span>{r.questionText}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button onClick={() => { onSendMessage?.('Study this past question: "' + q.questionText + '"', 'plain_explainer'); onClose(); }}
-              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
+            <button onClick={() => { onSendMessage?.('Explain: ' + q.questionText, 'plain_explainer'); onClose(); }}
+              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
               💡 Explain
             </button>
-            <button onClick={() => { onSendMessage?.('Practice this question: "' + q.questionText + '"', 'practice_questions'); onClose(); }}
-              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
+            <button onClick={() => { onSendMessage?.('Practice: ' + q.questionText, 'practice_questions'); onClose(); }}
+              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
               ❓ Practice Q
             </button>
-            <button onClick={() => { onSendMessage?.('Exam question: "' + q.questionText + '"', 'exam_prep'); onClose(); }}
-              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+            <button onClick={() => { onSendMessage?.('Exam prep: ' + q.questionText, 'exam_prep'); onClose(); }}
+              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
               📝 Exam Prep
             </button>
           </div>
+
+          {hasExtra && (
+            <div>
+              <p style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
+                Related & Variations — tap to copy
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {variationTexts.map((v, i) => <CopyBlock key={'v'+i} text={v} label="Variation" id={'v'+i} />)}
+                {related.map((r: any, i: number) => <CopyBlock key={'r'+i} text={r.questionText} label="Related" id={'r'+i} />)}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -131,72 +132,55 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
   // ── AOC ──────────────────────────────────────────────────────────────────
   if (mode === 'aoc') {
     const item = data;
-    const years: number[] = item.years ?? (item.year ? [item.year] : []);
-    const variations: string[] = item.variations ?? [];
-    const related = relatedDocs ?? [];
-    const isTrending = item.reoccurrenceCount > 1;
+    const years: number[] = (item.years ?? (item.year ? [item.year] : [])).filter((y: number) => y > 1900 && isFinite(y));
+    const variationTexts: string[] = (item.variations ?? [])
+      .map((v: any) => typeof v === 'string' ? v : v?.text)
+      .filter((v: any) => v && v.length > 5 && v !== item.topic);
+    const related = (relatedDocs ?? []).filter((r: any) => r?.topic && r.topic.length < 300);
+    const hasExtra = variationTexts.length > 0 || related.length > 0;
 
     return (
       <div style={overlay}>
         <div style={header}>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
           <p style={{ flex: 1, fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem' }}>Area of Concentration</p>
-          {isTrending && <span style={{ fontSize: '0.72rem', color: '#f97316' }}>🔥 Trending</span>}
         </div>
         <div style={body}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
             {years.map(y => <span key={y} style={badge(String(y), true)}>{y}</span>)}
+            {item.reoccurrenceCount > 1 && <span style={badge('×' + item.reoccurrenceCount, true)}>×{item.reoccurrenceCount}</span>}
           </div>
+
           <p style={{ fontSize: '0.9rem', lineHeight: 1.8, marginBottom: '20px', color: 'var(--text-primary)' }}>
             🎯 {item.topic}
           </p>
 
-          {variations.length > 0 && (
-            <div style={{ marginBottom: '12px' }}>
-              {collapsible('Variations', variationsOpen, () => setVariationsOpen(v => !v), variations.length)}
-              {variationsOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '8px', marginBottom: '8px' }}>
-                  {variations.map((v, i) => (
-                    <button key={i} onClick={() => { onSendMessage?.('Explain this AOC topic variation: "' + v + '"'); onClose(); }}
-                      style={{ textAlign: 'left', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer', lineHeight: 1.6 }}>
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {related.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              {collapsible('Related Topics', relatedOpen, () => setRelatedOpen(r => !r), related.length)}
-              {relatedOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '8px', marginBottom: '8px' }}>
-                  {related.map((r, i) => (
-                    <button key={i} onClick={() => { onSendMessage?.('Explain this AOC topic: "' + r.topic + '"'); onClose(); }}
-                      style={{ textAlign: 'left', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer', lineHeight: 1.6 }}>
-                      🎯 {r.topic}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button onClick={() => { onSendMessage?.('Explain this topic: "' + item.topic + '"', 'plain_explainer'); onClose(); }}
-              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
+            <button onClick={() => { onSendMessage?.('Explain: ' + item.topic, 'plain_explainer'); onClose(); }}
+              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
               💡 Explain
             </button>
-            <button onClick={() => { onSendMessage?.('Practice this topic: "' + item.topic + '"', 'practice_questions'); onClose(); }}
-              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+            <button onClick={() => { onSendMessage?.('Practice: ' + item.topic, 'practice_questions'); onClose(); }}
+              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
               ❓ Practice Q
             </button>
-            <button onClick={() => { onSendMessage?.('Exam prep for topic: "' + item.topic + '"', 'exam_prep'); onClose(); }}
-              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
+            <button onClick={() => { onSendMessage?.('Exam prep: ' + item.topic, 'exam_prep'); onClose(); }}
+              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
               📝 Exam Prep
             </button>
           </div>
+
+          {hasExtra && (
+            <div>
+              <p style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
+                Related & Variations — tap to copy
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {variationTexts.map((v, i) => <CopyBlock key={'v'+i} text={v} label="Variation" id={'av'+i} />)}
+                {related.map((r: any, i: number) => <CopyBlock key={'r'+i} text={r.topic} label="Related" id={'ar'+i} />)}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -215,7 +199,7 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
             ? data.extractedText.substring(0, 80000)
             : <p style={{ color: 'var(--text-muted)' }}>No extracted text available.</p>}
           {data?.extractedText?.length > 80000 && (
-            <p style={{ color: 'var(--text-muted)', marginTop: '16px', fontSize: '0.7rem' }}>[Showing first 80,000 characters — full document available in Library]</p>
+            <p style={{ color: 'var(--text-muted)', marginTop: '16px', fontSize: '0.7rem' }}>[Showing first 80,000 characters]</p>
           )}
         </div>
       </div>
