@@ -25,7 +25,6 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
   const [allItems, setAllItems] = useState<AOCItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set());
-  const [showFrequent, setShowFrequent] = useState(false);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -68,7 +67,6 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
     byYear[yr].push(item);
   });
   const sortedYears = Object.keys(byYear).map(Number).filter(y => y > 1900 && isFinite(y)).sort((a, b) => b - a);
-  const byFrequency = [...filtered].sort((a, b) => (b.reoccurrenceCount ?? 0) - (a.reoccurrenceCount ?? 0));
 
   const inp: React.CSSProperties = {
     width: '100%', borderRadius: '8px', padding: '6px 10px',
@@ -78,7 +76,6 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
   };
 
   const ItemCard = ({ item }: { item: AOCItem }) => {
-    const isTrending = (item.reoccurrenceCount ?? 0) > 1;
     return (
       <button
         onClick={() => onOpenViewer('aoc', item, getRelated(item) as any[])}
@@ -92,7 +89,6 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
           <span style={{ flex: 1, lineHeight: '1.6' }}>🎯 {item.topic}</span>
-          {isTrending && <span style={{ flexShrink: 0, fontSize: '0.68rem', color: '#f97316' }}>🔥</span>}
         </div>
       </button>
     );
@@ -109,20 +105,11 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
   return (
     <div>
       <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-        <button onClick={() => setShowFrequent(false)} style={{ flex: 1, fontSize: '0.72rem', padding: '5px', borderRadius: '8px', background: !showFrequent ? 'var(--gold)' : 'transparent', color: !showFrequent ? 'var(--navy)' : 'var(--text-secondary)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-          📅 By Year
-        </button>
-        <button onClick={() => setShowFrequent(true)} style={{ flex: 1, fontSize: '0.72rem', padding: '5px', borderRadius: '8px', background: showFrequent ? 'var(--gold)' : 'transparent', color: showFrequent ? 'var(--navy)' : 'var(--text-secondary)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-          🔥 Trending
-        </button>
+
       </div>
       <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search topics..." style={inp} />
       {filtered.length === 0 ? (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No topics match your search.</p>
-      ) : showFrequent ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {byFrequency.map(item => <ItemCard key={item.id} item={item} />)}
-        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {sortedYears.map(year => (

@@ -95,7 +95,7 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
               {variationsOpen && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '8px', marginBottom: '8px' }}>
                   {variations.map((v, i) => (
-                    <button key={i} onClick={() => onSendMessage?.('Study this past question variation: "' + v + '"')}
+                    <button key={i} onClick={() => { onSendMessage?.('Study this past question variation: "' + v + '"'); onClose(); }}
                       style={{ textAlign: 'left', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer', lineHeight: 1.6 }}>
                       {v}
                     </button>
@@ -111,7 +111,7 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
               {relatedOpen && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '8px', marginBottom: '8px' }}>
                   {related.map((r, i) => (
-                    <button key={i} onClick={() => onSendMessage?.('Study this related past question: "' + r.questionText + '"')}
+                    <button key={i} onClick={() => { onSendMessage?.('Study this related past question: "' + r.questionText + '"'); onClose(); }}
                       style={{ textAlign: 'left', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer', lineHeight: 1.6 }}>
                       {r.questionText}
                     </button>

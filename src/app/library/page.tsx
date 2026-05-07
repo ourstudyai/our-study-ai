@@ -52,6 +52,7 @@ export default function LibraryPage() {
   const [accessChecked, setAccessChecked] = useState(false);
   const [hasAccess, setHasAccess] = useState(false);
   const [materials, setMaterials] = useState<IndexedMaterial[]>([]);
+  const [courseMap, setCourseMap] = useState<Record<string, { name: string; year: number; semester: number }>>({});
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -107,11 +108,12 @@ export default function LibraryPage() {
 
         // Enrich with course metadata if missing
         const courseSnap = await getDocs(collection(db, 'courses'));
-        const courseMap: Record<string, { department: string; year: number; semester: number }> = {};
-        courseSnap.docs.forEach(d => { courseMap[d.id] = d.data() as { department: string; year: number; semester: number }; });
+        const cMap: Record<string, { name: string; department: string; year: number; semester: number }> = {};
+        courseSnap.docs.forEach(d => { cMap[d.id] = d.data() as { name: string; department: string; year: number; semester: number }; });
+        setCourseMap(cMap);
 
         const enriched = mats.map(m => {
-          const course = m.confirmedCourseId ? courseMap[m.confirmedCourseId] : null;
+          const course = m.confirmedCourseId ? cMap[m.confirmedCourseId] : null;
           return { ...m, department: m.department || course?.department, year: m.year || course?.year, semester: m.semester || course?.semester };
         });
 
@@ -431,10 +433,10 @@ export default function LibraryPage() {
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{m.confirmedCourseName || '—'}</p>
                     {m.sharedCourseIds && m.sharedCourseIds.length > 0 && (
                       <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                        Also in: {m.sharedCourseIds.map((id, i) => {
-                          const c = (courses as any[]).find((x: any) => x.id === id);
-                          return c ? `${c.name} (Y${c.year} S${c.semester})` : id;
-                        }).join(', ')}
+                        Also in: {m.sharedCourseIds.map(id => {
+                          const c = (courseMap as any)[id];
+                          return c ? `${c.name} (Y${c.year} S${c.semester})` : null;
+                        }).filter(Boolean).join(', ')}
                       </p>
                     )}
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
