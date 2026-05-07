@@ -487,9 +487,14 @@ export default function CoursePage() {
     if (!courseId) return;
     setTopicsLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'materials'), where('confirmedCourseId', '==', courseId), where('status', '==', 'approved')));
+      const [ownSnap, sharedSnap] = await Promise.all([
+        getDocs(query(collection(db, 'materials'), where('confirmedCourseId', '==', courseId), where('status', '==', 'approved'))),
+        getDocs(query(collection(db, 'materials'), where('sharedCourseIds', 'array-contains', courseId), where('status', '==', 'approved'))),
+      ]);
+      const seen = new Set<string>();
+      const allDocs = [...ownSnap.docs, ...sharedSnap.docs].filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; });
       const result: { materialName: string; items: string[] }[] = [];
-      snap.docs.forEach(d => {
+      allDocs.forEach(d => {
         const data = d.data();
         if (['past_questions', 'aoc'].includes(data.category)) return;
         const text: string = data.extractedText ?? '';
