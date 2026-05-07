@@ -256,26 +256,12 @@ export async function POST(req: NextRequest) {
       } else {
         const oldChunks = await adminDb.collection(CHUNKS_COL).where('materialId', '==', materialId).get();
         const deleteBatch = adminDb.batch();
-        oldChunks.docs.forEach(d => deleteBatch.update(d.ref, { deleted: true }));
-        await deleteBatch.commit();
-        await deleteChunksByMaterial(materialId);
-        const chunks = semanticChunk(stripTOC(extractedText));
-        const writeBatch = adminDb.batch();
-        chunks.forEach((chunk, i) => {
-          const ref = adminDb.collection(CHUNKS_COL).doc();
-          writeBatch.set(ref, { materialId, courseId, category: category as MaterialCategory, chunkIndex: i, text: chunk.text, heading: chunk.heading, headingLevel: chunk.headingLevel, ancestorHeadings: chunk.ancestorHeadings, fullPath: chunk.fullPath, wordCount: chunk.wordCount, createdAt: FieldValue.serverTimestamp() });
-        });
-        await writeBatch.commit();
-        const chunkPayloads = chunks.map((chunk, i) => ({ id: `${materialId}-${i}`, payload: { materialId, courseId, chunkIndex: i, heading: chunk.heading, fullPath: chunk.fullPath, ancestorHeadings: chunk.ancestorHeadings, text: chunk.text, category: category as string } }));
         await fetch(`${QSTASH_URL}/${APP_URL}/api/index-chunks`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.QSTASH_TOKEN}`,
-          },
-          body: JSON.stringify({ chunks: chunkPayloads }),
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.QSTASH_TOKEN}` },
+          body: JSON.stringify({ materialId, courseId, category, extractedText }),
         });
-        console.log(`[reindex] ${chunks.length} chunks enqueued for ${materialId}`);
+        console.log(`[reindex] chunks enqueued for ${materialId}`);
       }
     }
 
