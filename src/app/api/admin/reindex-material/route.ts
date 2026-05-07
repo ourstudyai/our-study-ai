@@ -99,30 +99,92 @@ function normaliseText(text: string): string {
 
 interface ParsedItem { text: string; topic: string; examYear: number | null; }
 
+function extractYear(text: string): number | null {
+  // Matches 2020/2021, 2020/21, 2020 — returns the first (start) year
+  const m = text.match(/\b(20\d{2})(?:\/(?:20)?\d{2})?\b/);
+  return m ? parseInt(m[1]) : null;
+}
+
+function isExamHeader(line: string): boolean {
+  // Lines that are exam boilerplate, not actual question content
+  return /^(bigard|memorial|seminary|examination|time\s+allow|answer\s+\w+\s+question|\d+\s+question|date\s*:|lecturer\s*:|course\s*:|subject\s*:|instruction|use\s+the\s+follow|duration|total\s+mark|all\s+question)/i.test(line)
+    && line.length < 150;
+}
+
+function cleanQuestionText(raw: string): string {
+  // Remove markdown artifacts
+  let q = raw.replace(/#+/g, '').replace(/[*_]{1,2}/g, '').replace(/\s+/g, ' ').trim();
+  // Strip trailing exam noise after ## or known keywords
+  q = q.replace(/\s*(bigard|seminary|time\s+allow|answer\s+\w+\s+question|\d+\s+question|date\s*:|lecturer\s*:|course\s*:).*/gi, '').trim();
+  // Extract mark annotation if present e.g. (8 marks), [50%]
+  const markMatch = q.match(/[\[(](\d+\s*(?:marks?|%|pts?))[\])]/i);
+  const marks = markMatch ? ' (' + markMatch[1] + ')' : '';
+  // Remove mark from body but append cleanly
+  q = q.replace(/[\[(]\d+\s*(?:marks?|%|pts?)[\])]/gi, '').trim();
+  return q + marks;
+}
+
 function parsePastQuestions(extractedText: string): ParsedItem[] {
   const results: ParsedItem[] = [];
-  const yearMatch = extractedText.match(/\b(20\d{2})\b/);
-  const examYear = yearMatch ? parseInt(yearMatch[1]) : null;
-  const sectionPattern = /^(section\s+[a-z0-9]+|part\s+[a-z0-9]+|essay\s+questions?|short\s+answer|objectives?|theory|practical)/i;
-  const questionPattern = /^(?:q(?:uestion)?\s*)?(\d{1,2})[.)]\s+(.+)/i;
+  // Year header: a line that is predominantly a year like "2020/2021" or "## 2019/2020"
+  const yearHeaderPattern = /^#{0,4}\s*(20\d{2}(?:\/(?:20)?\d{2})?)\s*$/;
+  const sectionPattern = /^#{0,4}\s*(section\s+[a-z0-9]+|part\s+[a-z0-9]+|essay\s+questions?|short\s+answer|objectives?|theory|practical)/i;
+  const questionPattern = /^(?:q(?:uestion)?\s*)?(\d{1,2})[.)\s]\s*(.{5,})/i;
   const lines = extractedText.split('\n');
-  let currentTopic = ''; let currentQuestion = ''; let currentNumber = -1;
+
+  let sectionYear: number | null = null;   // year set by nearest year header above
+  let currentTopic = '';
+  let currentQuestion = '';
+  let currentYear: number | null = null;
+  let currentNumber = -1;
+
   const flush = () => {
-    const q = currentQuestion.trim();
-    if (q.length > 10) results.push({ text: q, topic: currentTopic, examYear });
-    currentQuestion = ''; currentNumber = -1;
+    const q = cleanQuestionText(currentQuestion);
+    if (q.length > 10) {
+      results.push({ text: q, topic: currentTopic, examYear: currentYear ?? sectionYear });
+    }
+    currentQuestion = ''; currentNumber = -1; currentYear = null;
   };
+
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
-    if (sectionPattern.test(line) && line.length < 80) {
+
+    // Year header line — sets section year, resets topic
+    const yhMatch = line.match(yearHeaderPattern);
+    if (yhMatch) {
+      if (currentQuestion) flush();
+      sectionYear = extractYear(yhMatch[1]);
+      currentTopic = '';
+      continue;
+    }
+
+    // Section/topic heading
+    if (sectionPattern.test(line) && line.length < 100) {
       if (currentQuestion) flush();
       currentTopic = line.replace(/[*#_]/g, '').trim();
       continue;
     }
+
+    // Exam boilerplate — skip entirely
+    if (isExamHeader(line)) continue;
+
+    // Question start
     const qMatch = line.match(questionPattern);
-    if (qMatch) { if (currentQuestion) flush(); currentNumber = parseInt(qMatch[1]); currentQuestion = qMatch[2]; }
-    else if (currentNumber >= 0) currentQuestion += ' ' + line;
+    if (qMatch) {
+      if (currentQuestion) flush();
+      currentNumber = parseInt(qMatch[1]);
+      currentQuestion = qMatch[2];
+      // Year embedded in this question line takes precedence over section year
+      const inlineYear = extractYear(line);
+      currentYear = inlineYear;
+      continue;
+    }
+
+    // Question continuation
+    if (currentNumber >= 0) {
+      currentQuestion += ' ' + line;
+    }
   }
   if (currentQuestion) flush();
   return results;
@@ -132,16 +194,24 @@ function parseAOCTopics(extractedText: string): string[] {
   const topics: string[] = [];
   const lines = extractedText.split('\n');
   const bulletPattern = /^[-•*]\s+(.+)/;
-  const numberedPattern = /^\d{1,2}[.)]\s+(.+)/;
-  const headingPattern = /^#{1,4}\s+/;
+  const numberedPattern = /^\d{1,2}[.)\s]\s*(.{5,})/;
+  const yearHeaderPattern = /^#{0,4}\s*(20\d{2}(?:\/(?:20)?\d{2})?)\s*$/;
   for (const raw of lines) {
     const line = raw.trim();
-    if (!line || headingPattern.test(line)) continue;
+    if (!line) continue;
+    // Skip year headers, exam boilerplate, markdown headings
+    if (yearHeaderPattern.test(line)) continue;
+    if (isExamHeader(line)) continue;
+    if (/^#{1,4}\s/.test(line)) continue;
     const bulletMatch = line.match(bulletPattern);
     const numberedMatch = line.match(numberedPattern);
-    if (bulletMatch) topics.push(bulletMatch[1].trim());
-    else if (numberedMatch) topics.push(numberedMatch[1].trim());
-    else if (line.length > 5 && line.length < 200) topics.push(line);
+    let topic = '';
+    if (bulletMatch) topic = bulletMatch[1].trim();
+    else if (numberedMatch) topic = numberedMatch[1].trim();
+    else if (line.length > 8 && line.length < 250) topic = line;
+    // Clean markdown artifacts
+    topic = topic.replace(/#+/g, '').replace(/[*_]{1,2}/g, '').trim();
+    if (topic.length > 5) topics.push(topic);
   }
   return topics.filter((t, i, arr) => t.length > 3 && arr.indexOf(t) === i);
 }
