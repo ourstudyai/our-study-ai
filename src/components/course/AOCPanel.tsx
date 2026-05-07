@@ -36,7 +36,7 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
         setItems(data);
         setAllItems(data);
         if (data.length > 0) {
-          const maxYear = Math.max(...data.map(i => i.year ?? 0));
+          const maxYear = Math.max(...data.map(i => i.year ?? i.years?.[0] ?? 0));
           setExpandedYears(new Set([maxYear]));
         }
       } catch (err) { console.error(err); }
@@ -62,7 +62,7 @@ export default function AOCPanel({ courseId, onOpenViewer }: Props) {
 
   const byYear: Record<number, AOCItem[]> = {};
   filtered.forEach(item => {
-    const yr = item.year ?? 0;
+    const yr = item.year ?? (item.years?.[0]) ?? 0;
     if (!byYear[yr]) byYear[yr] = [];
     byYear[yr].push(item);
   });

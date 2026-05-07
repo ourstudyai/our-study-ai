@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { MaterialCategory } from '@/lib/processing/classifier';
 import { FieldValue } from 'firebase-admin/firestore';
-import { upsertChunks, deleteChunksByMaterial } from '@/lib/qdrant/upsert';
+import { deleteChunksByMaterial } from '@/lib/qdrant/upsert';
 import {
   upsertPQVectorWithMaterial,
   deletePQVectorsByMaterial,
@@ -14,6 +14,8 @@ import {
 } from '@/lib/qdrant/pq-vectors';
 
 const CHUNKS_COL = 'material_chunks';
+const QSTASH_URL = 'https://qstash.upstash.io/v2/publish';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://our-study-ai.vercel.app';
 const WORD_CEILING = 1500;
 const SAME_THRESHOLD = 0.92;
 const RELATED_THRESHOLD = 0.78;
@@ -280,8 +282,16 @@ export async function POST(req: NextRequest) {
           writeBatch.set(ref, { materialId, courseId, category: category as MaterialCategory, chunkIndex: i, text: chunk.text, heading: chunk.heading, headingLevel: chunk.headingLevel, ancestorHeadings: chunk.ancestorHeadings, fullPath: chunk.fullPath, wordCount: chunk.wordCount, createdAt: FieldValue.serverTimestamp() });
         });
         await writeBatch.commit();
-        await upsertChunks(chunks.map((chunk, i) => ({ id: `${materialId}-${i}`, payload: { materialId, courseId, chunkIndex: i, heading: chunk.heading, fullPath: chunk.fullPath, ancestorHeadings: chunk.ancestorHeadings, text: chunk.text, category: category as string } })));
-        console.log(`[reindex] ${chunks.length} chunks for ${materialId}`);
+        const chunkPayloads = chunks.map((chunk, i) => ({ id: `${materialId}-${i}`, payload: { materialId, courseId, chunkIndex: i, heading: chunk.heading, fullPath: chunk.fullPath, ancestorHeadings: chunk.ancestorHeadings, text: chunk.text, category: category as string } }));
+        await fetch(`${QSTASH_URL}/${APP_URL}/api/index-chunks`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.QSTASH_TOKEN}`,
+          },
+          body: JSON.stringify({ chunks: chunkPayloads }),
+        });
+        console.log(`[reindex] ${chunks.length} chunks enqueued for ${materialId}`);
       }
     }
 
