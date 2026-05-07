@@ -456,6 +456,9 @@ export default function AdminPage() {
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [refreshLoading, setRefreshLoading] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(false);
+  const [shareInput, setShareInput] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
   const [search, setSearch]         = useState('');
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [reassigning, setReassigning] = useState<string | null>(null);
@@ -892,12 +895,74 @@ export default function AdminPage() {
                     {refreshLoading ? 'Refreshing…' : '📋 Refresh topics'}
                   </button>
                 )}
+                {selected.status === 'approved' && (
+                  <div style={{ marginBottom: 8 }}>
+                    <button onClick={() => { setSharingOpen(o => !o); setShareInput(((selected as any).sharedCourseIds || []).join(', ')); }} style={{
+                      width: '100%', padding: '10px', background: 'transparent',
+                      border: '1px solid rgba(196,160,80,0.3)', borderRadius: 10,
+                      color: 'var(--gold)', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
+                    }}>🔗 Share with Courses {((selected as any).sharedCourseIds || []).length > 0 ? `(${((selected as any).sharedCourseIds || []).length})` : ''}</button>
+                    {sharingOpen && (
+                      <div style={{ marginTop: 8, padding: 12, background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 8 }}>Select courses to share this material with. It will appear in their Materials panel.</div>
+                        <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {courses.filter(c => c.id !== selected.confirmedCourseId).map(c => {
+                            const checked = shareInput.split(',').map(s => s.trim()).filter(Boolean).includes(c.id);
+                            return (
+                              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8, background: checked ? 'rgba(196,160,80,0.1)' : 'var(--navy)', cursor: 'pointer', border: `1px solid ${checked ? 'var(--gold)' : 'var(--border)'}` }}>
+                                <input type="checkbox" checked={checked} onChange={e => {
+                                  const ids = shareInput.split(',').map(s => s.trim()).filter(Boolean);
+                                  const next = e.target.checked ? [...ids, c.id] : ids.filter(id => id !== c.id);
+                                  setShareInput(next.join(', '));
+                                }} style={{ accentColor: 'var(--gold)' }} />
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text)' }}>
+                                  {c.name} <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>· Year {c.year} Sem {c.semester} · {c.department}</span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <button onClick={async () => {
+                          setShareLoading(true);
+                          try {
+                            const ids = shareInput.split(',').map(s => s.trim()).filter(Boolean);
+                            await updateDoc(doc(db, 'materials', selected.id), { sharedCourseIds: ids, updatedAt: new Date().toISOString() });
+                            (selected as any).sharedCourseIds = ids;
+                            setSharingOpen(false);
+                            alert('✅ Sharing updated.');
+                          } catch (e: any) { alert('❌ Failed: ' + e.message); }
+                          finally { setShareLoading(false); }
+                        }} disabled={shareLoading} style={{
+                          marginTop: 10, width: '100%', padding: '8px', background: 'var(--gold)',
+                          border: 'none', borderRadius: 8, color: '#000', fontWeight: 700,
+                          fontSize: '0.8rem', cursor: shareLoading ? 'not-allowed' : 'pointer',
+                          opacity: shareLoading ? 0.6 : 1,
+                        }}>{shareLoading ? 'Saving...' : 'Save Sharing'}</button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {selected.status !== 'quarantined' && (
                   <button onClick={() => { if (!window.confirm('Quarantine this material? It will be hidden from students.')) return; handleQuarantine(selected); }} disabled={actionLoading} style={{
                     width: '100%', padding: '10px', background: 'transparent',
                     border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10,
                     color: '#fca5a5', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
                   }}>⚠ Quarantine</button>
+                )}
+                {selected.status === 'quarantined' && (
+                  <button onClick={async () => {
+                    if (!window.confirm('Send this material back to review?')) return;
+                    setActionLoading(true);
+                    try {
+                      await updateDoc(doc(db, 'materials', selected.id), { status: 'pending_review', updatedAt: new Date().toISOString() });
+                      load();
+                      setSelected(null);
+                    } finally { setActionLoading(false); }
+                  }} disabled={actionLoading} style={{
+                    width: '100%', padding: '10px', background: 'transparent',
+                    border: '1px solid rgba(234,179,8,0.4)', borderRadius: 10,
+                    color: '#fde68a', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
+                  }}>↩ Send Back to Review</button>
                 )}
                 <button onClick={() => handleDelete(selected)} disabled={actionLoading} style={{
                   width: '100%', padding: '10px', background: 'transparent',

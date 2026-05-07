@@ -20,12 +20,24 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
   useEffect(() => {
     if (!courseId) return;
     setLoading(true);
-    getDocs(query(
-      collection(db, 'materials'),
-      where('confirmedCourseId', '==', courseId),
-      where('status', '==', 'approved'),
-    )).then(snap => {
-      setMaterials(snap.docs.map(d => ({ id: d.id, ...d.data() } as Material)));
+    Promise.all([
+      getDocs(query(
+        collection(db, 'materials'),
+        where('confirmedCourseId', '==', courseId),
+        where('status', '==', 'approved'),
+      )),
+      getDocs(query(
+        collection(db, 'materials'),
+        where('sharedCourseIds', 'array-contains', courseId),
+        where('status', '==', 'approved'),
+      )),
+    ]).then(([ownSnap, sharedSnap]) => {
+      const seen = new Set<string>();
+      const all: Material[] = [];
+      [...ownSnap.docs, ...sharedSnap.docs].forEach(d => {
+        if (!seen.has(d.id)) { seen.add(d.id); all.push({ id: d.id, ...d.data() } as Material); }
+      });
+      setMaterials(all);
     }).catch(console.error).finally(() => setLoading(false));
   }, [courseId]);
 
