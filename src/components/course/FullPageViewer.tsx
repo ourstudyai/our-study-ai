@@ -69,7 +69,7 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
   if (mode === 'past-questions') {
     const q = data;
     const years: number[] = q.years ?? (q.examYear ? [q.examYear] : []);
-    const variations: string[] = q.variations ?? [];
+    const variations: string[] = (q.variations ?? []).map((v: any) => typeof v === 'string' ? v : v.text).filter(Boolean);
     const related = relatedDocs ?? [];
 
     return (
