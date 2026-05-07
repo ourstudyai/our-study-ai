@@ -98,20 +98,12 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
             {q.questionText}
           </p>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-            <button onClick={() => { onSendMessage?.('Explain: ' + q.questionText, 'plain_explainer'); onClose(); }}
-              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              💡 Explain
-            </button>
-            <button onClick={() => { onSendMessage?.('Practice: ' + q.questionText, 'practice_questions'); onClose(); }}
-              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
-              ❓ Practice Q
-            </button>
-            <button onClick={() => { onSendMessage?.('Exam prep: ' + q.questionText, 'exam_prep'); onClose(); }}
-              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              📝 Exam Prep
-            </button>
-          </div>
+          <button
+            onClick={() => { onSendMessage?.('Explain: ' + q.questionText, 'plain_explainer'); onClose(); }}
+            style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', fontSize: '0.82rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer', marginBottom: '24px' }}
+          >
+            📖 Study this →
+          </button>
 
           {hasExtra && (
             <div>
@@ -155,20 +147,12 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
             🎯 {item.topic}
           </p>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-            <button onClick={() => { onSendMessage?.('Explain: ' + item.topic, 'plain_explainer'); onClose(); }}
-              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              💡 Explain
-            </button>
-            <button onClick={() => { onSendMessage?.('Practice: ' + item.topic, 'practice_questions'); onClose(); }}
-              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              ❓ Practice Q
-            </button>
-            <button onClick={() => { onSendMessage?.('Exam prep: ' + item.topic, 'exam_prep'); onClose(); }}
-              style={{ flex: 1, minWidth: '80px', padding: '9px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
-              📝 Exam Prep
-            </button>
-          </div>
+          <button
+            onClick={() => { onSendMessage?.('Explain: ' + item.topic, 'plain_explainer'); onClose(); }}
+            style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', fontSize: '0.82rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer', marginBottom: '24px' }}
+          >
+            📖 Study this →
+          </button>
 
           {hasExtra && (
             <div>

@@ -20,6 +20,10 @@ async function vectorSearch(query: string, courseId: string, topK = 12): Promise
     limit: topK,
     filter: {
       must: [{ key: 'courseId', match: { value: courseId } }],
+      must_not: [
+        { key: 'category', match: { value: 'past_questions' } },
+        { key: 'category', match: { value: 'aoc' } },
+      ],
     },
     with_payload: true,
   });

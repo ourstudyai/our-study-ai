@@ -549,7 +549,12 @@ export default function AdminPage() {
     if (!window.confirm('Permanently delete this material?')) return;
     setActionLoading(true);
     try {
-      await updateMaterialStatus(m.id, 'quarantined');
+      const res = await fetch('/api/admin/delete-material', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materialId: m.id }),
+      });
+      if (!res.ok) { const e = await res.json(); alert('Delete failed: ' + (e.error ?? res.status)); return; }
       await load();
       setDrawerOpen(false); setSelected(null);
     } finally { setActionLoading(false); }

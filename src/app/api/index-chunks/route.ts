@@ -100,6 +100,18 @@ export async function POST(req: NextRequest) {
   }));
   await upsertChunks(chunkPayloads);
 
-  console.log(`[index-chunks] ${chunks.length} chunks indexed for ${materialId}`);
+  // Also index under any sharedCourseIds so RAG works in shared courses
+  const matDoc = await adminDb.collection('materials').doc(materialId).get();
+  const sharedCourseIds: string[] = matDoc.data()?.sharedCourseIds ?? [];
+  for (const sharedId of sharedCourseIds) {
+    if (sharedId === courseId) continue;
+    const sharedPayloads = chunks.map((chunk, i) => ({
+      id: `${materialId}-shared-${sharedId}-${i}`,
+      payload: { materialId, courseId: sharedId, chunkIndex: i, heading: chunk.heading, fullPath: chunk.fullPath, ancestorHeadings: chunk.ancestorHeadings, text: chunk.text, category: category as string },
+    }));
+    await upsertChunks(sharedPayloads);
+  }
+
+  console.log(`[index-chunks] ${chunks.length} chunks indexed for ${materialId}` + (sharedCourseIds.length ? ` + shared to [${sharedCourseIds.join(', ')}]` : ''));
   return NextResponse.json({ ok: true });
 }
