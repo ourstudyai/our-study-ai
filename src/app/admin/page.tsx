@@ -552,7 +552,7 @@ export default function AdminPage() {
       const res = await fetch('/api/admin/delete-material', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ materialId: m.id }),
+        body: JSON.stringify({ materialId: m.id, publicId: m.publicId }),
       });
       if (!res.ok) { const e = await res.json(); alert('Delete failed: ' + (e.error ?? res.status)); return; }
       await load();

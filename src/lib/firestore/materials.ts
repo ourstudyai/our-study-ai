@@ -20,6 +20,7 @@ export type Material = {
     id: string;
     fileName: string;
     fileUrl: string;
+    publicId?: string;
     mimeType: string;
     uploadedBy: string;
     uploadedByRole: string;
