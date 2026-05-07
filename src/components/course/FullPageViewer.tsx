@@ -8,7 +8,7 @@ interface Props {
   data: any;
   relatedDocs?: any[];
   onClose: () => void;
-  onSendMessage?: (text: string) => void;
+  onSendMessage?: (text: string, mode?: string) => void;
   onSaveEdit?: (noteId: string, text: string) => Promise<void>;
   onDeleteNote?: (noteId: string) => Promise<void>;
 }
@@ -69,7 +69,7 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
   if (mode === 'past-questions') {
     const q = data;
     const years: number[] = q.years ?? (q.examYear ? [q.examYear] : []);
-    const variations: string[] = (q.variations ?? []).map((v: any) => typeof v === 'string' ? v : v.text).filter(Boolean);
+    const variationTexts: string[] = (q.variations ?? []).map((v: any) => typeof v === 'string' ? v : v?.text).filter((v: any) => v && v !== q.questionText);
     const related = relatedDocs ?? [];
 
     return (
@@ -89,43 +89,40 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
             {q.questionText}
           </p>
 
-          {variations.length > 0 && (
-            <div style={{ marginBottom: '12px' }}>
-              {collapsible('Variations', variationsOpen, () => setVariationsOpen(v => !v), variations.length)}
-              {variationsOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '8px', marginBottom: '8px' }}>
-                  {variations.map((v, i) => (
-                    <button key={i} onClick={() => { onSendMessage?.('Study this past question variation: "' + v + '"'); onClose(); }}
-                      style={{ textAlign: 'left', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer', lineHeight: 1.6 }}>
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              )}
+          {(variationTexts.length > 0 || related.length > 0) && (
+            <div style={{ marginBottom: '20px', padding: '12px', background: 'var(--navy-card)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Related & Variations ({variationTexts.length + related.length})
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {variationTexts.map((v, i) => (
+                  <div key={'v' + i} style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: '0.78rem', color: 'var(--text-primary)', lineHeight: 1.6 }}>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginRight: '6px' }}>Variation</span>{v}
+                  </div>
+                ))}
+                {related.map((r, i) => (
+                  <div key={'r' + i} style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: '0.78rem', color: 'var(--text-primary)', lineHeight: 1.6 }}>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginRight: '6px' }}>Related</span>{r.questionText}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          {related.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              {collapsible('Related Questions', relatedOpen, () => setRelatedOpen(r => !r), related.length)}
-              {relatedOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '8px', marginBottom: '8px' }}>
-                  {related.map((r, i) => (
-                    <button key={i} onClick={() => { onSendMessage?.('Study this related past question: "' + r.questionText + '"'); onClose(); }}
-                      style={{ textAlign: 'left', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer', lineHeight: 1.6 }}>
-                      {r.questionText}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <button
-            onClick={() => { onSendMessage?.('Study this past question: "' + q.questionText + '"'); onClose(); }}
-            style={{ padding: '10px 16px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
-            📖 Study this →
-          </button>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button onClick={() => { onSendMessage?.('Study this past question: "' + q.questionText + '"', 'plain_explainer'); onClose(); }}
+              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+              💡 Explain
+            </button>
+            <button onClick={() => { onSendMessage?.('Practice this question: "' + q.questionText + '"', 'practice_questions'); onClose(); }}
+              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
+              ❓ Practice Q
+            </button>
+            <button onClick={() => { onSendMessage?.('Exam question: "' + q.questionText + '"', 'exam_prep'); onClose(); }}
+              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+              📝 Exam Prep
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -186,11 +183,20 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
             </div>
           )}
 
-          <button
-            onClick={() => { onSendMessage?.('Explain this Area of Concentration: "' + item.topic + '"'); onClose(); }}
-            style={{ padding: '10px 16px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
-            💡 Explain this →
-          </button>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button onClick={() => { onSendMessage?.('Explain this topic: "' + item.topic + '"', 'plain_explainer'); onClose(); }}
+              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+              💡 Explain
+            </button>
+            <button onClick={() => { onSendMessage?.('Practice this topic: "' + item.topic + '"', 'practice_questions'); onClose(); }}
+              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+              ❓ Practice Q
+            </button>
+            <button onClick={() => { onSendMessage?.('Exam prep for topic: "' + item.topic + '"', 'exam_prep'); onClose(); }}
+              style={{ flex: 1, padding: '9px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, background: 'var(--gold)', color: 'var(--navy)', border: 'none', cursor: 'pointer' }}>
+              📝 Exam Prep
+            </button>
+          </div>
         </div>
       </div>
     );

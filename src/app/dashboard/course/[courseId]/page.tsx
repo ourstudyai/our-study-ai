@@ -491,6 +491,7 @@ export default function CoursePage() {
       const result: { materialName: string; items: string[] }[] = [];
       snap.docs.forEach(d => {
         const data = d.data();
+        if (['past_questions', 'aoc'].includes(data.category)) return;
         const text: string = data.extractedText ?? '';
         const name: string = data.indexDisplayName ?? data.fileName ?? 'Material';
         const items: string[] = [];
@@ -1027,7 +1028,7 @@ export default function CoursePage() {
           data={viewerContent.data}
           relatedDocs={viewerContent.relatedDocs}
           onClose={() => setViewerContent(null)}
-          onSendMessage={text => { sendMessage(text); setViewerContent(null); }}
+          onSendMessage={(text, mode?) => { if (mode) setActiveMode(mode as any); sendMessage(text); setViewerContent(null); }}
         />
       )}
       <SettingsPanel externalOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
