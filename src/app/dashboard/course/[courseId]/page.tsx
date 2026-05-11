@@ -486,31 +486,31 @@ export default function CoursePage() {
         getDocs(query(collection(db, 'materials'), where('sharedCourseIds', 'array-contains', courseId), where('status', '==', 'approved'))),
       ]);
       const seen = new Set<string>();
-      const allDocs = [...ownSnap.docs, ...sharedSnap.docs].filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; });
+      const allDocs = [...ownSnap.docs, ...sharedSnap.docs].filter(d => {
+        if (seen.has(d.id)) return false;
+        seen.add(d.id);
+        return true;
+      });
       const result: { materialName: string; items: string[] }[] = [];
       allDocs.forEach(d => {
         const data = d.data();
+        // Skip past questions and AOC — their topics show in dedicated panels
         if (['past_questions', 'aoc'].includes(data.category)) return;
-        const text: string = data.extractedText ?? '';
         const name: string = data.indexDisplayName ?? data.fileName ?? 'Material';
-        const items: string[] = [];
-        text.split('\n').forEach(line => {
-          const t = line.trim();
-          if ((t.startsWith('## ') || t.startsWith('### ') || t.startsWith('# ') || t.startsWith('#### ')) && t.length < 120) {
-            const c = t.replace(/^#{1,4}\s+/, '').trim();
-            if (c.length > 2) items.push(c);
-          } else if (t.startsWith('**') && t.endsWith('**') && t.length > 4 && t.length < 120) {
-            const c = t.replace(/\*\*/g, '').trim();
-            if (c.length > 2) items.push(c);
-          }
-        });
+        // Read contentList written by Gemini at index time — clean, normalised strings.
+        // Falls back to empty so the material is silently skipped if not yet indexed.
+        const items: string[] = Array.isArray(data.contentList)
+          ? data.contentList.filter((t: any) => typeof t === 'string' && t.trim().length > 2)
+          : [];
         if (items.length > 0) result.push({ materialName: name, items });
       });
       setTopics(result);
-    } catch { }
-    finally { setTopicsLoading(false); }
+    } catch (err) {
+      console.error('[loadTopics]', err);
+    } finally {
+      setTopicsLoading(false);
+    }
   };
-
   // Font Awesome
   useEffect(() => {
     const id = 'fa-cdn';
