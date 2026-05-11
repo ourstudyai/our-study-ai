@@ -1,6 +1,89 @@
 // System Prompts — Lux Studiorum
 import { StudyMode } from '@/lib/types';
 
+// ── Course Map ────────────────────────────────────────────────────────────────
+// Builds a compact text summary of all materials in a course.
+// Injected into every chat system prompt so the AI can answer meta-questions
+// ("how many topics?", "is X covered?") without needing RAG.
+
+export interface CourseMaterialMeta {
+  id: string;
+  fileName: string;
+  indexDisplayName?: string;
+  category: string;
+  aiSummary?: string;
+  contentList?: string[];
+  topicTree?: { title: string; level: number; subtopics: string[] }[];
+  wordCount?: number;
+  pageCount?: number;
+}
+
+export function buildCourseMap(materials: CourseMaterialMeta[]): string {
+  if (!materials || materials.length === 0) return '';
+
+  const CAT_LABEL: Record<string, string> = {
+    lecture_notes: 'Lecture Notes',
+    handout: 'Handout',
+    syllabus: 'Syllabus',
+    past_questions: 'Past Questions',
+    aoc: 'Areas of Concentration',
+    other: 'Material',
+  };
+
+  const lines: string[] = ['COURSE MATERIAL MAP (use this to answer questions about what is covered):'];
+
+  for (const m of materials) {
+    const label = CAT_LABEL[m.category] ?? 'Material';
+    const name = m.indexDisplayName || m.fileName;
+    const meta: string[] = [];
+    if (m.wordCount) meta.push(`${m.wordCount.toLocaleString()} words`);
+    if (m.pageCount) meta.push(`${m.pageCount} pages`);
+    lines.push(`\n[${label}] ${name}${meta.length ? ' — ' + meta.join(', ') : ''}`);
+
+    if (m.aiSummary) {
+      lines.push(`  Summary: ${m.aiSummary}`);
+    }
+
+    // For lecture notes / handouts: show topic tree if available, else flat list
+    if (m.topicTree && m.topicTree.length > 0) {
+      lines.push(`  Topics (${m.topicTree.length}):`);
+      // Cap at 600 tokens worth — top-level only if many topics
+      const showSubtopics = m.topicTree.length <= 15;
+      for (const t of m.topicTree) {
+        lines.push(`    • ${t.title}`);
+        if (showSubtopics && t.subtopics && t.subtopics.length > 0) {
+          for (const s of t.subtopics) {
+            lines.push(`      – ${s}`);
+          }
+        }
+      }
+    } else if (m.contentList && m.contentList.length > 0) {
+      // Fallback: flat content list (past questions topics, AOC topics, etc.)
+      lines.push(`  Topics/Areas (${m.contentList.length}): ${m.contentList.slice(0, 20).join(', ')}${m.contentList.length > 20 ? '…' : ''}`);
+    }
+  }
+
+  // Hard cap: if the whole map exceeds ~2400 chars, trim to summaries + topic titles only
+  const full = lines.join('\n');
+  if (full.length <= 2400) return full;
+
+  const trimmed: string[] = ['COURSE MATERIAL MAP (summarised — many materials):'];
+  for (const m of materials) {
+    const label = CAT_LABEL[m.category] ?? 'Material';
+    const name = m.indexDisplayName || m.fileName;
+    trimmed.push(`\n[${label}] ${name}`);
+    if (m.aiSummary) trimmed.push(`  ${m.aiSummary}`);
+    if (m.topicTree && m.topicTree.length > 0) {
+      trimmed.push(`  ${m.topicTree.length} topics: ${m.topicTree.map(t => t.title).join(', ')}`);
+    } else if (m.contentList && m.contentList.length > 0) {
+      trimmed.push(`  ${m.contentList.length} areas: ${m.contentList.slice(0, 10).join(', ')}${m.contentList.length > 10 ? '…' : ''}`);
+    }
+  }
+  return trimmed.join('\n');
+}
+
+// ── Universal Rules ───────────────────────────────────────────────────────────
+
 const UNIVERSAL_RULES = `
 UNIVERSAL RULES:
 1. SOURCE PRIORITY: Answer from uploaded course materials FIRST.
@@ -8,7 +91,7 @@ UNIVERSAL RULES:
 - When NO course material is available for an actual knowledge inquiry, say warmly: "I don't have course material on this one. I can answer from my own knowledge — want me to go ahead?" Then WAIT for a yes before proceeding.
 - When material is PARTIALLY related, tell the student what is available and offer to supplement from your own knowledge. Wait for yes before supplementing.
 - For casual conversation, greetings, jokes, or emotional exchange — just respond naturally. No disclaimers, no permission needed.
-- For questions about what is in the database ("what topics do you have?", "is X covered?", "under what topic is X discussed?") — answer directly and helpfully. No permission needed.
+- For questions about what is in the database ("what topics do you have?", "is X covered?", "under what topic is X discussed?") — answer directly from the COURSE MATERIAL MAP above. No permission needed.
 - NEVER silently switch sources without telling the student.
 - Always label your source clearly:
   📚 From your course materials — when citing indexed content
@@ -40,10 +123,17 @@ At the end of your response, if genuinely helpful, add one brief actionable sugg
 Keep it to one sentence. Skip it if not relevant.
 `;
 
-export function getSystemPrompt(mode: StudyMode, courseName: string, courseDescription: string, semesterSummary?: string): string {
+export function getSystemPrompt(
+  mode: StudyMode,
+  courseName: string,
+  courseDescription: string,
+  semesterSummary?: string,
+  courseMap?: string
+): string {
   const courseContext = `
 CURRENT COURSE: ${courseName}
 COURSE DESCRIPTION: ${courseDescription}
+${courseMap ? `\n${courseMap}\n` : ''}
 ${semesterSummary ? `\nSTUDENT'S SEMESTER SUMMARY:\n${semesterSummary}` : ''}
 `;
 
