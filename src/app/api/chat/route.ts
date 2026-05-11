@@ -26,7 +26,6 @@ function scoreChunk(chunk: ChunkDoc, queryTerms: string[]): number {
   const ancestorsLower = (chunk.ancestorHeadings ?? []).join(" ").toLowerCase();
   const bodyLower = (chunk.text ?? "").toLowerCase();
   const fullPhrase = queryTerms.join(" ");
-
   for (const term of queryTerms) {
     if (headingLower.includes(term)) score += 10;
     if (ancestorsLower.includes(term)) score += 5;
@@ -34,14 +33,11 @@ function scoreChunk(chunk: ChunkDoc, queryTerms: string[]): number {
     const bodyMatches = bodyLower.match(regex);
     if (bodyMatches) score += bodyMatches.length;
   }
-
   if (bodyLower.includes(fullPhrase)) score += 15;
   if (headingLower.includes(fullPhrase)) score += 20;
-
   return score;
 }
 
-// Gemini-optimised constants
 const RAG_TOP_K = 12;
 const CHUNK_CHAR_LIMIT = 4000;
 const HISTORY_MESSAGES = 10;
@@ -70,12 +66,15 @@ export async function POST(req: NextRequest) {
     const topicMatch = message.match(/^\[TOPIC:(.+?)\]/);
     const topicHeading = topicMatch ? topicMatch[1].trim() : null;
 
+    // Kick off Tavily in parallel with RAG for research mode
+    const tavilyPromise = mode === 'research' ? searchTavily(message, 5) : Promise.resolve([]);
+
     if (courseId) {
       try {
         if (topicHeading) {
           const snap = await adminDb.collection('material_chunks')
             .where('courseId', '==', courseId)
-            .limit(300)
+            .limit(30)
             .get();
           const docs = snap.docs.filter(d => !d.data().deleted);
           const headingLower = topicHeading.toLowerCase();
@@ -109,6 +108,7 @@ export async function POST(req: NextRequest) {
             suggestedPaths = Array.from(new Set(docs.slice(0, 5).map(d => d.data().fullPath ?? d.data().heading ?? '').filter(Boolean)));
           }
         } else {
+          // Run vector search — Tavily is already running in parallel above
           const qdrantResults = await hybridSearch(message, courseId, RAG_TOP_K);
           if (qdrantResults.length > 0) {
             ragContext = qdrantResults.map(r => {
@@ -145,19 +145,16 @@ export async function POST(req: NextRequest) {
         `ACTIVE STUDY MATERIAL (student has loaded this for focused study — answer questions with this as primary reference):\n\n${materialContext}`;
     }
 
-    let webSearchContext = '';
+    // Await the Tavily promise that was started in parallel — will be instant if already resolved
     if (mode === 'research') {
-      const webResults = await searchTavily(message, 5);
+      const webResults = await tavilyPromise;
       if (webResults.length > 0) {
-        webSearchContext = '\n\nWEB SEARCH RESULTS (external — cite URL, label as external source):\n' +
+        const webSearchContext = '\n\nWEB SEARCH RESULTS (external — cite URL, label as external source):\n' +
           webResults.map((r, i) =>
             `[WEB ${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 600)}`
           ).join('\n\n');
+        semesterSummary = (semesterSummary ?? '') + webSearchContext;
       }
-    }
-
-    if (webSearchContext) {
-      semesterSummary = (semesterSummary ?? '') + webSearchContext;
     }
 
     const systemPrompt = getSystemPrompt(
@@ -167,7 +164,6 @@ export async function POST(req: NextRequest) {
       semesterSummary
     );
 
-    // Build Gemini conversation history
     const geminiHistory = Array.isArray(conversationHistory)
       ? conversationHistory.slice(-HISTORY_MESSAGES).map((m: { role: string; content: string }) => ({
           role: m.role === "assistant" ? "model" : "user",
@@ -192,6 +188,9 @@ export async function POST(req: NextRequest) {
     const readable = new ReadableStream({
       async start(controller) {
         try {
+          // Send a status event so the frontend knows writing has begun
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "status", content: "writing" })}\n\n`));
+
           for await (const chunk of result.stream) {
             const delta = chunk.text();
             if (delta) {
@@ -235,4 +234,4 @@ export async function POST(req: NextRequest) {
     console.error("[chat] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
-}
+  }
