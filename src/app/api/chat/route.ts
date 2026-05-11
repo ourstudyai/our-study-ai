@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 // src/app/api/chat/route.ts
-// Streaming chat — Gemini 2.5 Flash-Lite with heading-aware keyword RAG
+// Streaming chat — Gemini 2.5 Flash-Lite with optimised RAG for 1M context
 
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -24,7 +24,6 @@ function scoreChunk(chunk: ChunkDoc, queryTerms: string[]): number {
   let score = 0;
   const headingLower = (chunk.heading ?? "").toLowerCase();
   const ancestorsLower = (chunk.ancestorHeadings ?? []).join(" ").toLowerCase();
-  const fullPathLower = (chunk.fullPath ?? "").toLowerCase();
   const bodyLower = (chunk.text ?? "").toLowerCase();
   const fullPhrase = queryTerms.join(" ");
 
@@ -41,6 +40,12 @@ function scoreChunk(chunk: ChunkDoc, queryTerms: string[]): number {
 
   return score;
 }
+
+// Gemini-optimised constants
+const RAG_TOP_K = 12;
+const CHUNK_CHAR_LIMIT = 4000;
+const HISTORY_MESSAGES = 10;
+const MAX_OUTPUT_TOKENS = 2048;
 
 export async function POST(req: NextRequest) {
   const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
@@ -93,10 +98,10 @@ export async function POST(req: NextRequest) {
               .map(d => ({ id: d.id, ...(d.data() as ChunkDoc & { chunkIndex?: number; materialId?: string }) }));
             const allChunks = [...matchedData, ...siblings]
               .sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0))
-              .slice(0, 6);
+              .slice(0, RAG_TOP_K);
             ragContext = allChunks.map((c: any) => {
               const pathLabel = c.fullPath ? `[${c.fullPath}]` : `[${c.heading ?? 'Section'}]`;
-              return `${pathLabel}\n${c.text}`;
+              return `${pathLabel}\n${c.text.slice(0, CHUNK_CHAR_LIMIT)}`;
             }).join("\n\n");
             lowConfidence = false;
           } else {
@@ -104,11 +109,11 @@ export async function POST(req: NextRequest) {
             suggestedPaths = Array.from(new Set(docs.slice(0, 5).map(d => d.data().fullPath ?? d.data().heading ?? '').filter(Boolean)));
           }
         } else {
-          const qdrantResults = await hybridSearch(message, courseId, 5);
+          const qdrantResults = await hybridSearch(message, courseId, RAG_TOP_K);
           if (qdrantResults.length > 0) {
             ragContext = qdrantResults.map(r => {
               const pathLabel = r.fullPath ? `[${r.fullPath}]` : `[${r.heading ?? 'Section'}]`;
-              return `${pathLabel}\n${r.text.slice(0, 1200)}`;
+              return `${pathLabel}\n${r.text.slice(0, CHUNK_CHAR_LIMIT)}`;
             }).join("\n\n");
             suggestedPaths = Array.from(new Set(qdrantResults.slice(0, 5).map(r => r.fullPath ?? r.heading ?? '').filter(Boolean)));
             lowConfidence = qdrantResults[0]?.score < 0.005;
@@ -164,7 +169,7 @@ export async function POST(req: NextRequest) {
 
     // Build Gemini conversation history
     const geminiHistory = Array.isArray(conversationHistory)
-      ? conversationHistory.slice(-6).map((m: { role: string; content: string }) => ({
+      ? conversationHistory.slice(-HISTORY_MESSAGES).map((m: { role: string; content: string }) => ({
           role: m.role === "assistant" ? "model" : "user",
           parts: [{ text: m.content }],
         }))
@@ -176,7 +181,7 @@ export async function POST(req: NextRequest) {
       generationConfig: {
         temperature: 0.7,
         topP: 0.9,
-        maxOutputTokens: 1024,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
       },
     });
 
