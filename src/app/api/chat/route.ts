@@ -1,10 +1,10 @@
 export const dynamic = "force-dynamic";
 
 // src/app/api/chat/route.ts
-// Streaming chat — Groq LLM with heading-aware keyword RAG
+// Streaming chat — Gemini 2.5 Flash-Lite with heading-aware keyword RAG
 
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { adminDb, adminAuth } from "@/lib/firebase/admin";
 import { cookies } from "next/headers";
 import { getSystemPrompt } from "@/lib/gemini/system-prompts";
@@ -29,17 +29,13 @@ function scoreChunk(chunk: ChunkDoc, queryTerms: string[]): number {
   const fullPhrase = queryTerms.join(" ");
 
   for (const term of queryTerms) {
-    // Exact heading match — highest value
     if (headingLower.includes(term)) score += 10;
-    // Ancestor heading match
     if (ancestorsLower.includes(term)) score += 5;
-    // Body frequency — count every occurrence
     const regex = new RegExp(term, "g");
     const bodyMatches = bodyLower.match(regex);
     if (bodyMatches) score += bodyMatches.length;
   }
 
-  // Exact full phrase bonus
   if (bodyLower.includes(fullPhrase)) score += 15;
   if (headingLower.includes(fullPhrase)) score += 20;
 
@@ -47,7 +43,8 @@ function scoreChunk(chunk: ChunkDoc, queryTerms: string[]): number {
 }
 
 export async function POST(req: NextRequest) {
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
+
   try {
     const session = cookies().get("session")?.value;
     if (!session) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
@@ -111,8 +108,7 @@ export async function POST(req: NextRequest) {
           if (qdrantResults.length > 0) {
             ragContext = qdrantResults.map(r => {
               const pathLabel = r.fullPath ? `[${r.fullPath}]` : `[${r.heading ?? 'Section'}]`;
-              return `${pathLabel}
-${r.text.slice(0, 1200)}`;
+              return `${pathLabel}\n${r.text.slice(0, 1200)}`;
             }).join("\n\n");
             suggestedPaths = Array.from(new Set(qdrantResults.slice(0, 5).map(r => r.fullPath ?? r.heading ?? '').filter(Boolean)));
             lowConfidence = qdrantResults[0]?.score < 0.005;
@@ -138,12 +134,12 @@ ${r.text.slice(0, 1200)}`;
     } else {
       semesterSummary = `Relevant course material excerpts (answer primarily from these, use the exact headings and terminology as they appear):\n\n${ragContext}`;
     }
+
     if (materialContext) {
       semesterSummary = (semesterSummary ? semesterSummary + '\n\n' : '') +
         `ACTIVE STUDY MATERIAL (student has loaded this for focused study — answer questions with this as primary reference):\n\n${materialContext}`;
     }
 
-    // Web search for research mode
     let webSearchContext = '';
     if (mode === 'research') {
       const webResults = await searchTavily(message, 5);
@@ -166,44 +162,54 @@ ${r.text.slice(0, 1200)}`;
       semesterSummary
     );
 
-    const stream = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...(Array.isArray(conversationHistory) ? conversationHistory.slice(-6) : []),
-        { role: "user", content: message },
-      ],
-      stream: true,
-      temperature: 0.7,
-      max_tokens: 1024,
+    // Build Gemini conversation history
+    const geminiHistory = Array.isArray(conversationHistory)
+      ? conversationHistory.slice(-6).map((m: { role: string; content: string }) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        }))
+      : [];
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash-lite-preview-06-17",
+      systemInstruction: systemPrompt,
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.9,
+        maxOutputTokens: 1024,
+      },
     });
+
+    const chat = model.startChat({ history: geminiHistory });
+    const result = await chat.sendMessageStream(message);
 
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of stream) {
-            const delta = chunk.choices[0]?.delta?.content;
+          for await (const chunk of result.stream) {
+            const delta = chunk.text();
             if (delta) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", content: delta })}\n\n`));
             }
           }
-          
-        // Track analytics - fire and forget
-        try {
-          const today = new Date().toISOString().slice(0,10).replace(/-/g,'_');
-          const hour = new Date().getHours();
-          const analyticsRef = adminDb.collection('analytics').doc('daily');
-          const { FieldValue } = await import('firebase-admin/firestore');
-          await analyticsRef.set({
-            [`prompts_${today}`]: FieldValue.increment(1),
-            [`responses_${today}`]: FieldValue.increment(1),
-            [`sessions_${today}`]: FieldValue.increment(1),
-            [`hourly_${hour}`]: FieldValue.increment(1),
-            total_sessions: FieldValue.increment(1),
-          }, { merge: true });
-        } catch (_) {}
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+
+          // Track analytics - fire and forget
+          try {
+            const today = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+            const hour = new Date().getHours();
+            const analyticsRef = adminDb.collection('analytics').doc('daily');
+            const { FieldValue } = await import('firebase-admin/firestore');
+            await analyticsRef.set({
+              [`prompts_${today}`]: FieldValue.increment(1),
+              [`responses_${today}`]: FieldValue.increment(1),
+              [`sessions_${today}`]: FieldValue.increment(1),
+              [`hourly_${hour}`]: FieldValue.increment(1),
+              total_sessions: FieldValue.increment(1),
+            }, { merge: true });
+          } catch (_) {}
+
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         } catch (err) {
           console.error("[chat] Stream error:", err);
         } finally {
