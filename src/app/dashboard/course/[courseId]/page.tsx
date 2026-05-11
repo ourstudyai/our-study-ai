@@ -38,7 +38,7 @@ interface ChatSession {
   archived: boolean;
 }
 
-type LoadingPhase = 'idle' | 'searching' | 'web' | 'writing';
+
 
 const MODES: { id: StudyMode; label: string; icon: string; description: string }[] = [
   { id: 'plain_explainer', label: 'Plain Explainer', icon: '💡', description: 'Understand any concept in plain language' },
@@ -130,6 +130,7 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
     try { localStorage.setItem('ourstudyai_tts_prefs', JSON.stringify({ voice, rate })); } catch {}
   };
 
+  // Auto-speak when message arrives in auto-speech mode
   useEffect(() => {
     if (!autoSpeak || !message.content) return;
     const utt = new SpeechSynthesisUtterance(stripMarkdown(message.content));
@@ -321,95 +322,6 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
   );
 }
 
-// Animated loading indicator shown while AI is preparing a response
-function AiLoadingIndicator({ phase, mode }: { phase: LoadingPhase; mode: string }) {
-  const [dots, setDots] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    const iv = setInterval(() => setDots(d => (d + 1) % 4), 400);
-    return () => clearInterval(iv);
-  }, []);
-
-  useEffect(() => {
-    setElapsed(0);
-    const iv = setInterval(() => setElapsed(e => e + 1), 1000);
-    return () => clearInterval(iv);
-  }, [phase]);
-
-  const dotStr = '.'.repeat(dots);
-
-  const phases: Record<LoadingPhase, { icon: string; label: string; sub: string }> = {
-    idle: { icon: '📖', label: 'Preparing', sub: '' },
-    searching: {
-      icon: '🔍',
-      label: 'Searching course materials',
-      sub: mode === 'research' ? 'Also querying the web in parallel' : 'Running vector + keyword search',
-    },
-    web: {
-      icon: '🌐',
-      label: 'Searching the web',
-      sub: 'Fetching sources for citation',
-    },
-    writing: {
-      icon: '✍️',
-      label: 'Lux is writing',
-      sub: 'Response incoming',
-    },
-  };
-
-  const current = phases[phase];
-
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', gap: 6,
-      padding: '12px 16px', borderRadius: '14px',
-      background: 'var(--navy-card)', border: '1px solid var(--border)',
-      maxWidth: '82%', marginBottom: '12px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* Pulsing dots */}
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {[0, 1, 2].map(i => (
-            <span key={i} style={{
-              width: 7, height: 7, borderRadius: '50%',
-              background: phase === 'writing' ? 'var(--gold)' : 'var(--text-muted)',
-              opacity: phase === 'writing' ? 1 : 0.5,
-              display: 'inline-block',
-              animation: 'aiPulse 1.2s ease-in-out infinite',
-              animationDelay: `${i * 0.2}s`,
-            }} />
-          ))}
-        </div>
-        <span style={{ fontSize: '0.85rem', color: 'var(--gold)', fontWeight: 600 }}>
-          {current.icon} {current.label}{dotStr}
-        </span>
-        {elapsed > 2 && (
-          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-            {elapsed}s
-          </span>
-        )}
-      </div>
-      {current.sub && (
-        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', paddingLeft: '27px', lineHeight: 1.4 }}>
-          {current.sub}
-        </span>
-      )}
-      {/* Progress bar */}
-      <div style={{ height: 2, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginTop: 2 }}>
-        <div style={{
-          height: '100%',
-          background: 'var(--gold)',
-          borderRadius: 2,
-          width: phase === 'writing' ? '85%' : phase === 'web' ? '60%' : '35%',
-          transition: 'width 0.6s ease',
-          opacity: 0.7,
-        }} />
-      </div>
-    </div>
-  );
-}
-
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const { firebaseUser, userProfile } = useAuth();
@@ -433,11 +345,12 @@ export default function CoursePage() {
   const [streamingMessage, setStreamingMessage] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [loadingPhase, setLoadingPhase] = useState<LoadingPhase>('idle');
+  const [aiStageLabel, setAiStageLabel] = useState('');
   const [input, setInput] = useState('');
   const [sessionSaving, setSessionSaving] = useState(false);
   const [viewerContent, setViewerContent] = useState<{ mode: any; data: any; relatedDocs?: any[] } | null>(null);
 
+  // Scroll state
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showScrollUp, setShowScrollUp] = useState(false);
 
@@ -477,6 +390,7 @@ export default function CoursePage() {
     if (window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
     }
+
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
@@ -607,16 +521,19 @@ export default function CoursePage() {
     document.head.appendChild(link);
   }, []);
 
+  // Load course
   useEffect(() => {
     if (!firebaseUser || !courseId) return;
     getCourseById(courseId).then(data => { setCourse(data); setLoading(false); });
   }, [firebaseUser, courseId]);
 
+  // Load session when mode or user changes
   useEffect(() => {
     if (!uid || !courseId || !userProfile) return;
     loadSession(activeMode);
   }, [uid, courseId, activeMode, userProfile]);
 
+  // Scroll to user message when a new user message is added
   useEffect(() => {
     const currentLen = chatHistory.length;
     const prevLen = prevHistoryLenRef.current;
@@ -635,6 +552,7 @@ export default function CoursePage() {
     prevHistoryLenRef.current = currentLen;
   }, [chatHistory]);
 
+  // Track scroll position to show/hide floating buttons
   useEffect(() => {
     const el = chatContainerRef.current;
     if (!el) return;
@@ -649,6 +567,7 @@ export default function CoursePage() {
     return () => el.removeEventListener('scroll', onScroll);
   }, [chatHistory]);
 
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -676,8 +595,8 @@ export default function CoursePage() {
     setModeHistories(prev => ({ ...prev, [activeMode]: newHistory }));
     setIsStreaming(true);
     setIsAiLoading(true);
-    setLoadingPhase('searching');
     setStreamingMessage('');
+    setAiStageLabel('');
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -702,13 +621,10 @@ export default function CoursePage() {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const raw = line.slice(6);
-              if (raw === '[DONE]') continue;
-              const json = JSON.parse(raw);
-              if (json.type === 'status' && json.content === 'writing') {
-                setLoadingPhase('writing');
+              const json = JSON.parse(line.slice(6));
+              if (json.type === 'status') {
+                setAiStageLabel(json.label ?? '');
               } else if (json.type === 'text' && json.content) {
-                setIsAiLoading(false);
                 fullResponse += json.content;
                 setStreamingMessage(fullResponse);
               }
@@ -716,18 +632,14 @@ export default function CoursePage() {
           }
         }
       }
-      if (!fullResponse.trim()) { fullResponse = "I didn't catch that — something interrupted the response. Try again."; }
+      if (!fullResponse.trim()) { fullResponse = "I didn't catch that — something interrupted the response. Try asking again."; }
       const aiMsg: ChatMessage = { role: 'assistant', content: fullResponse, timestamp: new Date().toISOString() };
       const finalHistory = [...newHistory, aiMsg];
       setModeHistories(prev => ({ ...prev, [activeMode]: finalHistory }));
       setStreamingMessage('');
       await saveSession(activeMode, finalHistory);
     } catch (err) { console.error('[sendMessage error]', err); }
-    finally {
-      setIsStreaming(false);
-      setIsAiLoading(false);
-      setLoadingPhase('idle');
-    }
+    finally { setIsStreaming(false); setIsAiLoading(false); setAiStageLabel(''); }
   };
 
   const regenerate = (aiMessageIndex: number) => {
@@ -886,12 +798,25 @@ export default function CoursePage() {
               </div>
             ))}
 
-            {/* Live loading indicator */}
+            {/* AI stage indicator */}
             {isAiLoading && !streamingMessage && (
-              <AiLoadingIndicator phase={loadingPhase} mode={activeMode} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0' }}>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[0,1,2].map(i => (
+                    <span key={i} style={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      background: 'var(--gold)', opacity: 0.7,
+                      animation: 'aiPulse 1.2s ease-in-out infinite',
+                      animationDelay: `${i * 0.2}s`,
+                      display: 'inline-block'
+                    }} />
+                  ))}
+                </div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  {aiStageLabel || 'Searching materials…'}
+                </span>
+              </div>
             )}
-
-            {/* Streaming message with cursor */}
             {streamingMessage && (
               <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ maxWidth: '82%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
@@ -1104,6 +1029,7 @@ export default function CoursePage() {
       )}
       <SettingsPanel externalOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
 
+      {/* HISTORY OVERLAY */}
       {historyOverlayOpen && (
         <div
           style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.65)', display: 'flex', flexDirection: 'column' }}
@@ -1128,4 +1054,4 @@ export default function CoursePage() {
       )}
     </div>
   );
-}
+  }
