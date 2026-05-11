@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { adminDb, adminAuth } from "@/lib/firebase/admin";
 import { cookies } from "next/headers";
-import { getSystemPrompt } from "@/lib/gemini/system-prompts";
+import { getSystemPrompt, buildCourseMap, CourseMaterialMeta } from "@/lib/gemini/system-prompts";
 import { searchTavily } from "@/lib/search/tavily";
 import { hybridSearch } from "@/lib/qdrant/search";
 
@@ -46,6 +46,52 @@ const CHUNK_CHAR_LIMIT = 4000;
 const HISTORY_MESSAGES = 10;
 const MAX_OUTPUT_TOKENS = 2048;
 
+// ── Fetch course material metadata for Course Map ─────────────────────────────
+// Reads only the lightweight metadata fields — never extractedText.
+// Used to build the Course Map injected into every system prompt.
+
+async function fetchCourseMetadata(courseId: string): Promise<CourseMaterialMeta[]> {
+  try {
+    const [ownSnap, sharedSnap] = await Promise.all([
+      adminDb.collection('materials')
+        .where('confirmedCourseId', '==', courseId)
+        .where('status', '==', 'approved')
+        .where('indexed', '==', true)
+        .get(),
+      adminDb.collection('materials')
+        .where('sharedCourseIds', 'array-contains', courseId)
+        .where('status', '==', 'approved')
+        .where('indexed', '==', true)
+        .get(),
+    ]);
+
+    const seen = new Set<string>();
+    const allDocs = [...ownSnap.docs, ...sharedSnap.docs].filter(d => {
+      if (seen.has(d.id)) return false;
+      seen.add(d.id);
+      return true;
+    });
+
+    return allDocs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        fileName: data.fileName ?? '',
+        indexDisplayName: data.indexDisplayName,
+        category: data.category ?? 'other',
+        aiSummary: data.aiSummary,
+        contentList: data.contentList,
+        topicTree: data.topicTree,
+        wordCount: data.wordCount,
+        pageCount: data.pageCount,
+      } as CourseMaterialMeta;
+    });
+  } catch (err) {
+    console.error('[chat] fetchCourseMetadata failed:', err);
+    return [];
+  }
+}
+
 export async function POST(req: NextRequest) {
   const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
 
@@ -69,8 +115,11 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 
         try {
-          // ── Stage 1: searching materials ──────────────────────────────
+          // ── Stage 1: fetch course map + search materials ───────────────
           emit({ type: "status", stage: "searching", label: "Searching materials…" });
+
+          // Fetch course metadata for Course Map (runs in parallel with RAG)
+          const courseMetaPromise = courseId ? fetchCourseMetadata(courseId) : Promise.resolve([]);
 
           let ragContext = "";
           let ragFailed = false;
@@ -135,8 +184,12 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // ── Stage 2: generating response ──────────────────────────────
+          // ── Stage 2: build system prompt with course map ───────────────
           emit({ type: "status", stage: "generating", label: "Generating response…" });
+
+          // Await the course metadata fetched in parallel with RAG
+          const courseMaterials = await courseMetaPromise;
+          const courseMap = courseMaterials.length > 0 ? buildCourseMap(courseMaterials) : '';
 
           let semesterSummary: string | undefined;
 
@@ -177,7 +230,8 @@ export async function POST(req: NextRequest) {
             mode ?? "general",
             courseName ?? "this course",
             courseDescription ?? "",
-            semesterSummary
+            semesterSummary,
+            courseMap,
           );
 
           const geminiHistory = Array.isArray(conversationHistory)
@@ -200,7 +254,7 @@ export async function POST(req: NextRequest) {
           const chat = model.startChat({ history: geminiHistory });
           const result = await chat.sendMessageStream(message);
 
-          // ── Stage 3: streaming ────────────────────────────────────────
+          // ── Stage 3: stream response ───────────────────────────────────
           emit({ type: "status", stage: "streaming", label: "Responding…" });
 
           for await (const chunk of result.stream) {
