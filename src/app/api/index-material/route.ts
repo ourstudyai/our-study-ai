@@ -7,7 +7,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(req: NextRequest) {
   const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite-preview-06-17' });
+  const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL_NAME || 'gemini-2.5-flash-lite' });
 
   try {
     const session = cookies().get('session')?.value;
