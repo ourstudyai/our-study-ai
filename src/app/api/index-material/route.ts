@@ -3,10 +3,12 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/lib/firebase/admin';
 import { cookies } from 'next/headers';
-import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(req: NextRequest) {
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite-preview-06-17' });
+
   try {
     const session = cookies().get('session')?.value;
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -34,15 +36,11 @@ export async function POST(req: NextRequest) {
     if (!extractedText) return NextResponse.json({ error: 'No extracted text' }, { status: 400 });
 
     // Get content list
-    const contentRes = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{
-        role: 'user',
-        content: `You are indexing a study material for a seminary library. Given the following extracted text, return a JSON object with one field: 'contentList' — an array of all major topics, chapters, or sections that appear in this material. Do not set a minimum or maximum number. Include every significant topic. If the material has 3 major topics return 3, if it has 20 return 20. Return only the JSON object, no markdown, no preamble.\n\n${extractedText.slice(0, 6000)}`,
-      }],
-    });
+    const contentRes = await model.generateContent(
+      `You are indexing a study material for a seminary library. Given the following extracted text, return a JSON object with one field: 'contentList' — an array of all major topics, chapters, or sections that appear in this material. Do not set a minimum or maximum number. Include every significant topic. If the material has 3 major topics return 3, if it has 20 return 20. Return only the JSON object, no markdown, no preamble.\n\n${extractedText.slice(0, 6000)}`
+    );
 
-    const contentRaw = contentRes.choices[0].message.content || '{}';
+    const contentRaw = contentRes.response.text() || '{}';
     let contentList: string[] = [];
     try {
       const parsed = JSON.parse(contentRaw.replace(/```json|```/g, '').trim());
@@ -50,15 +48,11 @@ export async function POST(req: NextRequest) {
     } catch { contentList = []; }
 
     // Get AI summary
-    const summaryRes = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{
-        role: 'user',
-        content: `Summarise this study material in 2-3 sentences for a seminary library index. Return only the summary, no preamble.\n\n${extractedText.slice(0, 3000)}`,
-      }],
-    });
+    const summaryRes = await model.generateContent(
+      `Summarise this study material in 2-3 sentences for a seminary library index. Return only the summary, no preamble.\n\n${extractedText.slice(0, 3000)}`
+    );
 
-    const aiSummary = summaryRes.choices[0].message.content?.trim() || '';
+    const aiSummary = summaryRes.response.text()?.trim() || '';
     const indexDisplayName = mat.suggestedCourseName
       ? `${mat.suggestedCourseName} — ${mat.category?.replace('_', ' ')}`
       : mat.fileName;
