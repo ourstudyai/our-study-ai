@@ -1,5 +1,5 @@
 // src/lib/mistral/client.ts
-import Mistral from '@mistralai/mistralai';
+import { Mistral } from '@mistralai/mistralai';
 
 let mistralClient: Mistral | null = null;
 
