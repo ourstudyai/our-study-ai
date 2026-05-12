@@ -1,27 +1,20 @@
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/lib/firebase/admin';
 import { cookies } from 'next/headers';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getMistralClient } from '@/lib/mistral/client';
 
 // ── Heading skeleton extractor ────────────────────────────────────────────────
-// Pulls only heading lines from the full extracted text plus the first
-// 1,500 words of body for summary context. Keeps input tokens tiny regardless
-// of document size. Gemini handles OCR-garbled headings through its own
-// language understanding — no regex filtering needed.
 
 function buildSkeletonInput(extractedText: string, category: string): string {
-  const lines = extractedText.split('\n');
-
-  // For past questions and AOC, headings matter less — send first 8,000 chars
-  // which contains enough question/topic structure for Gemini to work with.
   if (category === 'past_questions' || category === 'aoc') {
     return extractedText.slice(0, 8000);
   }
 
-  // For lecture notes / handouts / syllabus: extract heading lines only
+  const lines = extractedText.split('\n');
   const headingLines: string[] = [];
+
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -33,7 +26,6 @@ function buildSkeletonInput(extractedText: string, category: string): string {
     }
   }
 
-  // First 1,500 words of body for summary context
   const firstWords = extractedText.split(/\s+/).slice(0, 1500).join(' ');
 
   return [
@@ -44,11 +36,12 @@ function buildSkeletonInput(extractedText: string, category: string): string {
   ].join('\n');
 }
 
-// ── Category-aware Gemini prompt ──────────────────────────────────────────────
+// ── Category-aware Mistral prompt ─────────────────────────────────────────────
 
 function buildPrompt(skeletonInput: string, category: string): string {
   const base = `You are indexing a study material for a Catholic seminary library.
 Some headings may be poorly formatted due to OCR scanning — infer the correct clean heading from context, normalise capitalisation to title case, and fix obvious OCR errors.
+Where two nodes at any level share an ambiguous title, append a bracketed qualifier, e.g. "Definition and Examples [Object]" vs "Definition and Examples [Conscience]".
 Return ONLY a valid JSON object. No markdown. No code fences. No preamble. No explanation.`;
 
   if (category === 'past_questions') {
@@ -56,7 +49,7 @@ Return ONLY a valid JSON object. No markdown. No code fences. No preamble. No ex
 
 From the following past examination questions, extract:
 - "summary": one sentence describing what years and subject areas the questions cover.
-- "topics": an array of distinct subject areas/topics that appear across the questions. Each topic: { "title": string, "level": 1, "subtopics": [] }
+- "topics": an array of distinct subject areas/topics. Each topic: { "title": string, "level": 1, "subtopics": [] }
 
 Material:
 ${skeletonInput}
@@ -77,28 +70,46 @@ ${skeletonInput}
 Return JSON: { "summary": "...", "topics": [...] }`;
   }
 
-  // Default: lecture notes, handout, syllabus, other
   return `${base}
 
 From the following document headings and opening, extract:
 - "summary": 2-3 sentences describing what this study material covers and why it matters for seminary students.
-- "topics": the full topic tree as it appears in the document. Preserve the heading hierarchy using "level" (1 = major topic, 2 = subtopic, 3 = sub-subtopic). For each level-1 topic, list its direct children in "subtopics" as plain strings. Do not invent topics not present in the headings.
+- "topics": the FULL nested topic tree to every depth level present in the document.
+  Rules:
+  1. level 1 = major section, level 2 = subsection, level 3 = sub-subsection, and so on.
+  2. Every node has: { "title": string, "level": number, "subtopics": [ ...same shape recursively... ] }
+  3. Leaf nodes have "subtopics": []
+  4. Do NOT flatten — nested headings must appear as children, not siblings.
+  5. Do not invent topics not present in the headings.
 
 Material:
 ${skeletonInput}
 
-Return JSON: { "summary": "...", "topics": [{ "title": "...", "level": 1, "subtopics": ["...", "..."] }, ...] }`;
+Return JSON: { "summary": "...", "topics": [ { "title": "...", "level": 1, "subtopics": [ { "title": "...", "level": 2, "subtopics": [] } ] } ] }`;
+}
+
+// ── Flatten tree → string[] for contentList ───────────────────────────────────
+
+interface TopicNode {
+  title: string;
+  level: number;
+  subtopics: TopicNode[];
+}
+
+function flattenTree(nodes: TopicNode[]): string[] {
+  const result: string[] = [];
+  for (const node of nodes) {
+    if (node.title?.trim()) result.push(node.title.trim());
+    if (Array.isArray(node.subtopics) && node.subtopics.length > 0) {
+      result.push(...flattenTree(node.subtopics));
+    }
+  }
+  return result;
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL_NAME || 'gemini-2.5-flash-lite',
-    generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
-  });
-
   try {
     const session = cookies().get('session')?.value;
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -134,27 +145,35 @@ export async function POST(req: NextRequest) {
 
     const category: string = mat.category || 'other';
 
-    // Mark as pending before starting
     await matRef.update({ metaStatus: 'pending' });
 
     try {
+      const mistral = getMistralClient();
       const skeletonInput = buildSkeletonInput(extractedText, category);
       const prompt = buildPrompt(skeletonInput, category);
 
-      const result = await model.generateContent(prompt);
-      const raw = result.response.text() || '{}';
+      const response = await mistral.chat.complete({
+        model: 'mistral-small-latest',
+        temperature: 0.2,
+        maxTokens: 4096,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const raw = (response.choices?.[0]?.message?.content as string) || '{}';
       const clean = raw.replace(/```json|```/g, '').trim();
 
-      let parsed: { summary?: string; topics?: { title: string; level: number; subtopics: string[] }[] } = {};
-      try { parsed = JSON.parse(clean); } catch { parsed = {}; }
+      let parsed: { summary?: string; topics?: TopicNode[] } = {};
+      try { parsed = JSON.parse(clean); } catch {
+        console.error('[index-material] JSON parse failed:', clean.slice(0, 300));
+        parsed = {};
+      }
 
       const aiSummary: string = parsed.summary?.trim() || '';
-      const topicTree: { title: string; level: number; subtopics: string[] }[] = Array.isArray(parsed.topics)
+      const topicTree: TopicNode[] = Array.isArray(parsed.topics)
         ? parsed.topics.filter(t => t && typeof t.title === 'string' && t.title.trim().length > 0)
         : [];
 
-      // Flat contentList for backward compatibility (library, topics panel)
-      const contentList: string[] = topicTree.map(t => t.title);
+      const contentList: string[] = flattenTree(topicTree);
 
       const indexDisplayName = mat.suggestedCourseName
         ? `${mat.suggestedCourseName} — ${(mat.category ?? 'material').replace('_', ' ')}`
@@ -174,11 +193,10 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ success: true, aiSummary, contentList, topicTree });
 
-    } catch (geminiErr: any) {
-      // Gemini call failed — mark as failed so admin can see and retry
-      console.error('[index-material] Gemini call failed:', geminiErr?.message || geminiErr);
+    } catch (mistralErr: any) {
+      console.error('[index-material] Mistral call failed:', mistralErr?.message || mistralErr);
       await matRef.update({ metaStatus: 'failed' });
-      return NextResponse.json({ error: 'Metadata generation failed', detail: geminiErr?.message }, { status: 500 });
+      return NextResponse.json({ error: 'Metadata generation failed', detail: mistralErr?.message }, { status: 500 });
     }
 
   } catch (err: any) {
