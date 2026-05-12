@@ -321,7 +321,89 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
     </div>
   );
 }
+const LOADING_MESSAGES = [
+  { phase: 'SEARCHING', text: 'Searching your course materials…' },
+  { phase: 'SEARCHING', text: 'Consulting the lecture notes…' },
+  { phase: 'SEARCHING', text: 'Cross-referencing sources…' },
+  { phase: 'SEARCHING', text: 'Scanning indexed knowledge…' },
+  { phase: 'SEARCHING', text: 'Tracing the argument through the texts…' },
+  { phase: 'SEARCHING', text: 'Retrieving what the scholars say…' },
+  { phase: 'THINKING',  text: 'Drawing connections across disciplines…' },
+  { phase: 'THINKING',  text: 'Examining the question from all angles…' },
+  { phase: 'THINKING',  text: 'Weighing the evidence carefully…' },
+  { phase: 'THINKING',  text: 'Sifting through the material…' },
+  { phase: 'THINKING',  text: 'The mind works best when unhurried…' },
+  { phase: 'THINKING',  text: 'Something worth saying takes a moment…' },
+  { phase: 'COMPOSING', text: 'Formulating a precise response…' },
+  { phase: 'COMPOSING', text: 'The answer is taking shape…' },
+  { phase: 'COMPOSING', text: 'Almost at the lectern…' },
+  { phase: 'COMPOSING', text: 'One moment more…' },
+];
 
+const PHASE_COLORS: Record<string, string> = {
+  SEARCHING: 'var(--gold)',
+  THINKING:  '#a78bfa',
+  COMPOSING: '#34d399',
+};
+
+function LoadingCard() {
+  const [index, setIndex] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
+        setVisible(true);
+      }, 300);
+    }, 800);
+    return () => clearInterval(interval);
+  }, []);
+
+  const current = LOADING_MESSAGES[index];
+  const phaseColor = PHASE_COLORS[current.phase];
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', marginBottom: '12px' }}>
+      <div style={{
+        maxWidth: '82%', borderRadius: '16px', padding: '16px 20px',
+        background: 'var(--navy-card)',
+        border: `1px solid ${phaseColor}`,
+        boxShadow: `0 0 12px ${phaseColor}33`,
+        transition: 'border-color 0.4s ease, box-shadow 0.4s ease',
+        minWidth: '220px',
+      }}>
+        <div style={{
+          fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.15em',
+          color: phaseColor, marginBottom: '8px',
+          transition: 'color 0.4s ease',
+        }}>
+          {current.phase}
+        </div>
+        <div style={{
+          fontSize: '0.88rem', color: 'var(--text-primary)', fontStyle: 'italic',
+          lineHeight: 1.5, opacity: visible ? 1 : 0,
+          transition: 'opacity 0.3s ease', minHeight: '1.4em',
+          fontFamily: 'var(--font-serif, Georgia, serif)',
+        }}>
+          {current.text}
+        </div>
+        <div style={{ display: 'flex', gap: 5, marginTop: 12 }}>
+          {[0, 1, 2, 3].map(i => (
+            <span key={i} style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: phaseColor, display: 'inline-block',
+              animation: 'aiPulse 0.8s ease-in-out infinite',
+              animationDelay: `${i * 0.15}s`,
+              transition: 'background 0.4s ease',
+            }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const { firebaseUser, userProfile } = useAuth();
@@ -798,25 +880,8 @@ export default function CoursePage() {
               </div>
             ))}
 
-            {/* AI stage indicator */}
-            {isAiLoading && !streamingMessage && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0' }}>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {[0,1,2].map(i => (
-                    <span key={i} style={{
-                      width: 7, height: 7, borderRadius: '50%',
-                      background: 'var(--gold)', opacity: 0.7,
-                      animation: 'aiPulse 1.2s ease-in-out infinite',
-                      animationDelay: `${i * 0.2}s`,
-                      display: 'inline-block'
-                    }} />
-                  ))}
-                </div>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                  {aiStageLabel || 'Searching materials…'}
-                </span>
-              </div>
-            )}
+
+       {isAiLoading && !streamingMessage && <LoadingCard />}     
             {streamingMessage && (
               <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ maxWidth: '82%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
