@@ -1,15 +1,15 @@
 export const dynamic = "force-dynamic";
 
 // src/app/api/chat/route.ts
-// Streaming chat — Gemini 2.5 Flash-Lite with optimised RAG for 1M context
+// Streaming chat — Mistral Small with optimised RAG for 1M context
 
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { adminDb, adminAuth } from "@/lib/firebase/admin";
 import { cookies } from "next/headers";
 import { getSystemPrompt, buildCourseMap, CourseMaterialMeta } from "@/lib/gemini/system-prompts";
 import { searchTavily } from "@/lib/search/tavily";
 import { hybridSearch } from "@/lib/qdrant/search";
+import { getMistralClient } from "@/lib/mistral/client";
 
 interface ChunkDoc {
   text: string;
@@ -46,11 +46,24 @@ const CHUNK_CHAR_LIMIT = 4000;
 const HISTORY_MESSAGES = 10;
 const MAX_OUTPUT_TOKENS = 2048;
 
-// ── Fetch course material metadata for Course Map ─────────────────────────────
-// Reads only the lightweight metadata fields — never extractedText.
-// Used to build the Course Map injected into every system prompt.
+// ── Metadata cache (5-minute TTL) ────────────────────────────────────────────
+// Prevents a Firestore read on every single chat message for the same course.
+
+interface CacheEntry {
+  data: CourseMaterialMeta[];
+  expiresAt: number;
+}
+
+const metaCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 async function fetchCourseMetadata(courseId: string): Promise<CourseMaterialMeta[]> {
+  const now = Date.now();
+  const cached = metaCache.get(courseId);
+  if (cached && now < cached.expiresAt) {
+    return cached.data;
+  }
+
   try {
     const [ownSnap, sharedSnap] = await Promise.all([
       adminDb.collection('materials')
@@ -72,20 +85,24 @@ async function fetchCourseMetadata(courseId: string): Promise<CourseMaterialMeta
       return true;
     });
 
-    return allDocs.map(d => {
-      const data = d.data();
+    const data: CourseMaterialMeta[] = allDocs.map(d => {
+      const docData = d.data();
       return {
         id: d.id,
-        fileName: data.fileName ?? '',
-        indexDisplayName: data.indexDisplayName,
-        category: data.category ?? 'other',
-        aiSummary: data.aiSummary,
-        contentList: data.contentList,
-        topicTree: data.topicTree,
-        wordCount: data.wordCount,
-        pageCount: data.pageCount,
+        fileName: docData.fileName ?? '',
+        indexDisplayName: docData.indexDisplayName,
+        category: docData.category ?? 'other',
+        aiSummary: docData.aiSummary,
+        contentList: docData.contentList,
+        topicTree: docData.topicTree,
+        wordCount: docData.wordCount,
+        pageCount: docData.pageCount,
       } as CourseMaterialMeta;
     });
+
+    metaCache.set(courseId, { data, expiresAt: now + CACHE_TTL_MS });
+    return data;
+
   } catch (err) {
     console.error('[chat] fetchCourseMetadata failed:', err);
     return [];
@@ -93,8 +110,6 @@ async function fetchCourseMetadata(courseId: string): Promise<CourseMaterialMeta
 }
 
 export async function POST(req: NextRequest) {
-  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-
   try {
     const session = cookies().get("session")?.value;
     if (!session) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
@@ -118,7 +133,6 @@ export async function POST(req: NextRequest) {
           // ── Stage 1: fetch course map + search materials ───────────────
           emit({ type: "status", stage: "searching", label: "Searching materials…" });
 
-          // Fetch course metadata for Course Map (runs in parallel with RAG)
           const courseMetaPromise = courseId ? fetchCourseMetadata(courseId) : Promise.resolve([]);
 
           let ragContext = "";
@@ -187,7 +201,6 @@ export async function POST(req: NextRequest) {
           // ── Stage 2: build system prompt with course map ───────────────
           emit({ type: "status", stage: "generating", label: "Generating response…" });
 
-          // Await the course metadata fetched in parallel with RAG
           const courseMaterials = await courseMetaPromise;
           const courseMap = courseMaterials.length > 0 ? buildCourseMap(courseMaterials) : '';
 
@@ -234,31 +247,31 @@ export async function POST(req: NextRequest) {
             courseMap,
           );
 
-          const geminiHistory = Array.isArray(conversationHistory)
+          // Build Mistral messages: system prompt first, then conversation history, then current message
+          const mistralHistory = Array.isArray(conversationHistory)
             ? conversationHistory.slice(-HISTORY_MESSAGES).map((m: { role: string; content: string }) => ({
-                role: m.role === "assistant" ? "model" : "user",
-                parts: [{ text: m.content }],
+                role: m.role === "assistant" ? "assistant" : "user" as "assistant" | "user",
+                content: m.content,
               }))
             : [];
 
-          const model = genAI.getGenerativeModel({
-            model: process.env.GEMINI_MODEL_NAME || "gemini-2.5-flash-lite",
-            systemInstruction: systemPrompt,
-            generationConfig: {
-              temperature: 0.7,
-              topP: 0.9,
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
-            },
+          const mistral = getMistralClient();
+          const stream = await mistral.chat.stream({
+            model: 'mistral-small-latest',
+            temperature: 0.7,
+            maxTokens: MAX_OUTPUT_TOKENS,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...mistralHistory,
+              { role: 'user', content: message },
+            ],
           });
-
-          const chat = model.startChat({ history: geminiHistory });
-          const result = await chat.sendMessageStream(message);
 
           // ── Stage 3: stream response ───────────────────────────────────
           emit({ type: "status", stage: "streaming", label: "Responding…" });
 
-          for await (const chunk of result.stream) {
-            const delta = chunk.text();
+          for await (const chunk of stream) {
+            const delta = chunk.data.choices?.[0]?.delta?.content;
             if (delta) {
               emit({ type: "text", content: delta });
             }
