@@ -1,4 +1,6 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -6,6 +8,9 @@ import { deleteChunksByMaterial, upsertChunks } from '@/lib/qdrant/upsert';
 import { MaterialCategory } from '@/lib/processing/classifier';
 
 const CHUNKS_COL = 'material_chunks';
+const BATCH_SIZE = 50;
+const QSTASH_URL = 'https://qstash.upstash.io/v2/publish';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://our-study-ai.vercel.app';
 
 interface SemanticChunk {
   heading: string;
@@ -77,41 +82,94 @@ export async function POST(req: NextRequest) {
   const isValid = await receiver.verify({ signature, body: rawBody }).catch(() => false);
   if (!isValid) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
 
-  const { materialId, courseId, category, extractedText } = JSON.parse(rawBody);
+  const { materialId, courseId, category, extractedText, startIndex = 0 } = JSON.parse(rawBody);
   if (!materialId || !extractedText) return NextResponse.json({ ok: true, skipped: true });
 
-  const oldChunks = await adminDb.collection(CHUNKS_COL).where('materialId', '==', materialId).get();
-  const deleteBatch = adminDb.batch();
-  oldChunks.docs.forEach(d => deleteBatch.update(d.ref, { deleted: true }));
-  await deleteBatch.commit();
-  await deleteChunksByMaterial(materialId);
-
   const chunks = semanticChunk(stripTOC(extractedText));
+  const totalChunks = chunks.length;
+
+  // First batch only — delete old chunks
+  if (startIndex === 0) {
+    const oldChunks = await adminDb.collection(CHUNKS_COL).where('materialId', '==', materialId).get();
+    const deleteBatch = adminDb.batch();
+    oldChunks.docs.forEach(d => deleteBatch.update(d.ref, { deleted: true }));
+    await deleteBatch.commit();
+    await deleteChunksByMaterial(materialId);
+  }
+
+  const batch = chunks.slice(startIndex, startIndex + BATCH_SIZE);
+
+  // Write this batch to Firestore
   const writeBatch = adminDb.batch();
-  chunks.forEach((chunk, i) => {
+  batch.forEach((chunk, i) => {
     const ref = adminDb.collection(CHUNKS_COL).doc();
-    writeBatch.set(ref, { materialId, courseId, category: category as MaterialCategory, chunkIndex: i, text: chunk.text, heading: chunk.heading, headingLevel: chunk.headingLevel, ancestorHeadings: chunk.ancestorHeadings, fullPath: chunk.fullPath, wordCount: chunk.wordCount, createdAt: FieldValue.serverTimestamp() });
+    writeBatch.set(ref, {
+      materialId, courseId,
+      category: category as MaterialCategory,
+      chunkIndex: startIndex + i,
+      text: chunk.text,
+      heading: chunk.heading,
+      headingLevel: chunk.headingLevel,
+      ancestorHeadings: chunk.ancestorHeadings,
+      fullPath: chunk.fullPath,
+      wordCount: chunk.wordCount,
+      createdAt: FieldValue.serverTimestamp(),
+    });
   });
   await writeBatch.commit();
 
-  const chunkPayloads = chunks.map((chunk, i) => ({
-    id: `${materialId}-${i}`,
-    payload: { materialId, courseId, chunkIndex: i, heading: chunk.heading, fullPath: chunk.fullPath, ancestorHeadings: chunk.ancestorHeadings, text: chunk.text, category: category as string },
+  // Upsert this batch to Qdrant
+  const chunkPayloads = batch.map((chunk, i) => ({
+    id: `${materialId}-${startIndex + i}`,
+    payload: {
+      materialId, courseId,
+      chunkIndex: startIndex + i,
+      heading: chunk.heading,
+      fullPath: chunk.fullPath,
+      ancestorHeadings: chunk.ancestorHeadings,
+      text: chunk.text,
+      category: category as string,
+    },
   }));
   await upsertChunks(chunkPayloads);
 
-  // Also index under any sharedCourseIds so RAG works in shared courses
+  // Handle shared courses
   const matDoc = await adminDb.collection('materials').doc(materialId).get();
   const sharedCourseIds: string[] = matDoc.data()?.sharedCourseIds ?? [];
   for (const sharedId of sharedCourseIds) {
     if (sharedId === courseId) continue;
-    const sharedPayloads = chunks.map((chunk, i) => ({
-      id: `${materialId}-shared-${sharedId}-${i}`,
-      payload: { materialId, courseId: sharedId, chunkIndex: i, heading: chunk.heading, fullPath: chunk.fullPath, ancestorHeadings: chunk.ancestorHeadings, text: chunk.text, category: category as string },
+    const sharedPayloads = batch.map((chunk, i) => ({
+      id: `${materialId}-shared-${sharedId}-${startIndex + i}`,
+      payload: {
+        materialId, courseId: sharedId,
+        chunkIndex: startIndex + i,
+        heading: chunk.heading,
+        fullPath: chunk.fullPath,
+        ancestorHeadings: chunk.ancestorHeadings,
+        text: chunk.text,
+        category: category as string,
+      },
     }));
     await upsertChunks(sharedPayloads);
   }
 
-  console.log(`[index-chunks] ${chunks.length} chunks indexed for ${materialId}` + (sharedCourseIds.length ? ` + shared to [${sharedCourseIds.join(', ')}]` : ''));
-  return NextResponse.json({ ok: true });
+  console.log(`[index-chunks] batch ${startIndex}–${startIndex + batch.length - 1} of ${totalChunks} for ${materialId}`);
+
+  // If more chunks remain — fire next batch via QStash
+  const nextIndex = startIndex + BATCH_SIZE;
+  if (nextIndex < totalChunks) {
+    await fetch(`${QSTASH_URL}/${APP_URL}/api/index-chunks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.QSTASH_TOKEN}`,
+      },
+      body: JSON.stringify({ materialId, courseId, category, extractedText, startIndex: nextIndex }),
+    });
+    console.log(`[index-chunks] chained next batch from ${nextIndex} for ${materialId}`);
+  } else {
+    console.log(`[index-chunks] all ${totalChunks} chunks complete for ${materialId}`);
+  }
+
+  return NextResponse.json({ ok: true, batchDone: `${startIndex}–${startIndex + batch.length - 1}`, totalChunks });
 }
