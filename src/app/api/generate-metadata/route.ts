@@ -3,13 +3,9 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getMistralClient } from '@/lib/mistral/client';
 
 // ── Heading skeleton extractor ────────────────────────────────────────────────
-// Identical logic to index-material/route.ts.
-// Pulls heading lines + first 1,500 words of body for summary context.
-// Keeps Gemini input tiny regardless of document size.
-// Gemini resolves OCR-garbled headings through language understanding.
 
 function buildSkeletonInput(extractedText: string, category: string): string {
   if (category === 'past_questions' || category === 'aoc') {
@@ -40,11 +36,12 @@ function buildSkeletonInput(extractedText: string, category: string): string {
   ].join('\n');
 }
 
-// ── Category-aware Gemini prompt ──────────────────────────────────────────────
+// ── Category-aware Mistral prompt ─────────────────────────────────────────────
 
 function buildPrompt(skeletonInput: string, category: string): string {
   const base = `You are indexing a study material for a Catholic seminary library.
 Some headings may be poorly formatted due to OCR scanning — infer the correct clean heading from context, normalise capitalisation to title case, and fix obvious OCR errors.
+Where two nodes at any level share an ambiguous title, append a bracketed qualifier, e.g. "Definition and Examples [Object]" vs "Definition and Examples [Conscience]".
 Return ONLY a valid JSON object. No markdown. No code fences. No preamble. No explanation.`;
 
   if (category === 'past_questions') {
@@ -52,7 +49,7 @@ Return ONLY a valid JSON object. No markdown. No code fences. No preamble. No ex
 
 From the following past examination questions, extract:
 - "summary": one sentence describing what years and subject areas the questions cover.
-- "topics": an array of distinct subject areas/topics that appear across the questions. Each topic: { "title": string, "level": 1, "subtopics": [] }
+- "topics": an array of distinct subject areas/topics. Each topic: { "title": string, "level": 1, "subtopics": [] }
 
 Material:
 ${skeletonInput}
@@ -77,18 +74,42 @@ Return JSON: { "summary": "...", "topics": [...] }`;
 
 From the following document headings and opening, extract:
 - "summary": 2-3 sentences describing what this study material covers and why it matters for seminary students.
-- "topics": the full topic tree as it appears in the document. Preserve the heading hierarchy using "level" (1 = major topic, 2 = subtopic, 3 = sub-subtopic). For each level-1 topic, list its direct children in "subtopics" as plain strings. Do not invent topics not present in the headings.
+- "topics": the FULL nested topic tree to every depth level present in the document.
+  Rules:
+  1. level 1 = major section, level 2 = subsection, level 3 = sub-subsection, and so on.
+  2. Every node has: { "title": string, "level": number, "subtopics": [ ...same shape recursively... ] }
+  3. Leaf nodes have "subtopics": []
+  4. Do NOT flatten — nested headings must appear as children, not siblings.
+  5. Do not invent topics not present in the headings.
 
 Material:
 ${skeletonInput}
 
-Return JSON: { "summary": "...", "topics": [{ "title": "...", "level": 1, "subtopics": ["...", "..."] }, ...] }`;
+Return JSON: { "summary": "...", "topics": [ { "title": "...", "level": 1, "subtopics": [ { "title": "...", "level": 2, "subtopics": [] } ] } ] }`;
+}
+
+// ── Flatten tree → string[] for contentList ───────────────────────────────────
+
+interface TopicNode {
+  title: string;
+  level: number;
+  subtopics: TopicNode[];
+}
+
+function flattenTree(nodes: TopicNode[]): string[] {
+  const result: string[] = [];
+  for (const node of nodes) {
+    if (node.title?.trim()) result.push(node.title.trim());
+    if (Array.isArray(node.subtopics) && node.subtopics.length > 0) {
+      result.push(...flattenTree(node.subtopics));
+    }
+  }
+  return result;
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  // Verify this request came from QStash — reject anything else
   const signature = req.headers.get('upstash-signature');
   if (!signature) {
     return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
@@ -115,37 +136,34 @@ export async function POST(req: NextRequest) {
   const matRef = adminDb.collection('materials').doc(materialId);
 
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-    const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL_NAME || 'gemini-2.5-flash-lite',
-      generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
-    });
-
+    const mistral = getMistralClient();
     const skeletonInput = buildSkeletonInput(extractedText, category || 'other');
     const prompt = buildPrompt(skeletonInput, category || 'other');
 
-    const result = await model.generateContent(prompt);
-    const raw = result.response.text() || '{}';
+    const response = await mistral.chat.complete({
+      model: 'mistral-small-latest',
+      temperature: 0.2,
+      maxTokens: 4096,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const raw = (response.choices?.[0]?.message?.content as string) || '{}';
     const clean = raw.replace(/```json|```/g, '').trim();
 
-    let parsed: {
-      summary?: string;
-      topics?: { title: string; level: number; subtopics: string[] }[];
-    } = {};
-
-    try { parsed = JSON.parse(clean); } catch {
-      console.error('[generate-metadata] JSON parse failed, raw output:', clean.slice(0, 300));
+    let parsed: { summary?: string; topics?: TopicNode[] } = {};
+    try {
+      parsed = JSON.parse(clean);
+    } catch {
+      console.error('[generate-metadata] JSON parse failed:', clean.slice(0, 300));
       parsed = {};
     }
 
     const aiSummary: string = parsed.summary?.trim() || '';
-    const topicTree: { title: string; level: number; subtopics: string[] }[] =
-      Array.isArray(parsed.topics)
-        ? parsed.topics.filter(t => t && typeof t.title === 'string' && t.title.trim().length > 0)
-        : [];
+    const topicTree: TopicNode[] = Array.isArray(parsed.topics)
+      ? parsed.topics.filter(t => t && typeof t.title === 'string' && t.title.trim().length > 0)
+      : [];
 
-    // Flat contentList for backward compatibility with library and topics panel
-    const contentList: string[] = topicTree.map(t => t.title);
+    const contentList: string[] = flattenTree(topicTree);
 
     await matRef.update({
       aiSummary,
@@ -155,18 +173,13 @@ export async function POST(req: NextRequest) {
       metaGeneratedAt: new Date().toISOString(),
     });
 
-    console.log(`[generate-metadata] Done for ${materialId} — ${topicTree.length} topics, summary: ${aiSummary.slice(0, 60)}...`);
+    console.log(`[generate-metadata] Done for ${materialId} — ${topicTree.length} top-level topics`);
     return NextResponse.json({ ok: true, materialId, topicCount: topicTree.length });
 
   } catch (err: any) {
     const message = err?.message || String(err);
     console.error(`[generate-metadata] Failed for ${materialId}:`, message);
-
-    // Write failed status so admin can see it and retry
-    try {
-      await matRef.update({ metaStatus: 'failed' });
-    } catch (_) {}
-
+    try { await matRef.update({ metaStatus: 'failed' }); } catch (_) {}
     return NextResponse.json({ error: 'Metadata generation failed', detail: message }, { status: 500 });
   }
 }
