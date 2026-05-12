@@ -26,11 +26,12 @@ function buildSkeletonInput(extractedText: string, category: string): string {
     }
   }
 
-  const firstWords = extractedText.split(/\s+/).slice(0, 1500).join(' ');
+  const firstWords = extractedText.split(/\s+/).slice(0, 800).join(' ');
+  const cappedHeadings = headingLines.slice(0, 120);
 
   return [
     '=== DOCUMENT HEADINGS ===',
-    headingLines.join('\n'),
+    cappedHeadings.join('\n'),
     '\n=== DOCUMENT OPENING (for summary context) ===',
     firstWords,
   ].join('\n');
