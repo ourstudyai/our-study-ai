@@ -881,14 +881,28 @@ export default function AdminPage() {
                     if (refreshLoading) return;
                     setRefreshLoading(true);
                     try {
-                      const res = await fetch('/api/index-material', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ materialId: selected.id, action: 'add' }),
-                      });
-                      const d = await res.json();
-                      if (res.ok) { alert('✅ Topics refreshed successfully.'); }
-                      else { alert('❌ Failed: ' + (d.error || `Status ${res.status}`)); }
+                      const matSnap = await (await import('firebase/firestore')).getDoc(
+        (await import('firebase/firestore')).doc(
+          (await import('@/lib/firebase/config')).db, 'materials', selected.id
+        )
+      );
+      const matData = matSnap.data();
+      if (!matData?.extractedText) { alert('❌ No extracted text found for this material.'); return; }
+      const res = await fetch('/api/admin/reindex-material', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          materialId: selected.id,
+          courseId: selected.confirmedCourseId ?? selected.suggestedCourseId ?? '',
+          courseName: selected.confirmedCourseName ?? selected.suggestedCourseName ?? '',
+          category: selected.category,
+          extractedText: matData.extractedText,
+          shouldIndex: true,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) { alert('✅ Topics refresh queued successfully.'); }
+      else { alert('❌ Failed: ' + (d.error || `Status ${res.status}`)); }
                     } catch (e: any) {
                       alert('❌ Network error: ' + e?.message);
                     } finally { setRefreshLoading(false); }
