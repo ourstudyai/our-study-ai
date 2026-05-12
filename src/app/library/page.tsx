@@ -310,7 +310,24 @@ export default function LibraryPage() {
   const CAT_COLORS: Record<string, string> = {
     lecture_notes: '#c4a050', past_questions: '#818cf8', aoc: '#f472b6', syllabus: '#2dd4bf',
   };
-
+const renderTopicTree = (nodes: TopicNode[], depth = 0): React.ReactNode => (
+    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+      {nodes.map((node, i) => (
+        <li key={i} style={{ paddingLeft: depth * 12 }}>
+          <span style={{
+            display: 'block',
+            fontSize: depth === 0 ? '0.78rem' : '0.73rem',
+            color: depth === 0 ? 'var(--text-primary)' : 'var(--text-muted)',
+            padding: '2px 0',
+            fontWeight: depth === 0 ? 600 : 400,
+          }}>
+            {node.title}
+          </span>
+          {node.subtopics?.length > 0 && renderTopicTree(node.subtopics, depth + 1)}
+        </li>
+      ))}
+    </ul>
+  );
   if (authLoading || !accessChecked) return (
     <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)', flexDirection: 'column', gap: 12, padding: 24 }}>
       <LuxLoader label="Loading library..." />
