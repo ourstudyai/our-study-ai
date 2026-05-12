@@ -155,7 +155,7 @@ export async function POST(req: NextRequest) {
       const response = await mistral.chat.complete({
         model: 'mistral-small-latest',
         temperature: 0.2,
-        maxTokens: 4096,
+        maxTokens: 16384,
         messages: [{ role: 'user', content: prompt }],
       });
 
