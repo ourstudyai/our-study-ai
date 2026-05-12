@@ -8,7 +8,7 @@ import { deleteChunksByMaterial, upsertChunks } from '@/lib/qdrant/upsert';
 import { MaterialCategory } from '@/lib/processing/classifier';
 
 const CHUNKS_COL = 'material_chunks';
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 20;
 const QSTASH_URL = 'https://qstash.upstash.io/v2/publish';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://our-study-ai.vercel.app';
 
