@@ -216,7 +216,7 @@ export async function POST(req: NextRequest) {
               : "";
             semesterSummary = `Note: The match between the student's query and course materials is weak.${pathHint} Gently let the student know the exact terms used in their materials, suggest the relevant section heading if available, and ask if they'd like you to answer from that section or from general knowledge. Do not fabricate material content.\n\nAvailable material excerpts (low relevance):\n\n${ragContext}`;
           } else {
-            semesterSummary = `Relevant course material excerpts (answer primarily from these, use the exact headings and terminology as they appear):\n\n${ragContext}`;
+            semesterSummary = `Relevant course material excerpts (answer primarily from these, use the exact headings and terminology as they appear):\n\nCRITICAL: Answer ONLY from the excerpts below. If the specific information the student is asking about is not present in these excerpts, say so honestly — do not fill gaps from your own training knowledge and label it 📚. You may only use 📚 for content explicitly present in the excerpts below.\n\n${ragContext}`;
           }
 
           if (materialContext) {
