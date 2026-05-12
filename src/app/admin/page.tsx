@@ -472,7 +472,7 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ materialId: selected.id, action: 'add' }),
+        body: JSON.stringify({ materialId: selected?.id, action: 'add' }),
       });
       if (res.ok) { alert('Reassigned successfully!'); setReassigning(null); setReassignCourseId(''); await load(); }
       else { const d = await res.json(); alert('Failed: ' + (d.error || res.status)); }
