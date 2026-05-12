@@ -155,6 +155,9 @@ export async function POST(req: NextRequest) {
 
   console.log(`[index-chunks] batch ${startIndex}–${startIndex + batch.length - 1} of ${totalChunks} for ${materialId}`);
 
+  // Small pause to avoid Firestore quota exhaustion on large documents
+  await new Promise(r => setTimeout(r, 2000));
+
   // If more chunks remain — fire next batch via QStash
   const nextIndex = startIndex + BATCH_SIZE;
   if (nextIndex < totalChunks) {
