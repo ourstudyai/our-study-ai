@@ -23,6 +23,21 @@ import { db } from '@/lib/firebase/config';
 type StudyMode = 'plain_explainer' | 'practice_questions' | 'exam_preparation' | 'research';
 type SideTab = 'materials' | 'past-questions' | 'aoc' | 'notes' | 'history';
 
+interface TopicNode {
+  title: string;
+  level: number;
+  subtopics: TopicNode[];
+}
+
+function flattenTree(nodes: TopicNode[]): string[] {
+  const result: string[] = [];
+  for (const node of nodes) {
+    if (node.title?.trim()) result.push(node.title.trim());
+    if (node.subtopics?.length > 0) result.push(...flattenTree(node.subtopics));
+  }
+  return result;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -37,8 +52,6 @@ interface ChatSession {
   mode: string;
   archived: boolean;
 }
-
-
 
 const MODES: { id: StudyMode; label: string; icon: string; description: string }[] = [
   { id: 'plain_explainer', label: 'Plain Explainer', icon: '💡', description: 'Understand any concept in plain language' },
@@ -130,7 +143,6 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
     try { localStorage.setItem('ourstudyai_tts_prefs', JSON.stringify({ voice, rate })); } catch {}
   };
 
-  // Auto-speak when message arrives in auto-speech mode
   useEffect(() => {
     if (!autoSpeak || !message.content) return;
     const utt = new SpeechSynthesisUtterance(stripMarkdown(message.content));
@@ -321,6 +333,7 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
     </div>
   );
 }
+
 const LOADING_MESSAGES = [
   { phase: 'SEARCHING', text: 'Searching your course materials…' },
   { phase: 'SEARCHING', text: 'Consulting the lecture notes…' },
@@ -404,6 +417,7 @@ function LoadingCard() {
     </div>
   );
 }
+
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const { firebaseUser, userProfile } = useAuth();
@@ -420,7 +434,7 @@ export default function CoursePage() {
 
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
   const [historyOverlayOpen, setHistoryOverlayOpen] = useState(false);
-  const [topics, setTopics] = useState<{ materialName: string; items: string[] }[]>([]);
+  const [topics, setTopics] = useState<{ materialName: string; tree: TopicNode[]; items: string[] }[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
 
   const [modeHistories, setModeHistories] = useState<Record<string, ChatMessage[]>>({});
@@ -432,7 +446,6 @@ export default function CoursePage() {
   const [sessionSaving, setSessionSaving] = useState(false);
   const [viewerContent, setViewerContent] = useState<{ mode: any; data: any; relatedDocs?: any[] } | null>(null);
 
-  // Scroll state
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [showScrollUp, setShowScrollUp] = useState(false);
 
@@ -559,6 +572,30 @@ export default function CoursePage() {
     finally { setSessionSaving(false); }
   };
 
+  const renderTopicTree = (nodes: TopicNode[], depth = 0): React.ReactNode => (
+    <div style={{ paddingLeft: depth * 10 }}>
+      {nodes.map((node, i) => (
+        <div key={i}>
+          <button
+            onClick={() => { sendMessage('[TOPIC:' + node.title + '] Explain this topic: "' + node.title + '"'); setTopicsOpen(false); }}
+            style={{
+              textAlign: 'left', width: '100%', padding: '6px 10px', borderRadius: '8px',
+              background: 'var(--navy)', border: '1px solid var(--border)',
+              color: 'var(--text-secondary)',
+              fontSize: depth === 0 ? '0.78rem' : '0.73rem',
+              fontWeight: depth === 0 ? 600 : 400,
+              opacity: depth === 0 ? 1 : 0.8,
+              cursor: 'pointer', marginBottom: '3px',
+            }}
+          >
+            {node.title}
+          </button>
+          {node.subtopics?.length > 0 && renderTopicTree(node.subtopics, depth + 1)}
+        </div>
+      ))}
+    </div>
+  );
+
   const loadTopics = async () => {
     if (!courseId) return;
     setTopicsLoading(true);
@@ -573,18 +610,18 @@ export default function CoursePage() {
         seen.add(d.id);
         return true;
       });
-      const result: { materialName: string; items: string[] }[] = [];
+      const result: { materialName: string; tree: TopicNode[]; items: string[] }[] = [];
       allDocs.forEach(d => {
         const data = d.data();
-        // Skip past questions and AOC — their topics show in dedicated panels
         if (['past_questions', 'aoc'].includes(data.category)) return;
         const name: string = data.indexDisplayName ?? data.fileName ?? 'Material';
-        // Read contentList written by Gemini at index time — clean, normalised strings.
-        // Falls back to empty so the material is silently skipped if not yet indexed.
-        const items: string[] = Array.isArray(data.contentList)
-          ? data.contentList.filter((t: any) => typeof t === 'string' && t.trim().length > 2)
-          : [];
-        if (items.length > 0) result.push({ materialName: name, items });
+        const tree: TopicNode[] = Array.isArray(data.topicTree) ? data.topicTree : [];
+        const items: string[] = tree.length > 0
+          ? flattenTree(tree)
+          : Array.isArray(data.contentList)
+            ? data.contentList.filter((t: any) => typeof t === 'string' && t.trim().length > 2)
+            : [];
+        if (items.length > 0) result.push({ materialName: name, tree, items });
       });
       setTopics(result);
     } catch (err) {
@@ -593,7 +630,7 @@ export default function CoursePage() {
       setTopicsLoading(false);
     }
   };
-  // Font Awesome
+
   useEffect(() => {
     const id = 'fa-cdn';
     if (document.getElementById(id)) return;
@@ -603,19 +640,16 @@ export default function CoursePage() {
     document.head.appendChild(link);
   }, []);
 
-  // Load course
   useEffect(() => {
     if (!firebaseUser || !courseId) return;
     getCourseById(courseId).then(data => { setCourse(data); setLoading(false); });
   }, [firebaseUser, courseId]);
 
-  // Load session when mode or user changes
   useEffect(() => {
     if (!uid || !courseId || !userProfile) return;
     loadSession(activeMode);
   }, [uid, courseId, activeMode, userProfile]);
 
-  // Scroll to user message when a new user message is added
   useEffect(() => {
     const currentLen = chatHistory.length;
     const prevLen = prevHistoryLenRef.current;
@@ -634,7 +668,6 @@ export default function CoursePage() {
     prevHistoryLenRef.current = currentLen;
   }, [chatHistory]);
 
-  // Track scroll position to show/hide floating buttons
   useEffect(() => {
     const el = chatContainerRef.current;
     if (!el) return;
@@ -649,7 +682,6 @@ export default function CoursePage() {
     return () => el.removeEventListener('scroll', onScroll);
   }, [chatHistory]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -880,8 +912,7 @@ export default function CoursePage() {
               </div>
             ))}
 
-
-       {isAiLoading && !streamingMessage && <LoadingCard />}     
+            {isAiLoading && !streamingMessage && <LoadingCard />}
             {streamingMessage && (
               <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ maxWidth: '82%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
@@ -1069,12 +1100,15 @@ export default function CoursePage() {
                 <div key={i} style={{ marginBottom: '20px' }}>
                   <p style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '8px' }}>{mat.materialName}</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {mat.items.map((item, j) => (
-                      <button key={j} onClick={() => { sendMessage('[TOPIC:' + item + '] Explain this topic: "' + item + '"'); setTopicsOpen(false); }}
-                        style={{ textAlign: 'left', padding: '7px 10px', borderRadius: '8px', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer' }}>
-                        {item}
-                      </button>
-                    ))}
+                    {mat.tree.length > 0
+                      ? renderTopicTree(mat.tree)
+                      : mat.items.map((item, j) => (
+                          <button key={j} onClick={() => { sendMessage('[TOPIC:' + item + '] Explain this topic: "' + item + '"'); setTopicsOpen(false); }}
+                            style={{ textAlign: 'left', padding: '7px 10px', borderRadius: '8px', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer' }}>
+                            {item}
+                          </button>
+                        ))
+                    }
                   </div>
                 </div>
               ))}
@@ -1119,4 +1153,4 @@ export default function CoursePage() {
       )}
     </div>
   );
-  }
+}
