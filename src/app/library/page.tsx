@@ -16,6 +16,12 @@ import {
 
 const SUPREME = 'ourstudyai@gmail.com';
 
+interface TopicNode {
+  title: string;
+  level: number;
+  subtopics: TopicNode[];
+}
+
 interface IndexedMaterial {
   id: string;
   fileName: string;
@@ -34,6 +40,7 @@ interface IndexedMaterial {
   semester?: number;
   indexed: boolean;
   contentList?: string[];
+  topicTree?: TopicNode[];
   aiSummary?: string;
   indexDisplayName?: string;
   indexedAt?: string | null;
@@ -460,20 +467,23 @@ export default function LibraryPage() {
                   )}
 
                   {/* Topics toggle */}
-                  {m.contentList && m.contentList.length > 0 && (
+                  {((m.topicTree && m.topicTree.length > 0) || (m.contentList && m.contentList.length > 0)) && (
                     <div>
                       <button onClick={() => setExpanded(s => { const n = new Set(s); isTopicsOpen ? n.delete(m.id) : n.add(m.id); return n; })}
                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--text-secondary)', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
                         Show topics {isTopicsOpen ? '▴' : '▾'}
                       </button>
                       {isTopicsOpen && (
-                        <ul style={{ marginTop: '8px', paddingLeft: '0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                          {m.contentList.map((t, i) => (
-                            <li key={i} style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', paddingLeft: '10px', borderLeft: '2px solid rgba(196,160,80,0.3)', lineHeight: 1.4 }}>
-                              {t}
-                            </li>
-                          ))}
-                        </ul>
+                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          {m.topicTree && m.topicTree.length > 0
+                            ? renderTopicTree(m.topicTree)
+                            : m.contentList?.map((t, i) => (
+                                <div key={i} style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', paddingLeft: '10px', borderLeft: '2px solid rgba(196,160,80,0.3)', lineHeight: 1.4 }}>
+                                  {t}
+                                </div>
+                              ))
+                          }
+                        </div>
                       )}
                     </div>
                   )}
