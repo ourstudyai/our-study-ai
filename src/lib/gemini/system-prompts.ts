@@ -135,7 +135,7 @@ export function getSystemPrompt(
   const courseContext = `
 CURRENT COURSE: ${courseName}
 COURSE DESCRIPTION: ${courseDescription}
-${courseMap ? `\n${courseMap}\n` : ''}
+${courseMap ? `\n${courseMap}\n` : '\nCOURSE MATERIAL STATUS: No course materials have been indexed for this course yet. You have NO course material to draw from.\n'}
 ${semesterSummary ? `\nSTUDENT'S SEMESTER SUMMARY:\n${semesterSummary}` : ''}
 `;
 
