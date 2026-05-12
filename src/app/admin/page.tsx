@@ -468,10 +468,11 @@ export default function AdminPage() {
     try {
       const idToken = await firebaseUser?.getIdToken(true);
       if (!idToken) { alert('Not authenticated. Please refresh and try again.'); return; }
-      const res = await fetch('/api/reassign-material', {
+      const res = await fetch('/api/index-material', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ materialId, courseId, courseName, mode: 'primary', idToken }),
+        credentials: 'include',
+        body: JSON.stringify({ materialId: selected.id, action: 'add' }),
       });
       if (res.ok) { alert('Reassigned successfully!'); setReassigning(null); setReassignCourseId(''); await load(); }
       else { const d = await res.json(); alert('Failed: ' + (d.error || res.status)); }
