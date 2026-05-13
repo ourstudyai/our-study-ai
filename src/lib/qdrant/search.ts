@@ -64,3 +64,26 @@ export async function hybridSearch(query: string, courseId: string, topK = 12): 
   });
   return hybrid.sort((a, b) => b.score - a.score).slice(0, topK);
 }
+
+export async function searchByHeading(heading: string, courseId: string, topK = 12): Promise<SearchResult[]> {
+  await ensureCollection();
+  const headingLower = heading.toLowerCase();
+  const results = await qdrant.scroll(COLLECTION_NAME, {
+    filter: {
+      must: [{ key: 'courseId', match: { value: courseId } }],
+    },
+    with_payload: true,
+    with_vector: false,
+    limit: 300,
+  });
+  const matched = (results.points ?? []).filter((p) => {
+    const h = ((p.payload?.heading as string) ?? '').toLowerCase();
+    const fp = ((p.payload?.fullPath as string) ?? '').toLowerCase();
+    return h.includes(headingLower) || headingLower.includes(h) || fp.includes(headingLower);
+  });
+  matched.sort((a, b) => ((a.payload?.chunkIndex as number) ?? 0) - ((b.payload?.chunkIndex as number) ?? 0));
+  return matched.slice(0, topK).map((p) => ({
+    ...(p.payload as Omit<SearchResult, 'score'>),
+    score: 1,
+  }));
+}
