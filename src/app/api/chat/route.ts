@@ -201,19 +201,27 @@ export async function POST(req: NextRequest) {
           }
 
           let webSearchContext = '';
-          if (mode === 'research') {
-            const webResults = await searchTavily(message, 5);
-            if (webResults.length > 0) {
-              webSearchContext = '\n\nWEB SEARCH RESULTS (external — cite URL, label as external source):\n' +
-                webResults.map((r, i) =>
-                  `[WEB ${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 600)}`
-                ).join('\n\n');
-            }
-          }
+if (mode === 'research') {
+  emit({ type: 'status', stage: 'searching', label: 'Searching the web…' });
+  const webResults = await searchTavily(message, 5);
+  if (webResults.length > 0) {
+    webSearchContext = 'WEB SEARCH RESULTS — PRIORITY SOURCE (cite URL for each, label 🌐):\n' +
+      webResults.map((r, i) =>
+        `[WEB ${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 800)}`
+      ).join('\n\n');
+  }
+}
 
-          if (webSearchContext) {
-            semesterSummary = (semesterSummary ?? '') + webSearchContext;
-          }
+if (mode === 'research') {
+  // Research mode: Tavily first, then course materials, then AI knowledge as last resort.
+  // Build context in strict priority order so the model reads internet results first.
+  const parts: string[] = [];
+  if (webSearchContext) parts.push(webSearchContext);
+  if (semesterSummary) parts.push('COURSE MATERIALS (secondary source — use to supplement or cross-reference):\n' + semesterSummary);
+  semesterSummary = parts.join('\n\n---\n\n');
+} else if (webSearchContext) {
+  semesterSummary = (semesterSummary ?? '') + '\n\n' + webSearchContext;
+}
 
           const systemPrompt = getSystemPrompt(
             mode ?? "general",
