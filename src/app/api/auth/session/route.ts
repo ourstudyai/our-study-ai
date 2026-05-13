@@ -9,13 +9,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing idToken' }, { status: 400 });
     }
 
-    // Store the token in an HTTP-only cookie for server-side validation
     const response = NextResponse.json({ success: true });
     response.cookies.set('session', idToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 5, // 5 days
+      maxAge: 60 * 60 * 24 * 14, // 14 days — refreshed automatically on token rotation
       path: '/',
     });
 
