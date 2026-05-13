@@ -1031,10 +1031,10 @@ boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
                 <button key={tab.id} onClick={() => setActiveSideTab(tab.id)}
                   style={{
                     flex: 1, padding: '8px 4px', fontSize: '0.65rem', fontWeight: 500,
-                    background: activeMode === m.id ? 'var(--gold-dim)' : 'transparent',
-color: activeMode === m.id ? 'var(--gold)' : 'var(--text-muted)',
-border: activeMode === m.id ? '1px solid var(--border-strong)' : '1px solid transparent',
-                    borderBottom: activeSideTab === tab.id ? '2px solid var(--gold)' : '2px solid transparent',
+                    background: activeSideTab === tab.id ? 'var(--gold-dim)' : 'transparent',
+color: activeSideTab === tab.id ? 'var(--gold)' : 'var(--text-muted)',
+border: 'none',
+borderBottom: activeSideTab === tab.id ? '2px solid var(--gold)' : '2px solid transparent',
                     border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
                   }}
                 >
