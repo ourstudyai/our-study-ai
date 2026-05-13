@@ -19,12 +19,8 @@ export async function POST(req: NextRequest) {
     const { materialId, publicId } = await req.json();
     if (!materialId) return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
     // Delete chunks using adminDb (client SDK has no auth in server context)
-    const chunksSnap = await adminDb.collection('material_chunks')
-      .where('materialId', '==', materialId)
-      .get();
-    const batch = adminDb.batch();
-    chunksSnap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
+    const { deleteChunksByMaterial } = await import('@/lib/qdrant/upsert');
+    await deleteChunksByMaterial(materialId);
     if (publicId) {
       try { await r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: publicId })); }
       catch (err) { console.warn("[delete-material] R2 delete failed:", err); }
