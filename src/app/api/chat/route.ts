@@ -8,7 +8,7 @@ import { adminDb, adminAuth } from "@/lib/firebase/admin";
 import { cookies } from "next/headers";
 import { getSystemPrompt, buildCourseMap, CourseMaterialMeta } from "@/lib/gemini/system-prompts";
 import { searchTavily } from "@/lib/search/tavily";
-import { hybridSearch } from "@/lib/qdrant/search";
+import { hybridSearch, searchByHeading } from "@/lib/qdrant/search";
 import { getMistralClient } from "@/lib/mistral/client";
 
 interface ChunkDoc {
@@ -146,40 +146,16 @@ export async function POST(req: NextRequest) {
           if (courseId) {
             try {
               if (topicHeading) {
-                const snap = await adminDb.collection('material_chunks')
-                  .where('courseId', '==', courseId)
-                  .limit(300)
-                  .get();
-                const docs = snap.docs.filter(d => !d.data().deleted);
-                const headingLower = topicHeading.toLowerCase();
-                const matched = docs.filter(d => {
-                  const h = (d.data().heading ?? '').toLowerCase();
-                  const fp = (d.data().fullPath ?? '').toLowerCase();
-                  return h.includes(headingLower) || headingLower.includes(h) || fp.includes(headingLower);
-                });
+                const matched = await searchByHeading(topicHeading, courseId, RAG_TOP_K);
                 if (matched.length > 0) {
-                  const matchedData = matched.map(d => ({ id: d.id, ...(d.data() as ChunkDoc & { chunkIndex?: number; materialId?: string }) }));
-                  matchedData.sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0));
-                  const firstMatch = matchedData[0];
-                  const siblings = docs
-                    .filter(d => {
-                      const data = d.data() as ChunkDoc & { chunkIndex?: number; materialId?: string };
-                      return data.materialId === firstMatch.materialId &&
-                        Math.abs((data.chunkIndex ?? 0) - (firstMatch.chunkIndex ?? 0)) <= 2 &&
-                        !matchedData.find(m => m.id === d.id);
-                    })
-                    .map(d => ({ id: d.id, ...(d.data() as ChunkDoc & { chunkIndex?: number; materialId?: string }) }));
-                  const allChunks = [...matchedData, ...siblings]
-                    .sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0))
-                    .slice(0, RAG_TOP_K);
-                  ragContext = allChunks.map((c: any) => {
-                    const pathLabel = c.fullPath ? `[${c.fullPath}]` : `[${c.heading ?? 'Section'}]`;
-                    return `${pathLabel}\n${c.text.slice(0, CHUNK_CHAR_LIMIT)}`;
+                  ragContext = matched.map(r => {
+                    const pathLabel = r.fullPath ? `[${r.fullPath}]` : `[${r.heading ?? 'Section'}]`;
+                    return `${pathLabel}\n${r.text.slice(0, CHUNK_CHAR_LIMIT)}`;
                   }).join("\n\n");
+                  suggestedPaths = Array.from(new Set(matched.slice(0, 5).map(r => r.fullPath ?? r.heading ?? '').filter(Boolean)));
                   lowConfidence = false;
                 } else {
                   lowConfidence = true;
-                  suggestedPaths = Array.from(new Set(docs.slice(0, 5).map(d => d.data().fullPath ?? d.data().heading ?? '').filter(Boolean)));
                 }
               } else {
                 const qdrantResults = await hybridSearch(message, courseId, RAG_TOP_K);
