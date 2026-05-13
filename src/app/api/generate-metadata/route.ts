@@ -5,97 +5,85 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { getMistralClient } from '@/lib/mistral/client';
 
-// ── Heading skeleton extractor ────────────────────────────────────────────────
-
-function buildSkeletonInput(extractedText: string, category: string): string {
-  if (category === 'past_questions' || category === 'aoc') {
-    return extractedText.slice(0, 8000);
-  }
-
-  const lines = extractedText.split('\n');
-  const headingLines: string[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const isMarkdownHeading = /^#{1,4}\s+.+/.test(trimmed);
-    const isBoldCaps = /^\*\*[A-Z][A-Z0-9\s\-:,./]{3,}\*\*\s*$/.test(trimmed);
-    const isAllCapsLine = /^[A-Z][A-Z0-9\s\-:,./]{4,}$/.test(trimmed) && trimmed.length < 100;
-    if (isMarkdownHeading || isBoldCaps || isAllCapsLine) {
-      headingLines.push(trimmed);
-    }
-  }
-
-  const firstWords = extractedText.split(/\s+/).slice(0, 800).join(' ');
-  const cappedHeadings = headingLines.slice(0, 120);
-
-  return [
-    '=== DOCUMENT HEADINGS ===',
-    cappedHeadings.join('\n'),
-    '\n=== DOCUMENT OPENING (for summary context) ===',
-    firstWords,
-  ].join('\n');
-}
-
-// ── Category-aware Mistral prompt ─────────────────────────────────────────────
-
-function buildPrompt(skeletonInput: string, category: string): string {
-  const base = `You are indexing a study material for a Catholic seminary library.
-Some headings may be poorly formatted due to OCR scanning — infer the correct clean heading from context, normalise capitalisation to title case, and fix obvious OCR errors.
-Where two nodes at any level share an ambiguous title, append a bracketed qualifier, e.g. "Definition and Examples [Object]" vs "Definition and Examples [Conscience]".
-Return ONLY a valid JSON object. No markdown. No code fences. No preamble. No explanation.`;
-
-  if (category === 'past_questions') {
-    return `${base}
-
-From the following past examination questions, extract:
-- "summary": one sentence describing what years and subject areas the questions cover.
-- "topics": an array of distinct subject areas/topics. Each topic: { "title": string, "level": 1, "subtopics": [] }
-
-Material:
-${skeletonInput}
-
-Return JSON: { "summary": "...", "topics": [...] }`;
-  }
-
-  if (category === 'aoc') {
-    return `${base}
-
-From the following Areas of Concentration document, extract:
-- "summary": one sentence describing the exam year and subject covered.
-- "topics": each area of concentration as a topic. Each topic: { "title": string, "level": 1, "subtopics": [] }
-
-Material:
-${skeletonInput}
-
-Return JSON: { "summary": "...", "topics": [...] }`;
-  }
-
-  return `${base}
-
-From the following document headings and opening, extract:
-- "summary": 2-3 sentences describing what this study material covers and why it matters for seminary students.
-- "topics": the topic tree. For documents with more than 40 headings, list TOP-LEVEL topics only with NO subtopics (subtopics: []). For smaller documents, include subtopics to 2 levels deep maximum. Never go deeper than level 2.
-  Rules:
-  1. level 1 = major section, level 2 = subsection, level 3 = sub-subsection, and so on.
-  2. Every node has: { "title": string, "level": number, "subtopics": [ ...same shape recursively... ] }
-  3. Leaf nodes have "subtopics": []
-  4. Do NOT flatten — nested headings must appear as children, not siblings.
-  5. Do not invent topics not present in the headings.
-
-Material:
-${skeletonInput}
-
-Return JSON: { "summary": "...", "topics": [ { "title": "...", "level": 1, "subtopics": [ { "title": "...", "level": 2, "subtopics": [] } ] } ] }`;
-}
-
-// ── Flatten tree → string[] for contentList ───────────────────────────────────
+// ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface TopicNode {
   title: string;
   level: number;
   subtopics: TopicNode[];
 }
+
+interface HeadingLine {
+  raw: string;
+  level: number;
+}
+
+// ── Heading extractor ─────────────────────────────────────────────────────────
+
+function extractHeadings(extractedText: string): HeadingLine[] {
+  const lines = extractedText.split('\n');
+  const result: HeadingLine[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const mdMatch = trimmed.match(/^(#{1,4})\s+(.+)/);
+    if (mdMatch) {
+      result.push({ raw: trimmed, level: mdMatch[1].length });
+      continue;
+    }
+    const isBoldCaps = /^\*\*[A-Z][A-Z0-9\s\-:,./]{3,}\*\*\s*$/.test(trimmed);
+    if (isBoldCaps) { result.push({ raw: trimmed, level: 1 }); continue; }
+    const isAllCaps = /^[A-Z][A-Z0-9\s\-:,./]{4,}$/.test(trimmed) && trimmed.length < 100;
+    if (isAllCaps) { result.push({ raw: trimmed, level: 1 }); continue; }
+  }
+  return result;
+}
+
+// ── Split headings into major sections ───────────────────────────────────────
+// Each section = one level-1 heading + all its descendants.
+// Oversized sections (> MAX_SECTION_HEADINGS) are split at the nearest
+// level-2 boundary to stay within token limits.
+
+const MAX_SECTION_HEADINGS = 60;
+
+function splitIntoSections(headings: HeadingLine[]): HeadingLine[][] {
+  const sections: HeadingLine[][] = [];
+  let current: HeadingLine[] = [];
+
+  for (const h of headings) {
+    if (h.level === 1 && current.length > 0) {
+      // Flush current section — split if oversized
+      sections.push(...splitOversized(current));
+      current = [];
+    }
+    current.push(h);
+  }
+  if (current.length > 0) sections.push(...splitOversized(current));
+
+  return sections;
+}
+
+function splitOversized(section: HeadingLine[]): HeadingLine[][] {
+  if (section.length <= MAX_SECTION_HEADINGS) return [section];
+
+  // Split at level-2 boundaries
+  const parts: HeadingLine[][] = [];
+  let part: HeadingLine[] = [];
+  const header = section[0]; // level-1 heading — prepend to each part
+
+  for (let i = 0; i < section.length; i++) {
+    const h = section[i];
+    if (h.level === 2 && part.length > 0 && part.length >= MAX_SECTION_HEADINGS) {
+      parts.push(part);
+      part = [header]; // carry level-1 parent into next part for context
+    }
+    part.push(h);
+  }
+  if (part.length > 0) parts.push(part);
+  return parts.length > 0 ? parts : [section];
+}
+
+// ── Flatten tree ──────────────────────────────────────────────────────────────
 
 function flattenTree(nodes: TopicNode[]): string[] {
   const result: string[] = [];
@@ -106,6 +94,128 @@ function flattenTree(nodes: TopicNode[]): string[] {
     }
   }
   return result;
+}
+
+// ── Mistral: summary ──────────────────────────────────────────────────────────
+
+async function generateSummary(
+  mistral: any,
+  extractedText: string,
+  category: string
+): Promise<string> {
+  const opening = extractedText.split(/\s+/).slice(0, 800).join(' ');
+
+  let prompt = '';
+  if (category === 'past_questions') {
+    prompt = `You are indexing a study material for a Catholic seminary library.
+From the following past examination questions, write ONE sentence describing what years and subject areas the questions cover.
+Return ONLY the sentence. No JSON. No preamble.\n\nMaterial:\n${opening}`;
+  } else if (category === 'aoc') {
+    prompt = `You are indexing a study material for a Catholic seminary library.
+From the following Areas of Concentration document, write ONE sentence describing the exam year and subject covered.
+Return ONLY the sentence. No JSON. No preamble.\n\nMaterial:\n${opening}`;
+  } else {
+    prompt = `You are indexing a study material for a Catholic seminary library.
+Write 2-3 sentences describing what this study material covers and why it matters for seminary students.
+Return ONLY the sentences. No JSON. No preamble.\n\nMaterial opening:\n${opening}`;
+  }
+
+  const response = await mistral.chat.complete({
+    model: 'mistral-small-latest',
+    temperature: 0.2,
+    maxTokens: 300,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return ((response.choices?.[0]?.message?.content as string) || '').trim();
+}
+
+// ── Mistral: one section → nested TopicNode ───────────────────────────────────
+
+async function processSection(
+  mistral: any,
+  section: HeadingLine[]
+): Promise<TopicNode[]> {
+  const headingText = section.map(h => h.raw).join('\n');
+
+  const prompt = `You are indexing a study material for a Catholic seminary library.
+Some headings may be poorly formatted due to OCR scanning — infer the correct clean heading from context, normalise capitalisation to title case, and fix obvious OCR errors.
+For subsections with generic names (e.g. "Example", "Exercise", "Definition", "Vocabulary", "Translation"), append a bracketed qualifier showing what they are about, derived from their parent heading context. E.g. "Example [Genitive Case]", "Exercise [The Imperative]".
+Where two nodes share an ambiguous title at the same level, append a bracketed qualifier to distinguish them.
+Return ONLY a valid JSON array. No markdown. No code fences. No preamble. No explanation.
+
+From the following document headings (indented to show hierarchy), build a nested topic tree.
+Rules:
+1. level 1 = major section, level 2 = subsection, level 3 = sub-subsection.
+2. Every node: { "title": string, "level": number, "subtopics": [ ...same shape... ] }
+3. Leaf nodes have "subtopics": []
+4. Nest correctly — do NOT flatten.
+5. Do not invent topics not present in the headings.
+
+Headings:
+${headingText}
+
+Return JSON array: [ { "title": "...", "level": 1, "subtopics": [...] } ]`;
+
+  const response = await mistral.chat.complete({
+    model: 'mistral-small-latest',
+    temperature: 0.2,
+    maxTokens: 4000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const raw = (response.choices?.[0]?.message?.content as string) || '[]';
+  const clean = raw.replace(/```json|```/g, '').trim();
+
+  try {
+    const parsed = JSON.parse(clean);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((t: any) => t && typeof t.title === 'string' && t.title.trim().length > 0);
+    }
+    return [];
+  } catch {
+    console.error('[generate-metadata] section parse failed:', clean.slice(0, 200));
+    return [];
+  }
+}
+
+// ── Mistral: simple topics for past_questions / aoc ───────────────────────────
+
+async function generateSimpleTopics(
+  mistral: any,
+  extractedText: string,
+  category: string
+): Promise<TopicNode[]> {
+  const prompt = `You are indexing a study material for a Catholic seminary library.
+Return ONLY a valid JSON object. No markdown. No code fences. No preamble. No explanation.
+
+From the following ${category === 'past_questions' ? 'past examination questions' : 'Areas of Concentration document'}, extract:
+- "topics": an array of distinct subject areas. Each: { "title": string, "level": 1, "subtopics": [] }
+
+Material:
+${extractedText.slice(0, 8000)}
+
+Return JSON: { "topics": [...] }`;
+
+  const response = await mistral.chat.complete({
+    model: 'mistral-small-latest',
+    temperature: 0.2,
+    maxTokens: 4000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const raw = (response.choices?.[0]?.message?.content as string) || '{}';
+  const clean = raw.replace(/```json|```/g, '').trim();
+
+  try {
+    const parsed = JSON.parse(clean);
+    if (Array.isArray(parsed.topics)) {
+      return parsed.topics.filter((t: any) => t && typeof t.title === 'string' && t.title.trim().length > 0);
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
@@ -138,33 +248,27 @@ export async function POST(req: NextRequest) {
 
   try {
     const mistral = getMistralClient();
-    const skeletonInput = buildSkeletonInput(extractedText, category || 'other');
-    const prompt = buildPrompt(skeletonInput, category || 'other');
+    const cat = category || 'other';
 
-    const response = await mistral.chat.complete({
-      model: 'mistral-small-latest',
-      temperature: 0.2,
-      maxTokens: 16384,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    // Call 1: summary
+    const aiSummary = await generateSummary(mistral, extractedText, cat);
 
-    const raw = (response.choices?.[0]?.message?.content as string) || '{}';
-    const clean = raw.replace(/```json|```/g, '').trim();
+    // Call 2+: topics
+    let topicTree: TopicNode[] = [];
 
-    let parsed: { summary?: string; topics?: TopicNode[] } = {};
-    try {
-      parsed = JSON.parse(clean);
-    } catch {
-      console.error('[generate-metadata] JSON parse failed:', clean.slice(0, 300));
-      parsed = {};
+    if (cat === 'past_questions' || cat === 'aoc') {
+      topicTree = await generateSimpleTopics(mistral, extractedText, cat);
+    } else {
+      const headings = extractHeadings(extractedText);
+      const sections = splitIntoSections(headings);
+
+      for (const section of sections) {
+        const nodes = await processSection(mistral, section);
+        topicTree.push(...nodes);
+      }
     }
 
-    const aiSummary: string = parsed.summary?.trim() || '';
-    const topicTree: TopicNode[] = Array.isArray(parsed.topics)
-      ? parsed.topics.filter(t => t && typeof t.title === 'string' && t.title.trim().length > 0)
-      : [];
-
-    const contentList: string[] = flattenTree(topicTree);
+    const contentList = flattenTree(topicTree);
 
     await matRef.update({
       aiSummary,
