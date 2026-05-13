@@ -23,6 +23,24 @@ const AuthContext = createContext<AuthContextType>({
   refreshProfile: async () => {},
 });
 
+async function fetchProfileWithRetry(uid: string, attempts = 3): Promise<UserProfile | null> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const profile = await Promise.race([
+        getUserProfile(uid),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 8000)),
+      ]);
+      if (profile !== null) return profile;
+      // null means timeout — wait briefly before retry
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 1000));
+    } catch (e) {
+      console.warn('[AuthProvider] profile fetch attempt', i + 1, 'failed:', e);
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -30,34 +48,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = async () => {
     if (firebaseUser) {
-      const profile = await getUserProfile(firebaseUser.uid);
-      setUserProfile(profile);
+      const profile = await fetchProfileWithRetry(firebaseUser.uid);
+      if (profile) setUserProfile(profile);
     }
   };
 
   useEffect(() => {
-    // Safety net — loading never stays true forever
-    const safetyTimer = setTimeout(() => setLoading(false), 5000);
+    const safetyTimer = setTimeout(() => setLoading(false), 12000);
 
     const unsubscribe = onIdTokenChanged(auth, async (user) => {
       setFirebaseUser(user);
 
       if (user) {
         try {
-          // Refresh session cookie in background — non-blocking
-          user.getIdToken().then(idToken =>
-            fetch('/api/auth/session', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({ idToken }),
-            })
-          ).catch(e => console.warn('[AuthProvider] session refresh failed:', e));
+          // Refresh session cookie — retry up to 3 times on failure
+          const refreshSession = async (retries = 3) => {
+            for (let i = 0; i < retries; i++) {
+              try {
+                const idToken = await user.getIdToken();
+                const res = await fetch('/api/auth/session', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({ idToken }),
+                });
+                if (res.ok) return;
+              } catch (e) {
+                console.warn('[AuthProvider] session refresh attempt', i + 1, 'failed:', e);
+              }
+              if (i < retries - 1) await new Promise(r => setTimeout(r, 1500));
+            }
+          };
+          refreshSession();
 
-          const profile = await Promise.race([
-            getUserProfile(user.uid),
-            new Promise<null>(resolve => setTimeout(() => resolve(null), 4000))
-          ]);
+          const profile = await fetchProfileWithRetry(user.uid);
           setUserProfile(profile);
 
           // Register FCM token for admins
@@ -96,9 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 }
 
