@@ -10,15 +10,22 @@ import LuxLoader from '@/components/LuxLoader';
 import { db } from '@/lib/firebase/config';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 
-const DEPARTMENTS: { id: Department; label: string }[] = [
-  { id: 'theology', label: '✝️ Theology' },
-  { id: 'philosophy', label: '🏛️ Philosophy' },
+const DEPARTMENTS: { id: Department; label: string; icon: string }[] = [
+  { id: 'theology', label: 'Theology', icon: '✝️' },
+  { id: 'philosophy', label: 'Philosophy', icon: '🏛️' },
 ];
 
 const SEMESTERS = [
   { id: 1, label: 'Semester 1' },
   { id: 2, label: 'Semester 2' },
 ];
+
+function greeting(name: string) {
+  const h = new Date().getHours();
+  const salutation = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  const first = name?.split(' ')[0] ?? 'Scholar';
+  return { salutation, first };
+}
 
 export default function DashboardPage() {
   const { userProfile } = useAuth();
@@ -37,19 +44,13 @@ export default function DashboardPage() {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [timetable, setTimetable] = useState<any>(null);
 
-  // Year access logic per handoff doc:
-  // Theology students: all 4 philosophy years + theology years up to current
-  // Philosophy students: philosophy years up to current only
   const getAccessibleYears = (_dept: Department): number[] => [1, 2, 3, 4];
-
   const accessibleYears = getAccessibleYears(activeDept);
 
-  // When switching dept, snap year to a valid one
   useEffect(() => {
     const years = getAccessibleYears(activeDept);
     if (years.length === 0) return;
     if (!years.includes(activeYear)) setActiveYear(years[years.length - 1]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDept]);
 
   useEffect(() => {
@@ -60,12 +61,10 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [activeDept, activeYear, activeSemester]);
 
-  // Load all courses for browse mode
   useEffect(() => {
     getAllCourses().then(setAllCourses).catch(console.error);
   }, []);
 
-  // Load assignments for this user's courses
   useEffect(() => {
     if (!userProfile?.department || !userProfile?.year) return;
     const load = async () => {
@@ -87,7 +86,6 @@ export default function DashboardPage() {
     load();
   }, [userProfile]);
 
-  // Load timetable
   useEffect(() => {
     if (!userProfile?.department) return;
     const load = async () => {
@@ -103,166 +101,382 @@ export default function DashboardPage() {
     load();
   }, [userProfile]);
 
-  const visibleDepts = DEPARTMENTS;
+  const { salutation, first } = greeting(userProfile?.displayName ?? '');
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--body-bg)', color: 'var(--text-primary)', padding: '16px', maxWidth: '100vw', overflowX: 'hidden' }}>
+    <div style={{
+      minHeight: '100vh',
+      background: 'var(--body-bg)',
+      backgroundImage: 'var(--body-bg-image)',
+      color: 'var(--text-primary)',
+      padding: '20px 16px 40px',
+      maxWidth: '100vw',
+      overflowX: 'hidden',
+    }}>
 
-      {/* Header */}
-      <div style={{ marginBottom: '16px' }}>
-        <h1 style={{ fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '1.3rem', fontWeight: 'bold' }}>
-          My Courses
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <div style={{ marginBottom: '24px' }}>
+        <p style={{
+          fontSize: '0.65rem',
+          fontWeight: 700,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: 'var(--gold)',
+          opacity: 0.5,
+          marginBottom: '4px',
+        }}>
+          {salutation}
+        </p>
+        <h1 style={{
+          fontFamily: 'Playfair Display, Georgia, serif',
+          fontSize: '1.6rem',
+          fontWeight: 700,
+          color: 'var(--gold)',
+          lineHeight: 1.2,
+          marginBottom: '4px',
+        }}>
+          {first}
         </h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '2px' }}>
-          {userProfile?.displayName ?? 'Student'} · Year {userYear} · {userDepartment}
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', letterSpacing: '0.02em' }}>
+          {activeDept.charAt(0).toUpperCase() + activeDept.slice(1)}
+          {' · '}Year {activeYear}
+          {' · '}Semester {activeSemester}
         </p>
       </div>
 
-      {/* Department switcher */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        {visibleDepts.map((d) => (
-          <button
-            key={d.id}
-            onClick={() => setActiveDept(d.id)}
-            style={{
-              padding: '5px 14px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 500,
-              border: '1px solid var(--border)',
-              background: activeDept === d.id ? 'var(--gold)' : 'var(--navy-card)',
-              color: activeDept === d.id ? 'var(--ink)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
-          >
-            {d.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Year switcher */}
-      {accessibleYears.length > 0 && (
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
-          {accessibleYears.map((y) => (
+      {/* ── Department tabs ──────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex',
+        gap: '0',
+        marginBottom: '16px',
+        background: 'var(--navy-card)',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        padding: '4px',
+      }}>
+        {DEPARTMENTS.map((d) => {
+          const active = activeDept === d.id;
+          return (
             <button
-              key={y}
-              onClick={() => setActiveYear(y)}
+              key={d.id}
+              onClick={() => setActiveDept(d.id)}
               style={{
-                padding: '4px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
-                border: '1px solid var(--border)',
-                background: activeYear === y ? 'var(--gold)' : 'var(--navy-card)',
-                color: activeYear === y ? 'var(--ink)' : 'var(--text-secondary)',
+                flex: 1,
+                padding: '9px 12px',
+                borderRadius: '9px',
+                fontSize: '0.8rem',
+                fontWeight: active ? 700 : 500,
+                fontFamily: active ? 'Playfair Display, serif' : 'inherit',
+                border: 'none',
+                background: active
+                  ? 'linear-gradient(135deg, var(--gold-light) 0%, var(--gold) 100%)'
+                  : 'transparent',
+                color: active ? 'var(--ink)' : 'var(--text-secondary)',
                 cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                boxShadow: active ? 'var(--shadow-gold)' : 'none',
               }}
             >
-              Year {y}
+              <span style={{ fontSize: '0.9rem' }}>{d.icon}</span>
+              {d.label}
             </button>
-          ))}
-        </div>
-      )}
-
-      {/* Semester switcher */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        {SEMESTERS.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => setActiveSemester(s.id)}
-            style={{
-              padding: '4px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 500,
-              border: '1px solid var(--border)',
-              background: activeSemester === s.id ? 'var(--gold)' : 'var(--navy-card)',
-              color: activeSemester === s.id ? 'var(--ink)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
-          >
-            {s.label}
-          </button>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Course grid */}
+      {/* ── Year + Semester row ──────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '22px', alignItems: 'center', flexWrap: 'wrap' }}>
+
+        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+          {accessibleYears.map((y) => {
+            const active = activeYear === y;
+            return (
+              <button
+                key={y}
+                onClick={() => setActiveYear(y)}
+                style={{
+                  padding: '5px 13px',
+                  borderRadius: '99px',
+                  fontSize: '0.75rem',
+                  fontWeight: active ? 700 : 500,
+                  border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border)'}`,
+                  background: active ? 'var(--gold-dim)' : 'transparent',
+                  color: active ? 'var(--gold)' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                Y{y}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ width: '1px', height: '20px', background: 'var(--border)', flexShrink: 0 }} />
+
+        <div style={{ display: 'flex', gap: '5px' }}>
+          {SEMESTERS.map((s) => {
+            const active = activeSemester === s.id;
+            return (
+              <button
+                key={s.id}
+                onClick={() => setActiveSemester(s.id)}
+                style={{
+                  padding: '5px 13px',
+                  borderRadius: '99px',
+                  fontSize: '0.75rem',
+                  fontWeight: active ? 700 : 500,
+                  border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border)'}`,
+                  background: active ? 'var(--gold-dim)' : 'transparent',
+                  color: active ? 'var(--gold)' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                S{s.id}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Course grid ──────────────────────────────────────────────────── */}
       {loading ? (
         <MiniLoader label="Loading courses..." />
       ) : (
         <>
-          {/* My Courses */}
           {courses.length === 0 ? (
-            <div style={{ textAlign: 'center', marginTop: '40px' }}>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No courses found for this selection.</p>
+            <div style={{ textAlign: 'center', marginTop: '48px' }}>
+              <p style={{ fontSize: '2rem', marginBottom: '10px' }}>📭</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '4px' }}>
+                No courses for this selection.
+              </p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                Try a different year, semester, or department.
+              </p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-              {courses.map((course) => (
-                <button
-                  key={course.id}
-                  onClick={() => router.push(`/dashboard/course/${course.id}`)}
-                  style={{
-                    textAlign: 'left', padding: '14px', borderRadius: '14px',
-                    border: '1px solid var(--border)', background: 'var(--navy-card)',
-                    cursor: 'pointer', transition: 'border-color 0.2s', width: '100%',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
-                >
-                  <div style={{ color: 'var(--gold)', fontWeight: 600, fontSize: '0.88rem', marginBottom: '4px', fontFamily: 'Playfair Display, serif' }}>
-                    {course.name}
-                  </div>
-                  {course.code && (
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginBottom: '6px' }}>
-                      {course.code}
+            <>
+              <p style={{
+                fontSize: '0.62rem',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: 'var(--gold)',
+                opacity: 0.55,
+                marginBottom: '12px',
+              }}>
+                {courses.length} course{courses.length !== 1 ? 's' : ''}
+              </p>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                gap: '12px',
+              }}>
+                {courses.map((course) => (
+                  <button
+                    key={course.id}
+                    onClick={() => router.push(`/dashboard/course/${course.id}`)}
+                    className="card"
+                    style={{
+                      textAlign: 'left',
+                      padding: '16px',
+                      cursor: 'pointer',
+                      width: '100%',
+                      transition: 'all 0.2s ease',
+                      background: 'var(--navy-card)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--border-hover)';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-gold)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--border)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-card)';
+                    }}
+                  >
+                    <div style={{
+                      width: '28px',
+                      height: '2px',
+                      background: 'var(--gold)',
+                      borderRadius: '99px',
+                      marginBottom: '10px',
+                      opacity: 0.6,
+                    }} />
+
+                    <div style={{
+                      fontFamily: 'Playfair Display, serif',
+                      color: 'var(--gold)',
+                      fontWeight: 700,
+                      fontSize: '0.9rem',
+                      marginBottom: '4px',
+                      lineHeight: 1.3,
+                    }}>
+                      {course.name}
                     </div>
-                  )}
-                  {course.description && (
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {course.description}
+
+                    {course.code && (
+                      <div style={{
+                        color: 'var(--text-muted)',
+                        fontSize: '0.7rem',
+                        marginBottom: '6px',
+                        letterSpacing: '0.04em',
+                      }}>
+                        {course.code}
+                      </div>
+                    )}
+
+                    {course.description && (
+                      <div style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.74rem',
+                        lineHeight: 1.55,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        marginBottom: '10px',
+                      }}>
+                        {course.description}
+                      </div>
+                    )}
+
+                    <div style={{
+                      fontSize: '0.65rem',
+                      color: 'var(--text-muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      opacity: 0.7,
+                    }}>
+                      <span>Y{course.year}</span>
+                      <span style={{ opacity: 0.4 }}>·</span>
+                      <span>S{course.semester}</span>
                     </div>
-                  )}
-                  <div style={{ marginTop: '8px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                    Year {course.year} · Sem {course.semester}
-                  </div>
-                </button>
-              ))}
-            </div>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
-          {/* Browse All Courses toggle */}
-          <div style={{ marginTop: '28px', borderTop: '1px solid var(--border)', paddingTop: '18px' }}>
+          {/* ── Browse all courses ───────────────────────────────────────── */}
+          <div style={{ marginTop: '32px', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
             <button
               onClick={() => setShowAll(v => !v)}
-              style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '9px', padding: '7px 16px', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer' }}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: '99px',
+                padding: '7px 18px',
+                color: 'var(--text-secondary)',
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'border-color 0.15s, color 0.15s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = 'var(--border-hover)';
+                e.currentTarget.style.color = 'var(--gold)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--border)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
             >
               {showAll ? '▴ Hide all courses' : '▾ Browse all courses'}
             </button>
 
             {showAll && (
-              <div style={{ marginTop: '16px' }}>
+              <div style={{ marginTop: '20px' }}>
                 {(['philosophy', 'theology'] as const).map(dept => {
                   const deptCourses = allCourses.filter(c => c.department === dept);
                   if (deptCourses.length === 0) return null;
-                  const byYear = [1,2,3,4].map(y => ({ year: y, courses: deptCourses.filter(c => c.year === y) })).filter(g => g.courses.length > 0);
+                  const byYear = [1, 2, 3, 4]
+                    .map(y => ({ year: y, courses: deptCourses.filter(c => c.year === y) }))
+                    .filter(g => g.courses.length > 0);
                   return (
-                    <div key={dept} style={{ marginBottom: '24px' }}>
-                      <p style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.7, marginBottom: '12px' }}>
-                        {dept === 'philosophy' ? '🏛️ Philosophy' : '✝️ Theology'}
-                      </p>
+                    <div key={dept} style={{ marginBottom: '28px' }}>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                        <div style={{ height: '1px', width: '16px', background: 'var(--gold)', opacity: 0.3 }} />
+                        <p style={{
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          letterSpacing: '0.1em',
+                          textTransform: 'uppercase',
+                          color: 'var(--gold)',
+                          opacity: 0.65,
+                          margin: 0,
+                        }}>
+                          {dept === 'philosophy' ? '🏛️ Philosophy' : '✝️ Theology'}
+                        </p>
+                      </div>
+
                       {byYear.map(({ year, courses: yc }) => (
-                        <div key={year} style={{ marginBottom: '14px' }}>
-                          <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Year {year}</p>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
+                        <div key={year} style={{ marginBottom: '16px' }}>
+                          <p style={{
+                            fontSize: '0.65rem',
+                            color: 'var(--text-muted)',
+                            marginBottom: '8px',
+                            letterSpacing: '0.06em',
+                            paddingLeft: '2px',
+                          }}>
+                            Year {year}
+                          </p>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
+                            gap: '8px',
+                          }}>
                             {yc.map(course => (
                               <button
                                 key={course.id}
                                 onClick={() => router.push(`/dashboard/course/${course.id}`)}
+                                className="card"
                                 style={{
-                                  textAlign: 'left', padding: '12px', borderRadius: '12px',
-                                  border: '1px solid var(--border)', background: 'var(--navy-card)',
-                                  cursor: 'pointer', transition: 'border-color 0.2s', width: '100%',
+                                  textAlign: 'left',
+                                  padding: '12px 14px',
+                                  cursor: 'pointer',
+                                  width: '100%',
+                                  transition: 'all 0.18s ease',
+                                  background: 'var(--navy-card)',
                                 }}
-                                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.borderColor = 'var(--border-hover)';
+                                  e.currentTarget.style.transform = 'translateY(-1px)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.borderColor = 'var(--border)';
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                }}
                               >
-                                <div style={{ color: 'var(--gold)', fontWeight: 600, fontSize: '0.85rem', marginBottom: '3px', fontFamily: 'Playfair Display, serif' }}>
+                                <div style={{
+                                  fontFamily: 'Playfair Display, serif',
+                                  color: 'var(--gold)',
+                                  fontWeight: 600,
+                                  fontSize: '0.85rem',
+                                  marginBottom: '3px',
+                                  lineHeight: 1.3,
+                                }}>
                                   {course.name}
                                 </div>
-                                {course.code && <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '4px' }}>{course.code}</div>}
-                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Sem {course.semester}</div>
+                                {course.code && (
+                                  <div style={{ color: 'var(--text-muted)', fontSize: '0.68rem', marginBottom: '4px' }}>
+                                    {course.code}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', opacity: 0.7 }}>
+                                  S{course.semester}
+                                </div>
                               </button>
                             ))}
                           </div>
