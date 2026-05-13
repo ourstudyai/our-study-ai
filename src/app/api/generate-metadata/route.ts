@@ -75,7 +75,7 @@ Return JSON: { "summary": "...", "topics": [...] }`;
 
 From the following document headings and opening, extract:
 - "summary": 2-3 sentences describing what this study material covers and why it matters for seminary students.
-- "topics": the FULL nested topic tree to every depth level present in the document.
+- "topics": the topic tree. For documents with more than 40 headings, list TOP-LEVEL topics only with NO subtopics (subtopics: []). For smaller documents, include subtopics to 2 levels deep maximum. Never go deeper than level 2.
   Rules:
   1. level 1 = major section, level 2 = subsection, level 3 = sub-subsection, and so on.
   2. Every node has: { "title": string, "level": number, "subtopics": [ ...same shape recursively... ] }
