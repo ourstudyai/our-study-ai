@@ -19,31 +19,53 @@ const modes: StudyMode[] = [
 
 export default function ModeSelector({ activeMode, onModeChange }: ModeSelectorProps) {
   return (
-    <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none"
-      style={{ WebkitOverflowScrolling: 'touch' }}>
-      {modes.map((mode) => (
-        <button
-          key={mode}
-          onClick={() => onModeChange(mode)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-200 flex-shrink-0 ${activeMode === mode ? '' : ''
-            }`}
-          style={{
-            background: activeMode === mode
-              ? 'rgba(124, 108, 240, 0.15)'
-              : 'transparent',
-            color: activeMode === mode
-              ? 'var(--gold)'
-              : 'var(--text-muted)',
-            border: activeMode === mode
-              ? '1px solid rgba(124, 108, 240, 0.3)'
-              : '1px solid transparent',
-          }}
-          id={`mode-${mode}`}
-        >
-          <span>{STUDY_MODE_ICONS[mode]}</span>
-          <span className="hidden sm:inline">{STUDY_MODE_LABELS[mode]}</span>
-        </button>
-      ))}
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        overflowX: 'auto',
+        padding: '10px 16px',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--navy-card)',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
+      }}
+    >
+      {modes.map((mode) => {
+        const active = activeMode === mode;
+        return (
+          <button
+            key={mode}
+            onClick={() => onModeChange(mode)}
+            id={`mode-${mode}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 14px',
+              borderRadius: '99px',
+              fontSize: '0.75rem',
+              fontWeight: active ? 700 : 500,
+              fontFamily: active ? 'Playfair Display, Georgia, serif' : 'inherit',
+              letterSpacing: active ? '0.02em' : '0',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              background: active ? 'var(--gold-dim)' : 'transparent',
+              color: active ? 'var(--gold)' : 'var(--text-muted)',
+              border: active
+                ? '1px solid var(--border-strong)'
+                : '1px solid transparent',
+              boxShadow: active ? 'var(--shadow-gold)' : 'none',
+            }}
+          >
+            <span style={{ fontSize: '0.85rem' }}>{STUDY_MODE_ICONS[mode]}</span>
+            <span className="hidden sm:inline">{STUDY_MODE_LABELS[mode]}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
