@@ -3,11 +3,9 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
-import { FieldValue } from 'firebase-admin/firestore';
 import { deleteChunksByMaterial, upsertChunks } from '@/lib/qdrant/upsert';
 import { MaterialCategory } from '@/lib/processing/classifier';
 
-const CHUNKS_COL = 'material_chunks';
 const BATCH_SIZE = 20;
 const QSTASH_URL = 'https://qstash.upstash.io/v2/publish';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://our-study-ai.vercel.app';
@@ -88,35 +86,12 @@ export async function POST(req: NextRequest) {
   const chunks = semanticChunk(stripTOC(extractedText));
   const totalChunks = chunks.length;
 
-  // First batch only — delete old chunks
+  // First batch only — delete old Qdrant vectors
   if (startIndex === 0) {
-    const oldChunks = await adminDb.collection(CHUNKS_COL).where('materialId', '==', materialId).get();
-    const deleteBatch = adminDb.batch();
-    oldChunks.docs.forEach(d => deleteBatch.update(d.ref, { deleted: true }));
-    await deleteBatch.commit();
     await deleteChunksByMaterial(materialId);
   }
 
   const batch = chunks.slice(startIndex, startIndex + BATCH_SIZE);
-
-  // Write this batch to Firestore
-  const writeBatch = adminDb.batch();
-  batch.forEach((chunk, i) => {
-    const ref = adminDb.collection(CHUNKS_COL).doc();
-    writeBatch.set(ref, {
-      materialId, courseId,
-      category: category as MaterialCategory,
-      chunkIndex: startIndex + i,
-      text: chunk.text,
-      heading: chunk.heading,
-      headingLevel: chunk.headingLevel,
-      ancestorHeadings: chunk.ancestorHeadings,
-      fullPath: chunk.fullPath,
-      wordCount: chunk.wordCount,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-  });
-  await writeBatch.commit();
 
   // Upsert this batch to Qdrant
   const chunkPayloads = batch.map((chunk, i) => ({
@@ -155,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   console.log(`[index-chunks] batch ${startIndex}–${startIndex + batch.length - 1} of ${totalChunks} for ${materialId}`);
 
-  // Small pause to avoid Firestore quota exhaustion on large documents
+  // Small pause to avoid quota bursts
   await new Promise(r => setTimeout(r, 2000));
 
   // If more chunks remain — fire next batch via QStash
