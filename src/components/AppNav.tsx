@@ -310,17 +310,52 @@ export default function AppNav({ children }: AppNavProps) {
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {isAdmin && <BellButton size="sm" />}
           <button onClick={() => setFaqOpen(true)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 10px', color: 'var(--text-secondary)', cursor: 'pointer' }}>❓</button>
-          <button onClick={() => setMobileNavOpen(true)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 10px', color: 'var(--text-secondary)', cursor: 'pointer' }}>☰</button>
+          <button
+  onClick={() => setMobileNavOpen(true)}
+  style={{
+    background: 'var(--navy-card)',
+    border: '1px solid var(--border)',
+    borderRadius: '8px',
+    padding: '7px 10px',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  }}
+>
+  <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
+    <rect width="18" height="2" rx="1" fill="currentColor"/>
+    <rect y="6" width="12" height="2" rx="1" fill="currentColor" opacity="0.7"/>
+    <rect y="12" width="18" height="2" rx="1" fill="currentColor"/>
+  </svg>
+</button>
         </div>
       </div>
 
       {mobileNavOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.6)' }} onClick={() => setMobileNavOpen(false)}>
           <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '260px', background: 'var(--navy-card)', borderLeft: '1px solid var(--border)', padding: '20px 16px', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '1rem' }}>Menu</span>
-              <button onClick={() => setMobileNavOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
-            </div>
+            <div style={{ marginBottom: '20px' }}>
+  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+    <button onClick={() => setMobileNavOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+  </div>
+  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <img
+      src="https://i.imgur.com/MPk1vBA.png"
+      alt="Lux Studiorum"
+      style={{ width: '32px', height: '32px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px var(--gold-glow))' }}
+    />
+    <div>
+      <div style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '0.9rem', color: 'var(--gold)', lineHeight: 1.2 }}>
+        Lux Studiorum
+      </div>
+      <div style={{ fontFamily: 'IM Fell English, serif', fontStyle: 'italic', fontSize: '0.62rem', color: 'var(--gold)', opacity: 0.5, letterSpacing: '0.08em' }}>
+        Lux in Tenebris Lucet
+      </div>
+    </div>
+  </div>
+</div>
             <NavLinks onNav={() => setMobileNavOpen(false)} />
             {userProfile && (
               <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
