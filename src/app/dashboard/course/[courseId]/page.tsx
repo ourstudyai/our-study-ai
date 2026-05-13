@@ -887,9 +887,11 @@ export default function CoursePage() {
                     maxWidth: '82%', wordBreak: 'break-word',
                     borderRadius: '16px', padding: '10px 16px',
                     fontSize: 'var(--ai-font-size, 18px)',
-                    background: msg.role === 'user' ? 'var(--gold)' : 'var(--navy-card)',
-                    color: msg.role === 'user' ? 'var(--navy)' : 'var(--text-primary)',
-                    border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
+                    background: msg.role === 'user' ? 'var(--gold-dim)' : 'var(--navy-card)',
+color: 'var(--text-primary)',
+border: msg.role === 'user' ? '1px solid var(--border-strong)' : '1px solid var(--border)',
+borderLeft: msg.role === 'assistant' ? '3px solid var(--border-strong)' : undefined,
+boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
                   }}>
                     {msg.role === 'assistant' ? <MarkdownRenderer content={msg.content} /> : msg.content}
                   </div>
@@ -954,6 +956,7 @@ export default function CoursePage() {
                   background: 'var(--navy-card)', border: '1px solid var(--border)',
                   color: 'var(--text-primary)', fontSize: 'var(--ui-font-size, 16px)',
                   minWidth: 0, minHeight: '44px', maxHeight: '140px', boxSizing: 'border-box',
+                  fontFamily: 'Lora, Georgia, serif',
                 }}
               />
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
@@ -1006,9 +1009,12 @@ export default function CoursePage() {
               <button onClick={() => sendMessage()} disabled={isStreaming || !input.trim()}
                 style={{
                   flexShrink: 0, padding: '10px 16px', borderRadius: '12px',
-                  background: 'var(--gold)', color: 'var(--navy)',
-                  border: 'none', fontSize: '1rem', fontWeight: 700,
-                  opacity: isStreaming || !input.trim() ? 0.5 : 1, cursor: 'pointer',
+                  background: isStreaming || !input.trim() ? 'var(--navy-card)' : 'var(--gold)',
+                  color: isStreaming || !input.trim() ? 'var(--text-muted)' : 'var(--ink)',
+                  border: '1px solid var(--border-strong)',
+                  boxShadow: isStreaming || !input.trim() ? 'none' : 'var(--shadow-gold)',
+                  fontSize: '1rem', fontWeight: 700,
+                  opacity: 1, cursor: isStreaming || !input.trim() ? 'not-allowed' : 'pointer',
                 }}
               >
                 {isStreaming ? '…' : '↑'}
@@ -1025,8 +1031,9 @@ export default function CoursePage() {
                 <button key={tab.id} onClick={() => setActiveSideTab(tab.id)}
                   style={{
                     flex: 1, padding: '8px 4px', fontSize: '0.65rem', fontWeight: 500,
-                    background: activeSideTab === tab.id ? 'var(--navy)' : 'transparent',
-                    color: activeSideTab === tab.id ? 'var(--gold)' : 'var(--text-secondary)',
+                    background: activeMode === m.id ? 'var(--gold-dim)' : 'transparent',
+color: activeMode === m.id ? 'var(--gold)' : 'var(--text-muted)',
+border: activeMode === m.id ? '1px solid var(--border-strong)' : '1px solid transparent',
                     borderBottom: activeSideTab === tab.id ? '2px solid var(--gold)' : '2px solid transparent',
                     border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
                   }}
