@@ -890,7 +890,6 @@ export default function CoursePage() {
                     background: msg.role === 'user' ? 'var(--gold-dim)' : 'var(--navy-card)',
 color: 'var(--text-primary)',
 border: msg.role === 'user' ? '1px solid var(--border-strong)' : '1px solid var(--border)',
-borderLeft: msg.role === 'assistant' ? '3px solid var(--border-strong)' : undefined,
 boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
                   }}>
                     {msg.role === 'assistant' ? <MarkdownRenderer content={msg.content} /> : msg.content}
@@ -919,7 +918,6 @@ boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
               <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ maxWidth: '82%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
                   <MarkdownRenderer content={streamingMessage} />
-                  <span style={{ display: 'inline-block', width: '6px', height: '16px', marginLeft: '4px', background: 'var(--gold)', animation: 'pulse 1s infinite' }} />
                 </div>
               </div>
             )}
