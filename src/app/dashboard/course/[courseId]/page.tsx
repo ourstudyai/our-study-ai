@@ -1030,12 +1030,13 @@ boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
               {sideTabs.map(tab => (
                 <button key={tab.id} onClick={() => setActiveSideTab(tab.id)}
                   style={{
-                    flex: 1, padding: '8px 4px', fontSize: '0.65rem', fontWeight: 500,
-                    background: activeSideTab === tab.id ? 'var(--gold-dim)' : 'transparent',
-color: activeSideTab === tab.id ? 'var(--gold)' : 'var(--text-muted)',
-border: 'none',
-borderBottom: activeSideTab === tab.id ? '2px solid var(--gold)' : '2px solid transparent',
-                    border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+              flex: 1, padding: '8px 4px', fontSize: '0.65rem', fontWeight: 500,
+              background: activeSideTab === tab.id ? 'var(--gold-dim)' : 'transparent',
+              color: activeSideTab === tab.id ? 'var(--gold)' : 'var(--text-muted)',
+              borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+              borderBottom: activeSideTab === tab.id ? '2px solid var(--gold)' : '2px solid transparent',
+              cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
                   }}
                 >
                   {tab.icon} {tab.label}
