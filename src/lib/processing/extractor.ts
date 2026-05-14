@@ -158,7 +158,7 @@ export async function extractText(
     }
 
     // Plain text
-    if (mimeType === "text/plain" || fileName.endsWith(".txt")) {
+    if (mimeType === "text/plain" || fileName.endsWith(".txt") || fileName.endsWith(".md")) {
         const text = buffer.toString("utf-8").trim();
         return { text, method: "plain-text", wordCount: countWords(text), isScanned: false };
     }
