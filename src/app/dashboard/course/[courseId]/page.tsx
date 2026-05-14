@@ -119,34 +119,42 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
   const [likeNote, setLikeNote] = useState('');
   const [showDislikeNote, setShowDislikeNote] = useState(false);
   const [dislikeNote, setDislikeNote] = useState('');
-  const [showFlagBox, setShowFlagBox] = useState(false);
-  const [flagNote, setFlagNote] = useState('');
-  const [flagSent, setFlagSent] = useState(false);
-  const [flagSending, setFlagSending] = useState(false);
   const [showTTSSettings, setShowTTSSettings] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [ttsVoice, setTtsVoice] = useState('');
   const [ttsRate, setTtsRate] = useState(1);
+  const [ttsVolume, setTtsVolume] = useState(1);
+  const ttsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('ourstudyai_tts_prefs') || '{}');
       if (saved.voice) setTtsVoice(saved.voice);
       if (saved.rate) setTtsRate(saved.rate);
+      if (saved.volume !== undefined) setTtsVolume(saved.volume);
     } catch {}
     const loadVoices = () => { const v = window.speechSynthesis.getVoices(); if (v.length) setVoices(v); };
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
 
-  const saveTTSPrefs = (voice: string, rate: number) => {
-    try { localStorage.setItem('ourstudyai_tts_prefs', JSON.stringify({ voice, rate })); } catch {}
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ttsRef.current && !ttsRef.current.contains(e.target as Node)) setShowTTSSettings(false);
+    };
+    if (showTTSSettings) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showTTSSettings]);
+
+  const saveTTSPrefs = (voice: string, rate: number, volume: number) => {
+    try { localStorage.setItem('ourstudyai_tts_prefs', JSON.stringify({ voice, rate, volume })); } catch {}
   };
 
   useEffect(() => {
     if (!autoSpeak || !message.content) return;
     const utt = new SpeechSynthesisUtterance(stripMarkdown(message.content));
     utt.rate = ttsRate;
+    utt.volume = ttsVolume;
     if (ttsVoice) {
       const found = window.speechSynthesis.getVoices().find(v => v.name === ttsVoice);
       if (found) utt.voice = found;
@@ -155,14 +163,6 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
     window.speechSynthesis.cancel();
     setTimeout(() => { window.speechSynthesis.speak(utt); setSpeaking(true); }, 100);
   }, [autoSpeak, message.content]);
-
-  const btnStyle = (active = false, danger = false): React.CSSProperties => ({
-    background: 'none',
-    border: '1px solid ' + (danger ? 'rgba(239,68,68,0.4)' : active ? 'var(--gold)' : 'var(--border)'),
-    borderRadius: '6px', padding: '4px 8px', cursor: 'pointer',
-    color: danger ? '#ef4444' : active ? 'var(--gold)' : 'var(--text-muted)', fontSize: '0.78rem',
-    display: 'inline-flex', alignItems: 'center', gap: '4px', transition: 'all 0.15s ease',
-  });
 
   const sendFeedback = async (type: 'like' | 'dislike', note?: string) => {
     try {
@@ -178,14 +178,11 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
   };
 
   const handleTTS = () => {
-    if (speaking) {
-      window.speechSynthesis.cancel();
-      setSpeaking(false);
-      return;
-    }
+    if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; }
     window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(stripMarkdown(message.content));
     utt.rate = ttsRate;
+    utt.volume = ttsVolume;
     if (ttsVoice) {
       const found = window.speechSynthesis.getVoices().find(v => v.name === ttsVoice);
       if (found) utt.voice = found;
@@ -198,141 +195,264 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
 
   const handleLike = () => {
     if (!liked) { setLiked(true); setDisliked(false); setShowDislikeNote(false); setShowLikeNote(true); }
+    else { setLiked(false); setShowLikeNote(false); }
   };
   const submitLike = async () => { await sendFeedback('like', likeNote); setShowLikeNote(false); };
 
   const handleDislike = () => {
     if (!disliked) { setDisliked(true); setLiked(false); setShowLikeNote(false); setShowDislikeNote(true); }
+    else { setDisliked(false); setShowDislikeNote(false); }
   };
   const submitDislike = async () => { await sendFeedback('dislike', dislikeNote); setShowDislikeNote(false); };
 
-  const submitFlag = async () => {
-    if (!flagNote.trim()) return;
-    setFlagSending(true);
-    try {
-      await addDoc(collection(db, 'flags'), {
-        userId, userEmail, courseId, courseName,
-        question: lastUserMsg.substring(0, 1000),
-        aiResponse: message.content.substring(0, 1000),
-        studentDescription: flagNote,
-        status: 'open',
-        createdAt: serverTimestamp(),
-      });
-      setFlagSent(true);
-      setFlagNote('');
-      setTimeout(() => { setShowFlagBox(false); setFlagSent(false); }, 4000);
-    } catch { }
-    finally { setFlagSending(false); }
-  };
+  // SVG icons — theme-safe, currentColor
+  const ThumbUp = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.633 10.5c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 012.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 00.322-1.672V3a.75.75 0 01.75-.75A2.25 2.25 0 0116.5 4.5c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 01-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 00-1.423-.23H5.25M6.633 10.5H5.25a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25h1.383" />
+    </svg>
+  );
+  const ThumbDown = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill={disliked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17.367 13.5c-.806 0-1.533.446-2.031 1.08a9.041 9.041 0 01-2.861 2.4c-.723.384-1.35.956-1.653 1.715a4.498 4.498 0 00-.322 1.672V21a.75.75 0 01-.75.75 2.25 2.25 0 01-2.25-2.25c0-1.152.26-2.243.723-3.218.266-.558-.107-1.282-.725-1.282H4.372c-1.026 0-1.945-.694-2.054-1.715A12.134 12.134 0 012.25 12c0-2.848.992-5.464 2.649-7.521.388-.482.987-.729 1.605-.729h6.377c.483 0 .964.078 1.423.23l3.114 1.04a4.501 4.501 0 001.423.23h1.383M17.367 13.5H18.75a2.25 2.25 0 002.25-2.25V4.5a2.25 2.25 0 00-2.25-2.25h-1.383" />
+    </svg>
+  );
+  const Copy = () => copied ? (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    </svg>
+  ) : (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+    </svg>
+  );
+  const Speaker = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+      {speaking
+        ? <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.531V19.94a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.506-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.395C2.806 8.757 3.63 8.25 4.51 8.25H6.75z" />
+        : <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53L6.75 15.75H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.395C2.806 8.757 3.63 8.25 4.51 8.25H6.75z" />
+      }
+    </svg>
+  );
+  const Gear = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+  const Regenerate = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+    </svg>
+  );
+  const Share = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+    </svg>
+  );
+
+  const btn = (active = false): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    gap: '4px', padding: '5px 9px', borderRadius: '8px', cursor: 'pointer',
+    border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border)'}`,
+    background: active ? 'var(--gold-dim)' : 'transparent',
+    color: active ? 'var(--gold)' : 'var(--text-muted)',
+    fontSize: '0.68rem', fontFamily: 'DM Sans, sans-serif', fontWeight: 500,
+    transition: 'all 0.15s ease',
+    flexShrink: 0,
+  });
 
   return (
-    <div style={{ paddingLeft: '4px', marginTop: '6px' }}>
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none' }}>
-        <button style={btnStyle(liked)} onClick={handleLike} title='Helpful'>
-          <i className='fa-regular fa-thumbs-up' />
+    <div style={{ paddingLeft: '4px', marginTop: '8px', maxWidth: '100%' }}>
+
+      {/* ── Toolbar ── */}
+      <div style={{
+        display: 'flex', gap: '4px', flexWrap: 'nowrap',
+        overflowX: 'auto', scrollbarWidth: 'none',
+        paddingBottom: '2px',
+        borderTop: '1px solid var(--border)',
+        paddingTop: '8px',
+      }}>
+
+        {/* Like */}
+        <button style={btn(liked)} onClick={handleLike} title="Helpful"
+          onMouseEnter={e => { if (!liked) { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}}
+          onMouseLeave={e => { if (!liked) { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}}>
+          <ThumbUp />
         </button>
-        <button style={btnStyle(disliked)} onClick={handleDislike} title='Not helpful'>
-          <i className='fa-regular fa-thumbs-down' />
+
+        {/* Dislike */}
+        <button style={btn(disliked)} onClick={handleDislike} title="Not helpful"
+          onMouseEnter={e => { if (!disliked) { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}}
+          onMouseLeave={e => { if (!disliked) { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}}>
+          <ThumbDown />
         </button>
-        <button style={btnStyle(copied)} onClick={handleCopy} title='Copy'>
-          <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'} />
+
+        {/* Divider */}
+        <div style={{ width: '1px', background: 'var(--border)', margin: '0 2px', flexShrink: 0 }} />
+
+        {/* Copy */}
+        <button style={btn(copied)} onClick={handleCopy} title={copied ? 'Copied' : 'Copy'}
+          onMouseEnter={e => { if (!copied) { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}}
+          onMouseLeave={e => { if (!copied) { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}}>
+          <Copy />
+          <span style={{ fontSize: '0.65rem' }}>{copied ? 'Copied' : 'Copy'}</span>
         </button>
-        <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
-          <button onClick={handleTTS} title={speaking ? 'Stop reading' : 'Read aloud'}
-            style={{ ...btnStyle(speaking), borderRight: 'none', borderRadius: '6px 0 0 6px' }}>
-            <i className={speaking ? 'fa-solid fa-stop' : 'fa-solid fa-volume-high'} />
+
+        {/* Speaker */}
+        <button style={btn(speaking)} onClick={handleTTS} title={speaking ? 'Stop' : 'Read aloud'}
+          onMouseEnter={e => { if (!speaking) { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}}
+          onMouseLeave={e => { if (!speaking) { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}}>
+          <Speaker />
+        </button>
+
+        {/* Gear — TTS settings */}
+        <div style={{ position: 'relative', flexShrink: 0 }} ref={ttsRef}>
+          <button style={{ ...btn(showTTSSettings), opacity: 0.7 }}
+            onClick={() => setShowTTSSettings(s => !s)} title="Voice settings"
+            onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = showTTSSettings ? '1' : '0.7'; e.currentTarget.style.color = showTTSSettings ? 'var(--gold)' : 'var(--text-muted)'; e.currentTarget.style.borderColor = showTTSSettings ? 'var(--border-strong)' : 'var(--border)'; }}>
+            <Gear />
           </button>
-          <button onClick={() => setShowTTSSettings(s => !s)} title='Voice settings'
-            style={{ ...btnStyle(showTTSSettings), borderLeft: 'none', borderRadius: '0 6px 6px 0', padding: '4px 5px' }}>
-            <i className='fa-solid fa-gear' style={{ fontSize: '0.65rem' }} />
-          </button>
+
           {showTTSSettings && (
-            <div style={{ position: 'absolute', bottom: '120%', left: 0, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px', zIndex: 50, minWidth: '210px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
-              <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '8px' }}>Voice Settings</p>
-              <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Voice</p>
-              <select value={ttsVoice} onChange={e => { setTtsVoice(e.target.value); saveTTSPrefs(e.target.value, ttsRate); }}
-                style={{ width: '100%', padding: '4px 6px', borderRadius: '6px', fontSize: '0.72rem', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                <option value=''>Default</option>
-                {voices.map(v => <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}
-              </select>
-              <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Speed: {ttsRate}x</p>
-              <input type='range' min='0.5' max='2' step='0.1' value={ttsRate}
-                onChange={e => { const r = parseFloat(e.target.value); setTtsRate(r); saveTTSPrefs(ttsVoice, r); }}
-                style={{ width: '100%', accentColor: 'var(--gold)', marginBottom: '4px' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                <span>0.5x</span><span>2x</span>
+            <div style={{
+              position: 'absolute', bottom: '38px', left: 0, zIndex: 60,
+              width: '230px',
+              background: 'var(--navy-card)',
+              border: '1px solid var(--border)',
+              borderRadius: '14px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px var(--border)',
+              overflow: 'hidden',
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '10px 14px 8px',
+                borderBottom: '1px solid var(--border)',
+                background: 'var(--navy-soft)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '0.78rem', color: 'var(--gold)', letterSpacing: '0.02em' }}>
+                  Voice Settings
+                </span>
+                <button onClick={() => setShowTTSSettings(false)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1, padding: '0 2px' }}>
+                  ✕
+                </button>
               </div>
-              <button onClick={() => setShowTTSSettings(false)}
-                style={{ width: '100%', padding: '4px', borderRadius: '6px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>Done</button>
+
+              <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+                {/* Voice selector */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                    Voice
+                  </label>
+                  <select value={ttsVoice}
+                    onChange={e => { setTtsVoice(e.target.value); saveTTSPrefs(e.target.value, ttsRate, ttsVolume); }}
+                    style={{
+                      width: '100%', padding: '6px 8px', borderRadius: '8px',
+                      fontSize: '0.72rem', background: 'var(--navy-mid)',
+                      border: '1px solid var(--border)', color: 'var(--text-primary)',
+                      outline: 'none', cursor: 'pointer',
+                    }}>
+                    <option value="">Default</option>
+                    {voices.map(v => <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}
+                  </select>
+                </div>
+
+                {/* Speed */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <label style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Speed</label>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--gold)', fontWeight: 700 }}>{ttsRate.toFixed(1)}×</span>
+                  </div>
+                  <input type="range" min="0.5" max="2" step="0.1" value={ttsRate}
+                    onChange={e => { const r = parseFloat(e.target.value); setTtsRate(r); saveTTSPrefs(ttsVoice, r, ttsVolume); }}
+                    style={{ width: '100%', accentColor: 'var(--gold)', cursor: 'pointer' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '2px', opacity: 0.6 }}>
+                    <span>0.5×</span><span>1×</span><span>2×</span>
+                  </div>
+                </div>
+
+                {/* Volume */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <label style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Volume</label>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--gold)', fontWeight: 700 }}>{Math.round(ttsVolume * 100)}%</span>
+                  </div>
+                  <input type="range" min="0" max="1" step="0.05" value={ttsVolume}
+                    onChange={e => { const v = parseFloat(e.target.value); setTtsVolume(v); saveTTSPrefs(ttsVoice, ttsRate, v); }}
+                    style={{ width: '100%', accentColor: 'var(--gold)', cursor: 'pointer' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '2px', opacity: 0.6 }}>
+                    <span>0%</span><span>50%</span><span>100%</span>
+                  </div>
+                </div>
+
+                {/* Done */}
+                <button onClick={() => setShowTTSSettings(false)}
+                  style={{
+                    width: '100%', padding: '7px', borderRadius: '8px',
+                    background: 'var(--gold-dim)', border: '1px solid var(--border-strong)',
+                    color: 'var(--gold)', fontSize: '0.72rem', fontWeight: 700,
+                    cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+                    letterSpacing: '0.05em',
+                  }}>
+                  Done
+                </button>
+              </div>
             </div>
           )}
         </div>
-        <button style={btnStyle()} onClick={onRegenerate} title='Retry'>
-          <i className='fa-solid fa-rotate-right' />
+
+        {/* Regenerate */}
+        <button style={btn()} onClick={onRegenerate} title="Regenerate"
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}>
+          <Regenerate />
         </button>
-        <button style={btnStyle()} onClick={async () => { if (navigator.share) { try { await navigator.share({ text: message.content }); } catch { } } else handleCopy(); }} title='Share'>
-          <i className='fa-solid fa-share-from-square' />
+
+        {/* Share */}
+        <button style={btn()} title="Share"
+          onClick={async () => { if (navigator.share) { try { await navigator.share({ text: message.content }); } catch { } } else handleCopy(); }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}>
+          <Share />
         </button>
-        <button style={btnStyle(showFlagBox, true)} onClick={() => setShowFlagBox(f => !f)} title='Flag this response'>
-          <i className='fa-solid fa-flag' />
-        </button>
+
       </div>
 
+      {/* Like note */}
       {showLikeNote && (
-        <div style={{ marginTop: '8px', display: 'flex', gap: '6px', alignItems: 'flex-end', maxWidth: '360px' }}>
-          <textarea value={likeNote} onChange={e => setLikeNote(e.target.value)}
-            placeholder='What did you love? (optional)' rows={2}
-            style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
-          <button onClick={submitLike}
-            style={{ padding: '6px 12px', borderRadius: '8px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Send</button>
+        <div style={{ marginTop: '8px', padding: '10px 12px', borderRadius: '10px', background: 'var(--gold-dim)', border: '1px solid var(--border)', maxWidth: '360px' }}>
+          <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '6px', fontFamily: 'Lora, serif', fontStyle: 'italic' }}>What was most helpful? (optional)</p>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+            <textarea value={likeNote} onChange={e => setLikeNote(e.target.value)}
+              placeholder="Tell us what worked well…" rows={2}
+              style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none', background: 'var(--navy-mid)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontFamily: 'Lora, Georgia, serif' }} />
+            <button onClick={submitLike}
+              style={{ padding: '6px 12px', borderRadius: '8px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Send</button>
+          </div>
         </div>
       )}
 
+      {/* Dislike note */}
       {showDislikeNote && (
-        <div style={{ marginTop: '8px', display: 'flex', gap: '6px', alignItems: 'flex-end', maxWidth: '360px' }}>
-          <textarea value={dislikeNote} onChange={e => setDislikeNote(e.target.value)}
-            placeholder='What was wrong? (optional)' rows={2}
-            style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
-          <button onClick={submitDislike}
-            style={{ padding: '6px 12px', borderRadius: '8px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Send</button>
+        <div style={{ marginTop: '8px', padding: '10px 12px', borderRadius: '10px', background: 'var(--navy-mid)', border: '1px solid var(--border)', maxWidth: '360px' }}>
+          <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '6px', fontFamily: 'Lora, serif', fontStyle: 'italic' }}>What could be improved? (optional)</p>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+            <textarea value={dislikeNote} onChange={e => setDislikeNote(e.target.value)}
+              placeholder="Tell us what fell short…" rows={2}
+              style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none', background: 'var(--navy-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontFamily: 'Lora, Georgia, serif' }} />
+            <button onClick={submitDislike}
+              style={{ padding: '6px 12px', borderRadius: '8px', background: 'var(--gold)', color: 'var(--navy)', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Send</button>
+          </div>
         </div>
       )}
 
-      {showFlagBox && (
-        <div style={{ marginTop: '8px', maxWidth: '360px', padding: '10px', borderRadius: '10px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
-          <p style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 700, marginBottom: '6px' }}>🚩 Flag this response</p>
-          {flagSent ? (
-            <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(196,160,80,0.08)', border: '1px solid rgba(196,160,80,0.2)' }}>
-              <p style={{ fontSize: '0.78rem', color: 'var(--gold)', fontWeight: 600 }}>✅ Flag submitted successfully</p>
-              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.5 }}>Your report has been sent to the admin team. We will review this and get back to you if needed.</p>
-            </div>
-          ) : (
-            <>
-              <textarea
-                value={flagNote}
-                onChange={e => setFlagNote(e.target.value)}
-                placeholder='Describe the issue (required)...'
-                rows={3}
-                style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', resize: 'none', boxSizing: 'border-box',
-                  background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-              />
-              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                <button onClick={() => setShowFlagBox(false)}
-                  style={{ flex: 1, padding: '5px', borderRadius: '7px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer' }}>
-                  Cancel
-                </button>
-                <button onClick={submitFlag} disabled={!flagNote.trim() || flagSending}
-                  style={{ flex: 1, padding: '5px', borderRadius: '7px', background: '#ef4444', color: '#fff', border: 'none', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', opacity: (!flagNote.trim() || flagSending) ? 0.5 : 1 }}>
-                  {flagSending ? 'Sending...' : 'Submit Flag'}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
+      
 
 const LOADING_MESSAGES = [
   { phase: 'SEARCHING', text: 'Searching your course materials…' },
