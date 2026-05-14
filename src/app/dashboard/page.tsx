@@ -10,9 +10,9 @@ import LuxLoader from '@/components/LuxLoader';
 import { db } from '@/lib/firebase/config';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 
-const DEPARTMENTS: { id: Department; label: string; icon: string }[] = [
-  { id: 'theology', label: 'Theology', icon: '✝️' },
+const DEPARTMENTS = [
   { id: 'philosophy', label: 'Philosophy', icon: '🏛️' },
+  { id: 'theology', label: 'Theology', icon: '✝️' },
 ];
 
 const SEMESTERS = [
