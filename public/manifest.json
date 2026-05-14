@@ -1,12 +1,12 @@
 {
-  "name": "Lux Studiorum \u2014 Catholic Seminary",
+  "name": "Lux Studiorum — Study Platform",
   "short_name": "Lux Studiorum",
-  "description": "AI-powered academic study platform for seminary students.",
+  "description": "AI-powered academic study platform for Catholic seminarians.",
   "start_url": "/dashboard",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0f2859",
-  "theme_color": "#0f2859",
+  "background_color": "#0d1b2a",
+  "theme_color": "#0d1b2a",
   "scope": "/",
   "icons": [
     {
