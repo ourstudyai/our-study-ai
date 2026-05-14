@@ -31,152 +31,223 @@ export default function RootPage() {
       overflow: 'hidden',
     }}>
 
-      {/* Ambient radial glow behind everything */}
+      {/* Deep ambient glow — warm, not harsh */}
       <div style={{
         position: 'absolute',
-        top: '50%',
-        left: '50%',
+        top: '50%', left: '50%',
         transform: 'translate(-50%, -50%)',
-        width: '520px',
-        height: '520px',
+        width: '600px', height: '600px',
         borderRadius: '50%',
-        background: 'radial-gradient(circle, var(--gold-glow) 0%, transparent 70%)',
-        animation: 'lux-ambient 4s ease-in-out infinite',
+        background: 'radial-gradient(circle, var(--gold-glow) 0%, transparent 68%)',
+        animation: 'lux-ambient 5s ease-in-out infinite',
         pointerEvents: 'none',
+        opacity: 0.8,
       }} />
 
-      {/* Content stack */}
+      {/* Secondary warm glow — offset bottom */}
       <div style={{
+        position: 'absolute',
+        bottom: '10%', left: '30%',
+        width: '300px', height: '300px',
+        borderRadius: '50%',
+        background: 'radial-gradient(circle, var(--gold-glow) 0%, transparent 70%)',
+        pointerEvents: 'none',
+        opacity: 0.4,
+        animation: 'lux-ambient 7s ease-in-out infinite reverse',
+      }} />
+
+      {/* Manuscript card */}
+      <div style={{
+        position: 'relative',
+        zIndex: 1,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '0',
-        zIndex: 1,
+        width: '100%',
+        maxWidth: '320px',
+        margin: '0 20px',
+        padding: '44px 32px 36px',
+        background: 'var(--navy-card)',
+        border: '1px solid var(--border)',
+        borderRadius: '24px',
+        boxShadow: '0 0 0 1px var(--border), 0 24px 64px rgba(0,0,0,0.45), 0 0 48px var(--gold-glow)',
+        animation: 'lux-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both',
       }}>
+
+        {/* Corner ornaments */}
+        <div style={{ position: 'absolute', top: '14px', left: '18px', color: 'var(--gold)', opacity: 0.18, fontSize: '0.7rem', lineHeight: 1 }}>✦</div>
+        <div style={{ position: 'absolute', top: '14px', right: '18px', color: 'var(--gold)', opacity: 0.18, fontSize: '0.7rem', lineHeight: 1 }}>✦</div>
+        <div style={{ position: 'absolute', bottom: '14px', left: '18px', color: 'var(--gold)', opacity: 0.18, fontSize: '0.7rem', lineHeight: 1 }}>✦</div>
+        <div style={{ position: 'absolute', bottom: '14px', right: '18px', color: 'var(--gold)', opacity: 0.18, fontSize: '0.7rem', lineHeight: 1 }}>✦</div>
 
         {/* Logo */}
         <div style={{
+          marginBottom: '24px',
           animation: 'lux-rise 1s cubic-bezier(0.22, 1, 0.36, 1) both',
-          animationDelay: '0ms',
-          marginBottom: '28px',
+          animationDelay: '80ms',
         }}>
           <img
             src="https://i.imgur.com/MPk1vBA.png"
             alt="Lux Studiorum"
             style={{
-              width: '88px',
-              height: '88px',
+              width: '80px',
+              height: '80px',
               objectFit: 'contain',
-              filter: 'drop-shadow(0 0 18px var(--gold-glow))',
-              animation: 'lux-logo-glow 3s ease-in-out infinite',
-              animationDelay: '1.2s',
+              filter: 'drop-shadow(0 0 16px var(--gold-glow))',
+              animation: 'lux-logo-glow 3.5s ease-in-out infinite',
+              animationDelay: '1s',
+              display: 'block',
             }}
           />
         </div>
 
-        {/* Spinner rings — same as LuxLoader but tighter here */}
+        {/* Wordmark with flanking rules */}
         <div style={{
-          position: 'relative',
-          width: '52px',
-          height: '52px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          width: '100%',
+          justifyContent: 'center',
           animation: 'lux-rise 1s cubic-bezier(0.22, 1, 0.36, 1) both',
           animationDelay: '200ms',
-          marginBottom: '36px',
+          marginBottom: '8px',
         }}>
-          <div style={{
-            position: 'absolute', inset: 0, borderRadius: '50%',
-            border: '1.5px solid transparent',
-            borderTopColor: 'var(--gold)', borderRightColor: 'var(--gold)',
-            animation: 'lux-spin 1.4s linear infinite', opacity: 0.55,
-          }} />
-          <div style={{
-            position: 'absolute', inset: '9px', borderRadius: '50%',
-            border: '1px solid transparent',
-            borderBottomColor: 'var(--gold)', borderLeftColor: 'var(--gold)',
-            animation: 'lux-spin 0.9s linear infinite reverse', opacity: 0.35,
-          }} />
-          <div style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            animation: 'lux-pulse 2s ease-in-out infinite',
+          <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to right, transparent, var(--gold))', opacity: 0.3 }} />
+          <h1 style={{
+            fontFamily: 'Playfair Display, Georgia, serif',
+            fontSize: '1.15rem',
+            fontWeight: 700,
+            color: 'var(--gold)',
+            letterSpacing: '0.22em',
+            textTransform: 'uppercase',
+            margin: 0,
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
           }}>
-            <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
-              <rect x="8" y="1" width="2" height="16" rx="1" fill="var(--gold)" opacity="0.85"/>
-              <rect x="1" y="8" width="16" height="2" rx="1" fill="var(--gold)" opacity="0.85"/>
-            </svg>
-          </div>
+            Lux Studiorum
+          </h1>
+          <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to left, transparent, var(--gold))', opacity: 0.3 }} />
         </div>
 
-        {/* Wordmark */}
-        <h1 style={{
-          fontFamily: 'Playfair Display, Georgia, serif',
-          fontSize: '2rem',
-          fontWeight: 700,
-          color: 'var(--gold)',
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          margin: 0,
-          lineHeight: 1,
-          animation: 'lux-rise 1s cubic-bezier(0.22, 1, 0.36, 1) both',
-          animationDelay: '350ms',
-        }}>
-          Lux Studiorum
-        </h1>
-
-        {/* Latin subtitle */}
+        {/* Latin tagline */}
         <p style={{
           fontFamily: 'IM Fell English, Georgia, serif',
-          fontSize: '0.78rem',
           fontStyle: 'italic',
+          fontSize: '0.72rem',
           color: 'var(--gold)',
-          opacity: 0.45,
+          opacity: 0.5,
           letterSpacing: '0.12em',
-          margin: '10px 0 0',
+          margin: '0 0 24px',
           animation: 'lux-rise 1s cubic-bezier(0.22, 1, 0.36, 1) both',
-          animationDelay: '520ms',
+          animationDelay: '300ms',
         }}>
           Lux in Tenebris Lucet
         </p>
 
-        {/* Divider */}
+        {/* Ornament divider */}
         <div style={{
-          width: '48px',
-          height: '1px',
-          background: 'linear-gradient(to right, transparent, var(--gold), transparent)',
-          opacity: 0.3,
-          margin: '18px 0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          width: '80%',
+          marginBottom: '20px',
           animation: 'lux-rise 1s cubic-bezier(0.22, 1, 0.36, 1) both',
-          animationDelay: '650ms',
-        }} />
+          animationDelay: '380ms',
+        }}>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+          <span style={{ color: 'var(--gold)', opacity: 0.3, fontSize: '0.55rem' }}>✦</span>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+        </div>
 
-        {/* Tagline */}
+        {/* English tagline */}
         <p style={{
           fontFamily: 'Lora, Georgia, serif',
-          fontSize: '0.8rem',
-          color: 'var(--text-muted)',
-          letterSpacing: '0.06em',
-          margin: 0,
-          opacity: 0.7,
+          fontSize: '0.75rem',
+          color: 'var(--text-secondary)',
+          letterSpacing: '0.04em',
+          margin: '0 0 28px',
+          opacity: 0.75,
           textAlign: 'center',
+          lineHeight: 1.65,
           animation: 'lux-rise 1s cubic-bezier(0.22, 1, 0.36, 1) both',
-          animationDelay: '750ms',
+          animationDelay: '460ms',
         }}>
           Your study companion for seminary life
         </p>
 
+        {/* Discrete spinner row */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          animation: 'lux-rise 1s cubic-bezier(0.22, 1, 0.36, 1) both',
+          animationDelay: '560ms',
+        }}>
+          <div style={{ position: 'relative', width: '28px', height: '28px', flexShrink: 0 }}>
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              border: '1.5px solid transparent',
+              borderTopColor: 'var(--gold)', borderRightColor: 'var(--gold)',
+              animation: 'lux-spin 1.4s linear infinite', opacity: 0.5,
+            }} />
+            <div style={{
+              position: 'absolute', inset: '6px', borderRadius: '50%',
+              border: '1px solid transparent',
+              borderBottomColor: 'var(--gold)', borderLeftColor: 'var(--gold)',
+              animation: 'lux-spin 0.9s linear infinite reverse', opacity: 0.3,
+            }} />
+          </div>
+          <p style={{
+            fontFamily: 'DM Sans, sans-serif',
+            fontSize: '0.65rem',
+            color: 'var(--text-muted)',
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            margin: 0,
+            opacity: 0.5,
+            animation: 'lux-breathe 2.5s ease-in-out infinite',
+          }}>
+            Preparing your study space
+          </p>
+        </div>
+
       </div>
 
+      {/* Footer */}
+      <p style={{
+        position: 'absolute',
+        bottom: '20px',
+        fontFamily: 'DM Sans, sans-serif',
+        fontSize: '0.6rem',
+        color: 'var(--text-muted)',
+        opacity: 0.3,
+        letterSpacing: '0.08em',
+        margin: 0,
+        animation: 'lux-rise 1s cubic-bezier(0.22, 1, 0.36, 1) both',
+        animationDelay: '800ms',
+      }}>
+        © {new Date().getFullYear()} Lux Studiorum
+      </p>
+
       <style>{`
-        @keyframes lux-spin   { to { transform: rotate(360deg); } }
-        @keyframes lux-pulse  { 0%,100%{opacity:0.65;transform:scale(1)} 50%{opacity:1;transform:scale(1.1)} }
-        @keyframes lux-rise   { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes lux-spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes lux-rise {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
         @keyframes lux-ambient {
           0%,100% { opacity: 0.6; transform: translate(-50%,-50%) scale(1); }
-          50%      { opacity: 1;   transform: translate(-50%,-50%) scale(1.12); }
+          50%      { opacity: 1;   transform: translate(-50%,-50%) scale(1.14); }
         }
         @keyframes lux-logo-glow {
-          0%,100% { filter: drop-shadow(0 0 10px var(--gold-glow)); }
-          50%      { filter: drop-shadow(0 0 28px var(--gold-dim)); }
+          0%,100% { filter: drop-shadow(0 0 8px var(--gold-glow)); }
+          50%      { filter: drop-shadow(0 0 24px var(--gold-dim)); }
+        }
+        @keyframes lux-breathe {
+          0%,100% { opacity: 0.4; }
+          50%      { opacity: 0.75; }
         }
       `}</style>
     </div>
