@@ -316,12 +316,16 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
 
           {showTTSSettings && (
             <div style={{
-              position: 'absolute', bottom: '38px', left: 0, zIndex: 60,
-              width: '230px',
+              position: 'fixed',
+              bottom: '100px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 300,
+              width: 'min(280px, 90vw)',
               background: 'var(--navy-card)',
-              border: '1px solid var(--border)',
-              borderRadius: '14px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px var(--border)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: '16px',
+              boxShadow: '0 0 0 1px var(--border), 0 24px 64px rgba(0,0,0,0.6), 0 0 32px var(--gold-glow)',
               overflow: 'hidden',
             }}>
               {/* Header */}
@@ -991,13 +995,45 @@ export default function CoursePage() {
             style={{ padding: '12px 16px', overflowX: 'hidden' }}
           >
             {isEmpty && (
-              <div style={{ height: '32vh', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-                <div style={{ textAlign: 'center', width: '100%', maxWidth: '320px', padding: '0 24px', boxSizing: 'border-box' }}>
-                  <p style={{ fontSize: '2.4rem', marginBottom: '8px' }}>{MODES.find(m => m.id === activeMode)?.icon}</p>
-                  <p style={{ fontWeight: 600, color: 'var(--gold)', fontSize: '1rem', marginBottom: '4px' }}>{MODES.find(m => m.id === activeMode)?.label}</p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{MODES.find(m => m.id === activeMode)?.description}</p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '8px' }}>Sem {semester} · Year {year}</p>
+              <div style={{ height: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                <div style={{ textAlign: 'center', maxWidth: '280px', padding: '0 24px' }}>
+                  <img
+                    src="https://i.imgur.com/MPk1vBA.png"
+                    alt="Lux Studiorum"
+                    style={{
+                      width: '52px', height: '52px', objectFit: 'contain',
+                      marginBottom: '16px', display: 'block', margin: '0 auto 16px',
+                      filter: 'drop-shadow(0 0 10px var(--gold-glow))',
+                      animation: 'lux-logo-glow 3s ease-in-out infinite',
+                    }}
+                  />
+                  <p style={{
+                    fontFamily: 'Playfair Display, Georgia, serif',
+                    fontWeight: 700, fontSize: '1rem',
+                    color: 'var(--gold)', marginBottom: '6px', lineHeight: 1.3,
+                  }}>
+                    {course.name}
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ width: '18px', height: '1px', background: 'var(--border-strong)', opacity: 0.5 }} />
+                    <span style={{ fontFamily: 'IM Fell English, Georgia, serif', fontStyle: 'italic', fontSize: '0.65rem', color: 'var(--gold)', opacity: 0.5, letterSpacing: '0.1em' }}>
+                      {MODES.find(m => m.id === activeMode)?.label}
+                    </span>
+                    <div style={{ width: '18px', height: '1px', background: 'var(--border-strong)', opacity: 0.5 }} />
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.76rem', lineHeight: 1.65, fontFamily: 'Lora, Georgia, serif', marginBottom: '10px' }}>
+                    {MODES.find(m => m.id === activeMode)?.description}
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.62rem', opacity: 0.45, letterSpacing: '0.06em' }}>
+                    Sem {semester} · Year {year}
+                  </p>
                 </div>
+                <style>{`
+                  @keyframes lux-logo-glow {
+                    0%,100% { filter: drop-shadow(0 0 6px var(--gold-glow)); opacity: 0.85; }
+                    50%      { filter: drop-shadow(0 0 18px var(--gold-dim)); opacity: 1; }
+                  }
+                `}</style>
               </div>
             )}
             {chatHistory.map((msg, i) => (
