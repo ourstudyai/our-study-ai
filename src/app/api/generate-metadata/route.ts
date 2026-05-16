@@ -5,6 +5,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { getMistralClient } from '@/lib/mistral/client';
 
+const QSTASH_URL = 'https://qstash.upstash.io/v2/publish';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://our-study-ai.vercel.app';
+const SECTIONS_PER_HOP = 3;
+
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface TopicNode {
@@ -35,14 +39,13 @@ function extractHeadings(extractedText: string): HeadingLine[] {
     if (isBoldCaps) { result.push({ raw: trimmed, level: 1 }); continue; }
     const isAllCaps = /^[A-Z][A-Z0-9\s\-:,./]{4,}$/.test(trimmed) && trimmed.length < 100;
     if (isAllCaps) { result.push({ raw: trimmed, level: 1 }); continue; }
+    const isTitleCaseSection = /^(Lesson|Chapter|Part|Section|Unit|Volume|Appendix|Introduction|Conclusion)\s+[\dIVXivx]+/i.test(trimmed) && trimmed.length < 80;
+    if (isTitleCaseSection) { result.push({ raw: trimmed, level: 1 }); continue; }
   }
   return result;
 }
 
 // ── Split headings into major sections ───────────────────────────────────────
-// Each section = one level-1 heading + all its descendants.
-// Oversized sections (> MAX_SECTION_HEADINGS) are split at the nearest
-// level-2 boundary to stay within token limits.
 
 const MAX_SECTION_HEADINGS = 60;
 
@@ -52,30 +55,25 @@ function splitIntoSections(headings: HeadingLine[]): HeadingLine[][] {
 
   for (const h of headings) {
     if (h.level === 1 && current.length > 0) {
-      // Flush current section — split if oversized
       sections.push(...splitOversized(current));
       current = [];
     }
     current.push(h);
   }
   if (current.length > 0) sections.push(...splitOversized(current));
-
   return sections;
 }
 
 function splitOversized(section: HeadingLine[]): HeadingLine[][] {
   if (section.length <= MAX_SECTION_HEADINGS) return [section];
-
-  // Split at level-2 boundaries
   const parts: HeadingLine[][] = [];
   let part: HeadingLine[] = [];
-  const header = section[0]; // level-1 heading — prepend to each part
-
+  const header = section[0];
   for (let i = 0; i < section.length; i++) {
     const h = section[i];
     if (h.level === 2 && part.length > 0 && part.length >= MAX_SECTION_HEADINGS) {
       parts.push(part);
-      part = [header]; // carry level-1 parent into next part for context
+      part = [header];
     }
     part.push(h);
   }
@@ -104,29 +102,20 @@ async function generateSummary(
   category: string
 ): Promise<string> {
   const opening = extractedText.split(/\s+/).slice(0, 800).join(' ');
-
   let prompt = '';
   if (category === 'past_questions') {
-    prompt = `You are indexing a study material for a Catholic seminary library.
-From the following past examination questions, write ONE sentence describing what years and subject areas the questions cover.
-Return ONLY the sentence. No JSON. No preamble.\n\nMaterial:\n${opening}`;
+    prompt = `You are indexing a study material for a Catholic seminary library.\nFrom the following past examination questions, write ONE sentence describing what years and subject areas the questions cover.\nReturn ONLY the sentence. No JSON. No preamble.\n\nMaterial:\n${opening}`;
   } else if (category === 'aoc') {
-    prompt = `You are indexing a study material for a Catholic seminary library.
-From the following Areas of Concentration document, write ONE sentence describing the exam year and subject covered.
-Return ONLY the sentence. No JSON. No preamble.\n\nMaterial:\n${opening}`;
+    prompt = `You are indexing a study material for a Catholic seminary library.\nFrom the following Areas of Concentration document, write ONE sentence describing the exam year and subject covered.\nReturn ONLY the sentence. No JSON. No preamble.\n\nMaterial:\n${opening}`;
   } else {
-    prompt = `You are indexing a study material for a Catholic seminary library.
-Write 2-3 sentences describing what this study material covers and why it matters for seminary students.
-Return ONLY the sentences. No JSON. No preamble.\n\nMaterial opening:\n${opening}`;
+    prompt = `You are indexing a study material for a Catholic seminary library.\nWrite 2-3 sentences describing what this study material covers and why it matters for seminary students.\nReturn ONLY the sentences. No JSON. No preamble.\n\nMaterial opening:\n${opening}`;
   }
-
   const response = await mistral.chat.complete({
     model: 'mistral-small-latest',
     temperature: 0.2,
     maxTokens: 300,
     messages: [{ role: 'user', content: prompt }],
   });
-
   return ((response.choices?.[0]?.message?.content as string) || '').trim();
 }
 
@@ -137,25 +126,7 @@ async function processSection(
   section: HeadingLine[]
 ): Promise<TopicNode[]> {
   const headingText = section.map(h => h.raw).join('\n');
-
-  const prompt = `You are indexing a study material for a Catholic seminary library.
-Some headings may be poorly formatted due to OCR scanning — infer the correct clean heading from context, normalise capitalisation to title case, and fix obvious OCR errors.
-For subsections with generic names (e.g. "Example", "Exercise", "Definition", "Vocabulary", "Translation"), append a bracketed qualifier showing what they are about, derived from their parent heading context. E.g. "Example [Genitive Case]", "Exercise [The Imperative]".
-Where two nodes share an ambiguous title at the same level, append a bracketed qualifier to distinguish them.
-Return ONLY a valid JSON array. No markdown. No code fences. No preamble. No explanation.
-
-From the following document headings (indented to show hierarchy), build a nested topic tree.
-Rules:
-1. level 1 = major section, level 2 = subsection, level 3 = sub-subsection.
-2. Every node: { "title": string, "level": number, "subtopics": [ ...same shape... ] }
-3. Leaf nodes have "subtopics": []
-4. Nest correctly — do NOT flatten.
-5. Do not invent topics not present in the headings.
-
-Headings:
-${headingText}
-
-Return JSON array: [ { "title": "...", "level": 1, "subtopics": [...] } ]`;
+  const prompt = `You are indexing a study material for a Catholic seminary library.\nSome headings may be poorly formatted due to OCR scanning — infer the correct clean heading from context, normalise capitalisation to title case, and fix obvious OCR errors.\nFor subsections with generic names (e.g. "Example", "Exercise", "Definition", "Vocabulary", "Translation"), append a bracketed qualifier showing what they are about, derived from their parent heading context. E.g. "Example [Genitive Case]", "Exercise [The Imperative]".\nWhere two nodes share an ambiguous title at the same level, append a bracketed qualifier to distinguish them.\nReturn ONLY a valid JSON array. No markdown. No code fences. No preamble. No explanation.\n\nFrom the following document headings (indented to show hierarchy), build a nested topic tree.\nRules:\n1. level 1 = major section, level 2 = subsection, level 3 = sub-subsection.\n2. Every node: { "title": string, "level": number, "subtopics": [ ...same shape... ] }\n3. Leaf nodes have "subtopics": []\n4. Nest correctly — do NOT flatten.\n5. Do not invent topics not present in the headings.\n\nHeadings:\n${headingText}\n\nReturn JSON array: [ { "title": "...", "level": 1, "subtopics": [...] } ]`;
 
   const response = await mistral.chat.complete({
     model: 'mistral-small-latest',
@@ -163,10 +134,8 @@ Return JSON array: [ { "title": "...", "level": 1, "subtopics": [...] } ]`;
     maxTokens: 4000,
     messages: [{ role: 'user', content: prompt }],
   });
-
   const raw = (response.choices?.[0]?.message?.content as string) || '[]';
   const clean = raw.replace(/```json|```/g, '').trim();
-
   try {
     const parsed = JSON.parse(clean);
     if (Array.isArray(parsed)) {
@@ -186,16 +155,7 @@ async function generateSimpleTopics(
   extractedText: string,
   category: string
 ): Promise<TopicNode[]> {
-  const prompt = `You are indexing a study material for a Catholic seminary library.
-Return ONLY a valid JSON object. No markdown. No code fences. No preamble. No explanation.
-
-From the following ${category === 'past_questions' ? 'past examination questions' : 'Areas of Concentration document'}, extract:
-- "topics": an array of distinct subject areas. Each: { "title": string, "level": 1, "subtopics": [] }
-
-Material:
-${extractedText.slice(0, 8000)}
-
-Return JSON: { "topics": [...] }`;
+  const prompt = `You are indexing a study material for a Catholic seminary library.\nReturn ONLY a valid JSON object. No markdown. No code fences. No preamble. No explanation.\n\nFrom the following ${category === 'past_questions' ? 'past examination questions' : 'Areas of Concentration document'}, extract:\n- "topics": an array of distinct subject areas. Each: { "title": string, "level": 1, "subtopics": [] }\n\nMaterial:\n${extractedText.slice(0, 8000)}\n\nReturn JSON: { "topics": [...] }`;
 
   const response = await mistral.chat.complete({
     model: 'mistral-small-latest',
@@ -203,10 +163,8 @@ Return JSON: { "topics": [...] }`;
     maxTokens: 4000,
     messages: [{ role: 'user', content: prompt }],
   });
-
   const raw = (response.choices?.[0]?.message?.content as string) || '{}';
   const clean = raw.replace(/```json|```/g, '').trim();
-
   try {
     const parsed = JSON.parse(clean);
     if (Array.isArray(parsed.topics)) {
@@ -216,6 +174,19 @@ Return JSON: { "topics": [...] }`;
   } catch {
     return [];
   }
+}
+
+// ── Chain next hop via QStash ─────────────────────────────────────────────────
+
+async function chainNextHop(payload: object) {
+  await fetch(`${QSTASH_URL}/${APP_URL}/api/generate-metadata`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.QSTASH_TOKEN}`,
+    },
+    body: JSON.stringify(payload),
+  });
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
@@ -238,48 +209,102 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid QStash signature' }, { status: 401 });
   }
 
-  const { materialId, category, extractedText } = JSON.parse(rawBody);
+  const {
+    materialId,
+    category,
+    extractedText,
+    sections: incomingSections,
+    startSectionIndex = 0,
+    partialTopicTree = [],
+    aiSummary: incomingSummary,
+  } = JSON.parse(rawBody);
 
   if (!materialId || !extractedText) {
     return NextResponse.json({ error: 'Missing materialId or extractedText' }, { status: 400 });
   }
 
   const matRef = adminDb.collection('materials').doc(materialId);
+  const mistral = getMistralClient();
+  const cat = category || 'other';
 
   try {
-    const mistral = getMistralClient();
-    const cat = category || 'other';
+    // ── First hop only: generate summary + compute sections ───────────────────
+    let aiSummary: string = incomingSummary || '';
+    let sections: HeadingLine[][] = incomingSections || [];
 
-    // Call 1: summary
-    const aiSummary = await generateSummary(mistral, extractedText, cat);
+    if (startSectionIndex === 0) {
+      // Generate summary
+      aiSummary = await generateSummary(mistral, extractedText, cat);
 
-    // Call 2+: topics
-    let topicTree: TopicNode[] = [];
+      // Save summary immediately so library shows it even before topics complete
+      await matRef.update({
+        aiSummary,
+        metaStatus: 'processing',
+        metaGeneratedAt: new Date().toISOString(),
+      });
 
-    if (cat === 'past_questions' || cat === 'aoc') {
-      topicTree = await generateSimpleTopics(mistral, extractedText, cat);
-    } else {
-      const headings = extractHeadings(extractedText);
-      const sections = splitIntoSections(headings);
-
-      for (const section of sections) {
-        const nodes = await processSection(mistral, section);
-        topicTree.push(...nodes);
+      // For past_questions / aoc — single call, no chaining needed
+      if (cat === 'past_questions' || cat === 'aoc') {
+        const topicTree = await generateSimpleTopics(mistral, extractedText, cat);
+        const contentList = flattenTree(topicTree);
+        await matRef.update({
+          topicTree,
+          contentList,
+          metaStatus: 'done',
+        });
+        console.log(`[generate-metadata] Done for ${materialId} — ${topicTree.length} topics`);
+        return NextResponse.json({ ok: true, materialId, topicCount: topicTree.length });
       }
+
+      // Compute sections once — passed to all subsequent hops
+      const headings = extractHeadings(extractedText);
+      sections = splitIntoSections(headings);
+      console.log(`[generate-metadata] ${materialId} — ${sections.length} sections, processing in hops of ${SECTIONS_PER_HOP}`);
     }
 
-    const contentList = flattenTree(topicTree);
+    const totalSections = sections.length;
 
-    await matRef.update({
-      aiSummary,
-      contentList,
-      topicTree,
-      metaStatus: 'done',
-      metaGeneratedAt: new Date().toISOString(),
+    // ── Process this hop's sections ───────────────────────────────────────────
+    const hopSections = sections.slice(startSectionIndex, startSectionIndex + SECTIONS_PER_HOP);
+    const hopNodes: TopicNode[] = [];
+
+    for (const section of hopSections) {
+      const nodes = await processSection(mistral, section);
+      hopNodes.push(...nodes);
+    }
+
+    const accumulatedTree: TopicNode[] = [...partialTopicTree, ...hopNodes];
+    const nextIndex = startSectionIndex + SECTIONS_PER_HOP;
+
+    if (nextIndex < totalSections) {
+      // ── More sections remain — chain next hop ─────────────────────────────
+      await chainNextHop({
+        materialId,
+        category: cat,
+        extractedText,
+        sections,
+        startSectionIndex: nextIndex,
+        partialTopicTree: accumulatedTree,
+        aiSummary,
+      });
+      console.log(`[generate-metadata] ${materialId} — hop ${startSectionIndex}–${startSectionIndex + hopSections.length - 1} done, chaining from ${nextIndex} of ${totalSections}`);
+    } else {
+      // ── All sections done — save final tree ───────────────────────────────
+      const contentList = flattenTree(accumulatedTree);
+      await matRef.update({
+        topicTree: accumulatedTree,
+        contentList,
+        metaStatus: 'done',
+      });
+      console.log(`[generate-metadata] Done for ${materialId} — ${accumulatedTree.length} top-level topics`);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      materialId,
+      hopDone: `${startSectionIndex}–${startSectionIndex + hopSections.length - 1}`,
+      totalSections,
     });
-
-    console.log(`[generate-metadata] Done for ${materialId} — ${topicTree.length} top-level topics`);
-    return NextResponse.json({ ok: true, materialId, topicCount: topicTree.length });
 
   } catch (err: any) {
     const message = err?.message || String(err);
