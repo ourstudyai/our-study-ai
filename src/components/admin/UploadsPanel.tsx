@@ -24,12 +24,13 @@ function isPreviewable(mimeType?: string) {
 export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props) {
   const [previewMaterial, setPreviewMaterial] = useState<Material | null>(null);
   const [ocrLoading, setOcrLoading] = useState<string | null>(null);
+  const [confirmMaterialId, setConfirmMaterialId] = useState<string | null>(null);
 
   async function triggerOcr(materialId: string) {
-    if (!window.confirm('Send this file to OCR? This will consume processing credits. Only proceed if the file is worth indexing.')) return;
     setOcrLoading(materialId);
+    setConfirmMaterialId(null);
     try {
-      const idToken = await firebaseUser?.getIdToken(true);
+      await firebaseUser?.getIdToken(true);
       const res = await fetch('/api/admin/trigger-ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -53,6 +54,49 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
+      {/* In-app confirm modal */}
+      {confirmMaterialId && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 10000,
+          background: 'rgba(5,10,24,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div style={{
+            background: 'var(--navy-card)', border: '1px solid var(--border)',
+            borderRadius: 16, padding: '24px 20px', maxWidth: 340, width: '100%',
+          }}>
+            <p style={{ fontSize: '1.4rem', textAlign: 'center', marginBottom: 10 }}>⚠️</p>
+            <p style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 8 }}>Send to OCR?</p>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.6, marginBottom: 20 }}>
+              This will consume processing credits. Only proceed if the file is worth indexing.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setConfirmMaterialId(null)}
+                style={{
+                  flex: 1, padding: '10px', background: 'transparent',
+                  border: '1px solid var(--border)', borderRadius: 10,
+                  color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => triggerOcr(confirmMaterialId)}
+                style={{
+                  flex: 1, padding: '10px', background: 'var(--gold)',
+                  border: 'none', borderRadius: 10,
+                  color: '#0a0f1e', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Preview overlay */}
       {previewMaterial && (
         <div style={{
@@ -60,7 +104,6 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
           background: 'rgba(5,10,24,0.97)',
           display: 'flex', flexDirection: 'column',
         }}>
-          {/* Header */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '12px 16px', borderBottom: '1px solid var(--border)',
@@ -74,7 +117,7 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
               {fileIcon(previewMaterial.mimeType)} {previewMaterial.fileName}
             </p>
             <button
-              onClick={() => triggerOcr(previewMaterial.id!)}
+              onClick={() => setConfirmMaterialId(previewMaterial.id!)}
               disabled={ocrLoading === previewMaterial.id}
               style={{
                 background: 'var(--gold)', color: '#0a0f1e', border: 'none',
@@ -86,7 +129,6 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
               {ocrLoading === previewMaterial.id ? 'Queuing…' : 'Send to OCR →'}
             </button>
           </div>
-          {/* Preview body */}
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {previewMaterial.mimeType === 'application/pdf' ? (
               <iframe
@@ -141,7 +183,6 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
             </div>
           </div>
 
-          {/* Actions */}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
             {isPreviewable(m.mimeType) && (
               <button
@@ -155,9 +196,8 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
                 👁 Preview
               </button>
             )}
-            
             <button
-              onClick={() => triggerOcr(m.id!)}
+              onClick={() => setConfirmMaterialId(m.id!)}
               disabled={ocrLoading === m.id}
               style={{
                 background: 'var(--gold)', border: 'none',
