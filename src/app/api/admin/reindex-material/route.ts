@@ -323,6 +323,7 @@ export async function POST(req: NextRequest) {
       status: finalStatus,
       confirmedCourseId: courseId,
       confirmedCourseName: courseName,
+      category,
       extractedText,
       indexed: shouldIndex,
       indexedAt: shouldIndex ? new Date().toISOString() : null,
