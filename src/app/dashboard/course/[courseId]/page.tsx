@@ -189,8 +189,10 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
     }
     utt.onend = () => setSpeaking(false);
     utt.onerror = () => setSpeaking(false);
-    setTimeout(() => window.speechSynthesis.speak(utt), 50);
-    setSpeaking(true);
+    setTimeout(() => {
+      window.speechSynthesis.speak(utt);
+      setSpeaking(true);
+    }, 50);
   };
 
   const handleLike = () => {
