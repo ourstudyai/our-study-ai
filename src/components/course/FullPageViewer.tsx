@@ -180,11 +180,8 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
         </div>
         <div style={{ ...body, fontFamily: 'monospace', fontSize: '0.78rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', userSelect: 'text', WebkitUserSelect: 'text' } as any}>
           {data?.extractedText
-            ? data.extractedText.substring(0, 80000)
+            ? data.extractedText
             : <p style={{ color: 'var(--text-muted)' }}>No extracted text available.</p>}
-          {data?.extractedText?.length > 80000 && (
-            <p style={{ color: 'var(--text-muted)', marginTop: '16px', fontSize: '0.7rem' }}>[Showing first 80,000 characters]</p>
-          )}
         </div>
       </div>
     );
