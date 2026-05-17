@@ -7,6 +7,7 @@ import {
 import { MaterialCategory } from "@/lib/processing/classifier";
 
 export type MaterialStatus =
+    | "upload_review"
     | "processing"
     | "pending_review"
     | "quarantined"
