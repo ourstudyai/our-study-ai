@@ -16,13 +16,14 @@ import {
 import { Material } from '@/lib/firestore/materials';
 import AppNav from '@/components/AppNav';
 import ApprovalModal from '@/components/admin/ApprovalModal';
-
+import UploadsPanel from '@/components/admin/UploadsPanel';
 const SUPREME = 'ourstudyai@gmail.com';
 
-type Tab = 'pending' | 'approved' | 'quarantined' | 'resurrection' |
+type Tab = 'uploads' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
            'users' | 'reports' | 'courses' | 'timetables' | 'assignments' | 'analytics';
 
 const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] = [
+  { key: 'uploads',      label: 'Uploads',     icon: '📥' },
   { key: 'pending',      label: 'Pending',     icon: '⏳' },
   { key: 'approved',     label: 'Approved',    icon: '✓' },
   { key: 'quarantined',  label: 'Quarantined', icon: '⚠' },
@@ -444,6 +445,7 @@ export default function AdminPage() {
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+  const [uploads, setUploads]       = useState<Material[]>([]);
   const [pending, setPending]       = useState<Material[]>([]);
   const [approved, setApproved]     = useState<Material[]>([]);
   const [quarantined, setQuarantined] = useState<Material[]>([]);
@@ -483,13 +485,14 @@ export default function AdminPage() {
     if (!isAdmin) return;
     setLoading(true);
     try {
-      const [p, a, q, r] = await Promise.all([
+      const [u, p, a, q, r] = await Promise.all([
+        getMaterialsByStatus('upload_review'),
         getMaterialsByStatus('pending_review'),
         getMaterialsByStatus('approved'),
         getMaterialsByStatus('quarantined'),
         getMaterialsByStatus('ocr_pending'),
       ]);
-      setPending(p); setApproved(a); setQuarantined(q); setResurrection(r);
+      setUploads(u); setPending(p); setApproved(a); setQuarantined(q); setResurrection(r);
       const cSnap = await getDocs(query(collection(db, 'courses'), orderBy('name')));
       setCourses(cSnap.docs.map(d => ({ id: d.id, ...d.data() } as Course)));
     } finally { setLoading(false); }
@@ -514,6 +517,7 @@ export default function AdminPage() {
   }
 
   const listMap: Partial<Record<Tab, Material[]>> = {
+    uploads: filterAndSort(uploads),
     pending: filterAndSort(pending),
     approved: filterAndSort(approved),
     quarantined: filterAndSort(quarantined),
@@ -521,6 +525,7 @@ export default function AdminPage() {
   };
 
   const counts: Partial<Record<Tab, number>> = {
+    uploads: uploads.length,
     pending: pending.length,
     approved: approved.length,
     quarantined: quarantined.length,
@@ -598,6 +603,14 @@ export default function AdminPage() {
             {isChiefAdmin && <span style={{ fontSize: '0.65rem', background: 'rgba(196,160,80,0.1)', border: '1px solid rgba(196,160,80,0.2)', borderRadius: 99, padding: '3px 9px', color: 'var(--gold)' }}>★ Chief</span>}
           </div>
         </div>
+
+        {tab === 'uploads' && (
+          <UploadsPanel
+            uploads={filterAndSort(uploads)}
+            onRefresh={load}
+            firebaseUser={firebaseUser}
+          />
+        )}
 
         {/* Search */}
         {['pending','approved','quarantined','resurrection'].includes(tab) && (
