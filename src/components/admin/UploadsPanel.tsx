@@ -26,6 +26,7 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
   const [ocrLoading, setOcrLoading] = useState<string | null>(null);
 
   async function triggerOcr(materialId: string) {
+    if (!window.confirm('Send this file to OCR? This will consume processing credits. Only proceed if the file is worth indexing.')) return;
     setOcrLoading(materialId);
     try {
       const idToken = await firebaseUser?.getIdToken(true);
