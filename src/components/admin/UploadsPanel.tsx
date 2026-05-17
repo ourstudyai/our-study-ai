@@ -21,6 +21,13 @@ function isPreviewable(mimeType?: string) {
   return mimeType === 'application/pdf' || mimeType.startsWith('image/');
 }
 
+function ocrWarning(mimeType?: string, fileName?: string) {
+  const isPdf = mimeType === 'application/pdf';
+  const isImage = mimeType?.startsWith('image/');
+  if (isPdf || isImage) return 'This will consume processing credits. Only proceed if the file is worth indexing.';
+  return 'Only proceed if the file is worth indexing.';
+}
+
 export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props) {
   const [previewMaterial, setPreviewMaterial] = useState<Material | null>(null);
   const [ocrLoading, setOcrLoading] = useState<string | null>(null);
@@ -51,6 +58,8 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
     }
   }
 
+  const confirmMaterial = uploads.find(u => u.id === confirmMaterialId);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
@@ -67,9 +76,11 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
             borderRadius: 16, padding: '24px 20px', maxWidth: 340, width: '100%',
           }}>
             <p style={{ fontSize: '1.4rem', textAlign: 'center', marginBottom: 10 }}>⚠️</p>
-            <p style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 8 }}>Send to OCR?</p>
+            <p style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 8 }}>
+              Send to OCR?
+            </p>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.6, marginBottom: 20 }}>
-              This will consume processing credits. Only proceed if the file is worth indexing.
+              {ocrWarning(confirmMaterial?.mimeType, confirmMaterial?.fileName)}
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
