@@ -135,7 +135,7 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
                 )}
               </div>
               <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
-                {m.createdAt ? new Date(m.createdAt).toLocaleString() : ''}
+                {m.createdAt ? new Date(typeof m.createdAt === 'string' ? m.createdAt : m.createdAt.toDate()).toLocaleString() : ''}
               </p>
             </div>
           </div>
