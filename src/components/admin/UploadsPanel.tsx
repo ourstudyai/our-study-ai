@@ -154,18 +154,7 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
                 👁 Preview
               </button>
             )}
-            <a
-              href={m.fileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
-                color: 'var(--text-primary)', borderRadius: 7, padding: '5px 12px',
-                fontSize: '0.75rem', textDecoration: 'none', display: 'inline-block',
-              }}
-            >
-              ↗ Open
-            </a>
+            
             <button
               onClick={() => triggerOcr(m.id!)}
               disabled={ocrLoading === m.id}
