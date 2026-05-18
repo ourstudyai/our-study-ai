@@ -698,29 +698,103 @@ export default function CoursePage() {
     finally { setSessionSaving(false); }
   };
 
-  const renderTopicTree = (nodes: TopicNode[], depth = 0): React.ReactNode => (
-    <div style={{ paddingLeft: depth * 10 }}>
-      {nodes.map((node, i) => (
-        <div key={i}>
-          <button
-            onClick={() => { sendMessage('[TOPIC:' + node.title + '] Explain this topic: "' + node.title + '"'); setTopicsOpen(false); }}
-            style={{
-              textAlign: 'left', width: '100%', padding: '6px 10px', borderRadius: '8px',
-              background: 'var(--navy)', border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
-              fontSize: depth === 0 ? '0.78rem' : '0.73rem',
-              fontWeight: depth === 0 ? 600 : 400,
-              opacity: depth === 0 ? 1 : 0.8,
-              cursor: 'pointer', marginBottom: '3px',
-            }}
-          >
-            {node.title}
-          </button>
-          {node.subtopics?.length > 0 && renderTopicTree(node.subtopics, depth + 1)}
-        </div>
-      ))}
-    </div>
-  );
+  // ── Clickable accordion topic tree for the Topics Drawer ──────────────────
+  // Each node shows a click-to-ask button. Nodes with children are collapsible.
+  // Children are collapsed by default at depth > 0 to keep the panel scannable.
+  const ClickableTopicTree = ({
+    nodes,
+    depth = 0,
+  }: {
+    nodes: TopicNode[];
+    depth?: number;
+  }): React.ReactNode => {
+    const [collapsed, setCollapsed] = useState<Set<number>>(
+      () => new Set(nodes.map((_, i) => i).filter(() => depth > 0))
+    );
+    const toggle = (i: number) =>
+      setCollapsed(s => {
+        const n = new Set(s);
+        n.has(i) ? n.delete(i) : n.add(i);
+        return n;
+      });
+
+    return (
+      <div>
+        {nodes.map((node, i) => {
+          const hasChildren =
+            Array.isArray(node.subtopics) && node.subtopics.length > 0;
+          const isCollapsed = collapsed.has(i);
+          const indent = depth * 10;
+
+          return (
+            <div key={i} style={{ paddingLeft: indent }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
+                {/* Collapse toggle */}
+                {hasChildren && (
+                  <button
+                    onClick={() => toggle(i)}
+                    style={{
+                      flexShrink: 0,
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '0 2px',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.55rem',
+                      lineHeight: 1,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      transition: 'transform 0.15s',
+                      transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    }}
+                  >
+                    ▾
+                  </button>
+                )}
+                {!hasChildren && <span style={{ width: '14px', flexShrink: 0 }} />}
+
+                {/* Topic button */}
+                <button
+                  onClick={() => {
+                    sendMessage(
+                      '[TOPIC:' + node.title + '] Explain this topic: "' + node.title + '"'
+                    );
+                    setTopicsOpen(false);
+                  }}
+                  style={{
+                    flex: 1,
+                    textAlign: 'left',
+                    padding: '5px 9px',
+                    borderRadius: '7px',
+                    background: 'var(--navy)',
+                    border: depth === 0
+                      ? '1px solid rgba(196,160,80,0.25)'
+                      : '1px solid var(--border)',
+                    color:
+                      depth === 0
+                        ? 'var(--text-primary)'
+                        : depth === 1
+                        ? 'var(--text-secondary)'
+                        : 'var(--text-muted)',
+                    fontSize: depth === 0 ? '0.78rem' : depth === 1 ? '0.74rem' : '0.7rem',
+                    fontWeight: depth === 0 ? 600 : depth === 1 ? 500 : 400,
+                    cursor: 'pointer',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {node.title}
+                </button>
+              </div>
+
+              {hasChildren && !isCollapsed && (
+                <ClickableTopicTree nodes={node.subtopics} depth={depth + 1} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const loadTopics = async () => {
     if (!courseId) return;
@@ -1244,37 +1318,152 @@ boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
 
       {/* TOPICS DRAWER */}
       {topicsOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)' }} onClick={() => setTopicsOpen(false)}>
-          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '300px', background: 'var(--navy-card)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem' }}>Course Topics</span>
-              <button onClick={() => setTopicsOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer' }}>✕</button>
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setTopicsOpen(false)}
+        >
+          <div
+            style={{
+              position: 'absolute', top: 0, right: 0, bottom: 0,
+              width: 'min(320px, 92vw)',
+              background: 'var(--navy-card)',
+              borderLeft: '1px solid var(--border)',
+              display: 'flex', flexDirection: 'column',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                flexShrink: 0,
+                background: 'var(--navy-soft)',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'Playfair Display, serif',
+                  fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem',
+                }}
+              >
+                📋 Course Topics
+              </span>
+              <button
+                onClick={() => setTopicsOpen(false)}
+                style={{
+                  background: 'transparent', border: 'none',
+                  color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer',
+                }}
+              >
+                ✕
+              </button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-              {topicsLoading && <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '32px 0' }}>Loading...</p>}
+
+            {/* Helper hint */}
+            <div
+              style={{
+                padding: '7px 16px 6px',
+                borderBottom: '1px solid var(--border)',
+                flexShrink: 0,
+                background: 'rgba(196,160,80,0.03)',
+              }}
+            >
+              <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                Tap any topic to ask the AI about it
+              </p>
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
+              {topicsLoading && (
+                <p
+                  style={{
+                    color: 'var(--text-muted)', fontSize: '0.8rem',
+                    textAlign: 'center', padding: '32px 0',
+                  }}
+                >
+                  Loading…
+                </p>
+              )}
               {!topicsLoading && topics.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '32px 0' }}>
                   <p style={{ fontSize: '1.6rem', marginBottom: '8px' }}>📭</p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No topics extracted yet.</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    No topics extracted yet.
+                  </p>
                 </div>
               )}
-              {!topicsLoading && topics.map((mat, i) => (
-                <div key={i} style={{ marginBottom: '20px' }}>
-                  <p style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '8px' }}>{mat.materialName}</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {mat.tree.length > 0
-                      ? renderTopicTree(mat.tree)
-                      : mat.items.map((item, j) => (
-                          <button key={j} onClick={() => { sendMessage('[TOPIC:' + item + '] Explain this topic: "' + item + '"'); setTopicsOpen(false); }}
-                            style={{ textAlign: 'left', padding: '7px 10px', borderRadius: '8px', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer' }}>
+              {!topicsLoading &&
+                topics.map((mat, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      marginBottom: '20px',
+                      background: 'rgba(196,160,80,0.02)',
+                      border: '1px solid rgba(196,160,80,0.08)',
+                      borderRadius: '10px',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* Material label */}
+                    <div
+                      style={{
+                        padding: '6px 10px',
+                        borderBottom: '1px solid rgba(196,160,80,0.1)',
+                        background: 'rgba(196,160,80,0.05)',
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: '0.6rem',
+                          fontWeight: 700,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: 'var(--gold)',
+                          opacity: 0.7,
+                        }}
+                      >
+                        {mat.materialName}
+                      </p>
+                    </div>
+
+                    {/* Tree or flat list */}
+                    <div style={{ padding: '8px 10px' }}>
+                      {mat.tree.length > 0 ? (
+                        <ClickableTopicTree nodes={mat.tree} depth={0} />
+                      ) : (
+                        mat.items.map((item, j) => (
+                          <button
+                            key={j}
+                            onClick={() => {
+                              sendMessage(
+                                '[TOPIC:' + item + '] Explain this topic: "' + item + '"'
+                              );
+                              setTopicsOpen(false);
+                            }}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              textAlign: 'left',
+                              padding: '6px 10px',
+                              borderRadius: '7px',
+                              background: 'var(--navy)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--text-secondary)',
+                              fontSize: '0.76rem',
+                              cursor: 'pointer',
+                              marginBottom: '3px',
+                            }}
+                          >
                             {item}
                           </button>
                         ))
-                    }
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         </div>
