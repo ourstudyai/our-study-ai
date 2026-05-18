@@ -7,33 +7,73 @@ import { cookies } from 'next/headers';
 import { getMistralClient } from '@/lib/mistral/client';
 
 // ── Heading skeleton extractor ────────────────────────────────────────────────
+//
+// Strategy: send ALL heading lines (every #/##/###/####, bold-caps, all-caps)
+// plus the first ~600 words for context. For past_questions / aoc we still
+// send a generous raw slice because those docs have no heading structure.
+//
+// We no longer cap at 1500 words of body text — headings alone can exceed that
+// for long notes, and the Mistral Small context window is 32 k tokens so there
+// is plenty of room.
 
 function buildSkeletonInput(extractedText: string, category: string): string {
+  // ── Past questions / AOC: send raw opening (no heading structure to mine) ──
   if (category === 'past_questions' || category === 'aoc') {
-    return extractedText.slice(0, 8000);
+    return extractedText.slice(0, 12_000);
   }
 
   const lines = extractedText.split('\n');
   const headingLines: string[] = [];
+  let inTable = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
+
+    // Detect markdown table rows — skip them (they pollute heading lists)
+    if (trimmed.startsWith('|')) { inTable = true; continue; }
+    if (inTable && !trimmed.startsWith('|')) inTable = false;
+    if (inTable) continue;
+
     const isMarkdownHeading = /^#{1,4}\s+.+/.test(trimmed);
-    const isBoldCaps = /^\*\*[A-Z][A-Z0-9\s\-:,./]{3,}\*\*\s*$/.test(trimmed);
-    const isAllCapsLine = /^[A-Z][A-Z0-9\s\-:,./]{4,}$/.test(trimmed) && trimmed.length < 100;
-    if (isMarkdownHeading || isBoldCaps || isAllCapsLine) {
+    // Bold all-caps / bold title-case lines (OCR artefacts often come out this way)
+    const isBoldCaps = /^\*\*[A-Z][A-Z0-9\s\-:,./'']{2,}\*\*\s*$/.test(trimmed);
+    const isBoldTitle = /^\*\*[A-Z][a-zA-Z0-9\s\-:,./'']{3,}\*\*\s*$/.test(trimmed);
+    // Plain all-caps lines (short enough to be a heading, not a sentence)
+    const isAllCapsLine =
+      /^[A-Z][A-Z0-9\s\-:,./'']{3,}$/.test(trimmed) && trimmed.length < 120;
+    // Numbered section headings like "1. Introduction", "2.3 Background"
+    const isNumberedHeading =
+      /^\d+(\.\d+)*\.?\s+[A-Z]/.test(trimmed) && trimmed.length < 120;
+
+    if (
+      isMarkdownHeading ||
+      isBoldCaps ||
+      isBoldTitle ||
+      isAllCapsLine ||
+      isNumberedHeading
+    ) {
       headingLines.push(trimmed);
     }
   }
 
-  const firstWords = extractedText.split(/\s+/).slice(0, 1500).join(' ');
+  // Opening text for summary context — first 800 words
+  const firstWords = extractedText.split(/\s+/).slice(0, 800).join(' ');
+
+  // If we found very few headings, also include a larger body slice so the
+  // model can infer structure from paragraph openings
+  const bodySlice =
+    headingLines.length < 5
+      ? '\n\n=== DOCUMENT BODY (first 4000 chars) ===\n' +
+        extractedText.slice(0, 4_000)
+      : '';
 
   return [
-    '=== DOCUMENT HEADINGS ===',
-    headingLines.join('\n'),
+    '=== DOCUMENT HEADINGS (all levels) ===',
+    headingLines.join('\n') || '(no structured headings detected)',
     '\n=== DOCUMENT OPENING (for summary context) ===',
     firstWords,
+    bodySlice,
   ].join('\n');
 }
 
@@ -77,11 +117,13 @@ From the following document headings and opening, extract:
 - "summary": 2-3 sentences describing what this study material covers and why it matters for seminary students.
 - "topics": the FULL nested topic tree to every depth level present in the document.
   Rules:
-  1. level 1 = major section, level 2 = subsection, level 3 = sub-subsection, and so on.
+  1. level 1 = major section (# heading or all-caps line), level 2 = subsection (## or bold-caps), level 3 = sub-subsection, and so on.
   2. Every node has: { "title": string, "level": number, "subtopics": [ ...same shape recursively... ] }
   3. Leaf nodes have "subtopics": []
-  4. Do NOT flatten — nested headings must appear as children, not siblings.
+  4. Do NOT flatten — nested headings MUST appear as children of their parent, not as siblings.
   5. Do not invent topics not present in the headings.
+  6. Numbered section headings (e.g. "1. Introduction", "2.3 Background") should be cleaned — strip the leading number and keep the title text.
+  7. If a numbered heading (e.g. "2.") contains sub-numbered headings (e.g. "2.1", "2.2"), those are its children.
 
 Material:
 ${skeletonInput}
@@ -155,7 +197,7 @@ export async function POST(req: NextRequest) {
 
       const response = await mistral.chat.complete({
         model: 'mistral-small-latest',
-        temperature: 0.2,
+        temperature: 0.1,
         maxTokens: 16384,
         messages: [{ role: 'user', content: prompt }],
       });
