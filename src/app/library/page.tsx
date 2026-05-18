@@ -434,19 +434,64 @@ export default function LibraryPage() {
 
   const selectedMaterial = selectedId ? materials.find(m => m.id === selectedId) ?? null : null;
 
-  // ── Topic tree renderer ────────────────────────────────────────────────────
-  const renderTopicTree = (nodes: TopicNode[], depth = 0): React.ReactNode => (
-    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-      {nodes.map((node, i) => (
-        <li key={i} style={{ paddingLeft: depth * 14 }}>
-          <span style={{ display: 'block', fontFamily: FONT, fontSize: depth === 0 ? '0.8rem' : '0.74rem', color: depth === 0 ? 'var(--text-primary)' : 'var(--text-muted)', padding: '3px 0', fontWeight: depth === 0 ? 700 : 400, borderLeft: depth === 0 ? '2px solid rgba(196,160,80,0.4)' : depth === 1 ? '1px solid rgba(196,160,80,0.15)' : 'none', paddingLeft: depth === 0 ? '8px' : depth === 1 ? '6px' : '0' }}>
-            {node.title}
-          </span>
-          {node.subtopics?.length > 0 && renderTopicTree(node.subtopics, depth + 1)}
-        </li>
-      ))}
-    </ul>
-  );
+  // ── Topic tree renderer (collapsible) ─────────────────────────────────────
+  function LibraryTopicTree({ nodes, depth = 0 }: { nodes: TopicNode[]; depth?: number }): React.ReactNode {
+    const [collapsed, setCollapsed] = useState<Set<number>>(
+      () => new Set(nodes.map((_, i) => i).filter(() => depth > 0))
+    );
+    const toggle = (i: number) => setCollapsed(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
+
+    return (
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        {nodes.map((node, i) => {
+          const hasChildren = Array.isArray(node.subtopics) && node.subtopics.length > 0;
+          const isCollapsed = collapsed.has(i);
+          return (
+            <li key={i} style={{ paddingLeft: depth * 12 }}>
+              <div
+                onClick={() => hasChildren && toggle(i)}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '4px',
+                  padding: '3px 0',
+                  cursor: hasChildren ? 'pointer' : 'default',
+                  borderLeft: depth === 0 ? '2px solid rgba(196,160,80,0.4)' : depth === 1 ? '1px solid rgba(196,160,80,0.15)' : 'none',
+                  paddingLeft: depth === 0 ? '8px' : depth === 1 ? '6px' : '0',
+                }}
+              >
+                {hasChildren && (
+                  <span style={{ fontSize: '0.5rem', color: 'var(--text-muted)', flexShrink: 0, marginTop: '4px', display: 'inline-block', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', userSelect: 'none' }}>▾</span>
+                )}
+                {!hasChildren && depth > 0 && (
+                  <span style={{ fontSize: '0.5rem', color: 'rgba(196,160,80,0.3)', flexShrink: 0, marginTop: '4px' }}>–</span>
+                )}
+                <span style={{
+                  display: 'block', fontFamily: FONT,
+                  fontSize: depth === 0 ? '0.8rem' : depth === 1 ? '0.74rem' : '0.7rem',
+                  color: depth === 0 ? 'var(--text-primary)' : depth === 1 ? 'var(--text-secondary)' : 'var(--text-muted)',
+                  fontWeight: depth === 0 ? 700 : depth === 1 ? 500 : 400,
+                  lineHeight: 1.5, flex: 1,
+                }}>
+                  {node.title}
+                </span>
+                {hasChildren && isCollapsed && (
+                  <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', background: 'rgba(196,160,80,0.08)', borderRadius: '99px', padding: '1px 5px', flexShrink: 0, marginTop: '3px' }}>
+                    {countLibraryNodes(node.subtopics)}
+                  </span>
+                )}
+              </div>
+              {hasChildren && !isCollapsed && <LibraryTopicTree nodes={node.subtopics} depth={depth + 1} />}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  function countLibraryNodes(nodes: TopicNode[]): number {
+    let n = nodes.length;
+    for (const node of nodes) { if (node.subtopics?.length) n += countLibraryNodes(node.subtopics); }
+    return n;
+  }
 
   // ── Detail card ────────────────────────────────────────────────────────────
   const renderDetailCard = (m: IndexedMaterial) => {
@@ -496,12 +541,21 @@ export default function LibraryPage() {
           <div style={{ marginBottom: '10px' }}>
             <button onClick={() => setExpanded(s => { const n = new Set(s); isTopicsOpen ? n.delete(m.id) : n.add(m.id); return n; })}
               style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--text-secondary)', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
-              {isTopicsOpen ? '▴' : '▾'} Topics ({m.topicTree?.length ?? m.contentList?.length ?? 0})
+              {isTopicsOpen ? '▴' : '▾'} Topics ({
+                m.topicTree && m.topicTree.length > 0
+                  ? (() => {
+                      const sub = countLibraryNodes(m.topicTree) - m.topicTree.length;
+                      return sub > 0
+                        ? `${m.topicTree.length} · ${sub} sub`
+                        : String(m.topicTree.length);
+                    })()
+                  : String(m.contentList?.length ?? 0)
+              })
             </button>
             {isTopicsOpen && (
               <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(196,160,80,0.04)', borderRadius: '8px', border: '1px solid rgba(196,160,80,0.1)' }}>
                 {m.topicTree && m.topicTree.length > 0
-                  ? renderTopicTree(m.topicTree)
+                  ? <LibraryTopicTree nodes={m.topicTree} depth={0} />
                   : m.contentList?.map((t, i) => (
                       <div key={i} style={{ fontFamily: FONT, fontSize: '0.75rem', color: 'var(--text-secondary)', paddingLeft: '10px', borderLeft: '2px solid rgba(196,160,80,0.3)', lineHeight: 1.6, marginBottom: '2px' }}>{t}</div>
                     ))
@@ -717,7 +771,9 @@ export default function LibraryPage() {
                                                     <div style={{ position: 'absolute', top: 0, right: '5px', bottom: 0, width: '1px', background: 'rgba(0,0,0,0.2)' }} />
                                                     {bookmarked && <div style={{ position: 'absolute', top: '6px', left: '50%', transform: 'translateX(-50%)', width: '6px', height: '6px', borderRadius: '50%', background: 'rgba(255,255,255,0.8)' }} />}
                                                     {newBadge && <div style={{ position: 'absolute', top: '14px', left: '50%', transform: 'translateX(-50%)', width: '5px', height: '5px', borderRadius: '50%', background: 'rgba(255,220,100,0.9)' }} />}
-                                                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%) rotate(-90deg)', width: `${heightVar - 24}px`, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.62rem', fontWeight: 600, color: 'rgba(255,255,255,0.92)', letterSpacing: '0.03em', pointerEvents: 'none', fontFamily: 'Playfair Display, serif' }}>{title}</div>
+                                                    <div style={{ position: 'absolute', inset: '12px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', overflow: 'hidden' }}>
+                                                      <span style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)', fontSize: '0.6rem', fontWeight: 600, color: 'rgba(255,255,255,0.92)', letterSpacing: '0.04em', fontFamily: 'Playfair Display, serif', overflow: 'hidden', maxHeight: '100%', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', lineHeight: 1.3, textAlign: 'center' }}>{title}</span>
+                                                    </div>
                                                   </button>
                                                 );
                                               })}
