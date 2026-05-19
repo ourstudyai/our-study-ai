@@ -459,6 +459,7 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
+  const [dupWarn, setDupWarn] = useState<{ material: Material; courseId?: string; courseName?: string; existing: Material; existingCourse: Course | undefined } | null>(null);
   const [shareInput, setShareInput] = useState('');
   const [shareLoading, setShareLoading] = useState(false);
   const [search, setSearch]         = useState('');
@@ -534,6 +535,18 @@ export default function AdminPage() {
   };
 
   async function handleApprove(m: Material, courseId?: string, courseName?: string) {
+    const nameDuplicate = approved.find(
+      a => a.id !== m.id && a.fileName.toLowerCase() === m.fileName.toLowerCase()
+    );
+    if (nameDuplicate) {
+      const existingCourse = courses.find(c => c.id === (nameDuplicate.confirmedCourseId || nameDuplicate.suggestedCourseId));
+      setDupWarn({ material: m, courseId, courseName, existing: nameDuplicate, existingCourse });
+      return;
+    }
+    await doApprove(m, courseId, courseName);
+  }
+
+  async function doApprove(m: Material, courseId?: string, courseName?: string) {
     setActionLoading(true);
     try {
       await updateMaterial(m.id, { status: 'approved', confirmedCourseId: courseId ?? m.suggestedCourseId ?? '', confirmedCourseName: courseName ?? m.suggestedCourseName ?? '' });
@@ -935,6 +948,37 @@ export default function AdminPage() {
                       border: '1px solid rgba(196,160,80,0.3)', borderRadius: 10,
                       color: 'var(--gold)', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
                     }}>🔗 Share with Courses {((selected as any).sharedCourseIds || []).length > 0 ? `(${((selected as any).sharedCourseIds || []).length})` : ''}</button>
+                    {dupWarn && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: 'var(--navy-card)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: '16px', padding: '24px', maxWidth: '420px', width: '100%' }}>
+            <p style={{ fontSize: '1.2rem', marginBottom: '10px' }}>⚠️</p>
+            <p style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fde68a', marginBottom: '10px' }}>This file already exists in the system</p>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '6px' }}>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{dupWarn.existing.fileName}</span> is already approved
+              {dupWarn.existingCourse ? (
+                <> — found in <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{dupWarn.existingCourse.name}</span>,{' '}
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {dupWarn.existingCourse.department.charAt(0).toUpperCase() + dupWarn.existingCourse.department.slice(1)} · Year {dupWarn.existingCourse.year} · Semester {dupWarn.existingCourse.semester}
+                </span></>
+              ) : ' in another course'}.
+            </p>
+            <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '20px' }}>
+              If this material is needed for another course, use <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Share with courses</span> in the Approved panel instead.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setDupWarn(null)}
+                style={{ flex: 1, padding: '10px', borderRadius: '9px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', fontSize: '0.84rem', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={async () => { const w = dupWarn; setDupWarn(null); await doApprove(w.material, w.courseId, w.courseName); }}
+                disabled={actionLoading}
+                style={{ flex: 1, padding: '10px', borderRadius: '9px', border: 'none', background: 'rgba(234,179,8,0.15)', color: '#fde68a', fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer', opacity: actionLoading ? 0.5 : 1 }}>
+                {actionLoading ? 'Approving…' : 'Approve Anyway'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
                     {sharingOpen && (
                       <div style={{ marginTop: 8, padding: 12, background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 8 }}>Select courses to share this material with. It will appear in their Materials panel.</div>
