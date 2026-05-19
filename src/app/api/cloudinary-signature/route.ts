@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
       if (!fileName || !folder || !fileHash) {
         return NextResponse.json({ error: "Missing fields." }, { status: 400 });
       }
+
+      // Hash-based duplicate check (exact same file bytes)
       const existingSnap = await adminDb.collection("materials")
         .where("fileHash", "==", fileHash)
         .limit(1)
@@ -27,11 +29,26 @@ export async function POST(req: NextRequest) {
         const existing = existingSnap.docs[0].data();
         return NextResponse.json({
           duplicate: true,
+          duplicateType: "hash",
           existingId: existingSnap.docs[0].id,
           existingFileName: existing.fileName,
           existingStatus: existing.status,
         }, { status: 409 });
       }
+
+      // Name-based duplicate check
+      const nameSnap = await adminDb.collection("materials")
+        .where("fileName", "==", fileName)
+        .where("status", "in", ["approved", "pending_review", "ocr_pending", "ocr_complete"])
+        .limit(1)
+        .get();
+      if (!nameSnap.empty) {
+        return NextResponse.json({
+          duplicate: true,
+          duplicateType: "name",
+        }, { status: 409 });
+      }
+
       return NextResponse.json({ duplicate: false });
     }
 
@@ -45,7 +62,7 @@ export async function POST(req: NextRequest) {
         Key: key,
         ContentType: mimeType ?? "application/octet-stream",
       }),
-      { expiresIn: 300 } // 5 minutes to complete upload
+      { expiresIn: 300 }
     );
 
     const publicUrl = `${R2_PUBLIC_URL}/${key}`;
