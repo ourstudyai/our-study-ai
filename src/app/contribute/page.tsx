@@ -192,7 +192,7 @@ export default function ContributePage() {
         setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100 } }));
       } catch (err: any) {
         if (err?.duplicate) {
-          setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: 'This file already exists in the system.' } }));
+          setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: err?.data?.duplicateType === 'name' ? 'EXISTS_IN_SYSTEM' : 'This file already exists in the system.' } }));
         } else {
           setCarefulStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 0, error: 'Upload failed. Check your connection and try again.' } }));
         }
@@ -235,7 +235,7 @@ export default function ContributePage() {
         setDetectStatuses(p => ({ ...p, [file.name]: { status: 'done', progress: 100, result: { materialId: result.materialId, detectedStatus: result.status, category: result.category ?? 'other', suggestedCourseName: result.suggestedCourseName ?? null, detectedCourseName: result.detectedCourseName ?? null, confidence: result.confidence ?? 'low', wordCount: result.wordCount ?? 0 } } }));
       } catch (err: any) {
         if (err?.duplicate) {
-          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: 'This file already exists in the system.' } }));
+          setDetectStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 100, error: err?.data?.duplicateType === 'name' ? 'EXISTS_IN_SYSTEM' : 'This file already exists in the system.' } }));
         } else {
           setDetectStatuses(p => ({ ...p, [file.name]: { status: 'error', progress: 0, error: 'Upload failed. Check your connection and try again.' } }));
         }
@@ -411,12 +411,20 @@ export default function ContributePage() {
                               )}
                             </div>
                             {fs?.status === 'error' && fs.error && (
-                              <div style={{ padding: '8px 12px', marginTop: '4px', borderRadius: '8px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                                <p style={{ fontSize: '0.72rem', color: '#fca5a5', marginBottom: '4px' }}>{fs.error}</p>
-                                <button onClick={() => handleReportCareful(file.name, fs.error!)} disabled={fs.reported} style={{ fontSize: '0.7rem', fontWeight: 700, textDecoration: 'underline', background: 'transparent', border: 'none', cursor: 'pointer', color: fs.reported ? '#6b7280' : '#f87171', padding: 0 }}>
-                                  {fs.reported ? 'Reported' : 'Report this issue'}
-                                </button>
-                              </div>
+                              fs.error === 'EXISTS_IN_SYSTEM' ? (
+                                <div style={{ padding: '12px 14px', marginTop: '4px', borderRadius: '10px', background: 'rgba(196,160,80,0.07)', border: '1px solid rgba(196,160,80,0.25)' }}>
+                                  <p style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '6px' }}>This material is already in the system.</p>
+                                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '8px' }}>Thank you for contributing — it looks like this file has already been added. If it's needed for a different course, an admin can share it from among the approved materials.</p>
+                                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Please refresh the page if you have something else to upload.</p>
+                                </div>
+                              ) : (
+                                <div style={{ padding: '8px 12px', marginTop: '4px', borderRadius: '8px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                                  <p style={{ fontSize: '0.72rem', color: '#fca5a5', marginBottom: '4px' }}>{fs.error}</p>
+                                  <button onClick={() => handleReportCareful(file.name, fs.error!)} disabled={fs.reported} style={{ fontSize: '0.7rem', fontWeight: 700, textDecoration: 'underline', background: 'transparent', border: 'none', cursor: 'pointer', color: fs.reported ? '#6b7280' : '#f87171', padding: 0 }}>
+                                    {fs.reported ? 'Reported' : 'Report this issue'}
+                                  </button>
+                                </div>
+                              )
                             )}
                           </div>
                         );
@@ -467,12 +475,20 @@ export default function ContributePage() {
                           </div>
                         )}
                         {fs?.status === 'error' && fs.error && (
-                          <div style={{ padding: '9px 12px', marginTop: '4px', borderRadius: '9px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                            <p style={{ fontSize: '0.72rem', color: '#fca5a5', marginBottom: '6px' }}>{fs.error}</p>
-                            <button onClick={() => handleReportDetect(file.name, fs.error!)} disabled={fs.reported} style={{ fontSize: '0.7rem', fontWeight: 700, textDecoration: 'underline', background: 'transparent', border: 'none', cursor: 'pointer', color: fs.reported ? '#6b7280' : '#f87171', padding: 0 }}>
-                              {fs.reported ? 'Reported' : 'Report this issue'}
-                            </button>
-                          </div>
+                          fs.error === 'EXISTS_IN_SYSTEM' ? (
+                            <div style={{ padding: '12px 14px', marginTop: '4px', borderRadius: '10px', background: 'rgba(196,160,80,0.07)', border: '1px solid rgba(196,160,80,0.25)' }}>
+                              <p style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '6px' }}>This material is already in the system.</p>
+                              <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '8px' }}>Thank you for contributing — it looks like this file has already been added. If it's needed for a different course, an admin can share it from among the approved materials.</p>
+                              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Please refresh the page if you have something else to upload.</p>
+                            </div>
+                          ) : (
+                            <div style={{ padding: '9px 12px', marginTop: '4px', borderRadius: '9px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                              <p style={{ fontSize: '0.72rem', color: '#fca5a5', marginBottom: '6px' }}>{fs.error}</p>
+                              <button onClick={() => handleReportDetect(file.name, fs.error!)} disabled={fs.reported} style={{ fontSize: '0.7rem', fontWeight: 700, textDecoration: 'underline', background: 'transparent', border: 'none', cursor: 'pointer', color: fs.reported ? '#6b7280' : '#f87171', padding: 0 }}>
+                                {fs.reported ? 'Reported' : 'Report this issue'}
+                              </button>
+                            </div>
+                          )
                         )}
                       </div>
                     );
