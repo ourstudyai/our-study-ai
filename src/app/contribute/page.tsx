@@ -906,7 +906,7 @@ export default function ContributePage() {
             marginTop: '56px', opacity: 0.4, letterSpacing: '0.06em',
             fontFamily: 'Playfair Display, Georgia, serif',
           }}>
-            Lux Studiorum · Bigard Memorial Seminary
+            Lux Studiorum · Your Study Aid
           </p>
         </div>
       </div>
