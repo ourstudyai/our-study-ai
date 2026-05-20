@@ -212,15 +212,14 @@ export async function POST(req: NextRequest) {
   const {
     materialId,
     category,
-    extractedText,
     sections: incomingSections,
     startSectionIndex = 0,
     partialTopicTree = [],
     aiSummary: incomingSummary,
   } = JSON.parse(rawBody);
 
-  if (!materialId || !extractedText) {
-    return NextResponse.json({ error: 'Missing materialId or extractedText' }, { status: 400 });
+  if (!materialId) {
+    return NextResponse.json({ error: 'Missing materialId' }, { status: 400 });
   }
 
   const matRef = adminDb.collection('materials').doc(materialId);
@@ -232,35 +231,49 @@ export async function POST(req: NextRequest) {
     let aiSummary: string = incomingSummary || '';
     let sections: HeadingLine[][] = incomingSections || [];
 
+    // Fetch extractedText fresh from sub-document on first hop only
+    let extractedText = '';
     if (startSectionIndex === 0) {
-      // Generate summary
+      const subSnap = await adminDb
+        .collection('materials').doc(materialId)
+        .collection('body').doc('extracted')
+        .get();
+      if (subSnap.exists) {
+        extractedText = subSnap.data()!.extractedText ?? '';
+      } else {
+        // Fallback for old materials
+        const matSnap = await adminDb.collection('materials').doc(materialId).get();
+        extractedText = matSnap.data()?.extractedText ?? '';
+      }
+      if (!extractedText) {
+        await matRef.update({ metaStatus: 'failed' });
+        return NextResponse.json({ error: 'No extracted text found' }, { status: 400 });
+      }
+    }
+
+    if (startSectionIndex === 0) {
       aiSummary = await generateSummary(mistral, extractedText, cat);
 
-      // Save summary immediately so library shows it even before topics complete
       await matRef.update({
         aiSummary,
         metaStatus: 'processing',
         metaGeneratedAt: new Date().toISOString(),
       });
 
-      // For past_questions / aoc — single call, no chaining needed
       if (cat === 'past_questions' || cat === 'aoc') {
         const topicTree = await generateSimpleTopics(mistral, extractedText, cat);
         const contentList = flattenTree(topicTree);
-        await matRef.update({
-          topicTree,
-          contentList,
-          metaStatus: 'done',
-        });
+        await matRef.update({ topicTree, contentList, metaStatus: 'done' });
         console.log(`[generate-metadata] Done for ${materialId} — ${topicTree.length} topics`);
         return NextResponse.json({ ok: true, materialId, topicCount: topicTree.length });
       }
 
-      // Compute sections once — passed to all subsequent hops
       const headings = extractHeadings(extractedText);
       sections = splitIntoSections(headings);
       console.log(`[generate-metadata] ${materialId} — ${sections.length} sections, processing in hops of ${SECTIONS_PER_HOP}`);
     }
+
+      
 
     const totalSections = sections.length;
 
@@ -281,7 +294,6 @@ export async function POST(req: NextRequest) {
       await chainNextHop({
         materialId,
         category: cat,
-        extractedText,
         sections,
         startSectionIndex: nextIndex,
         partialTopicTree: accumulatedTree,
