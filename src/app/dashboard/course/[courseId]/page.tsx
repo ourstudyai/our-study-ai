@@ -28,7 +28,50 @@ interface TopicNode {
   level: number;
   subtopics: TopicNode[];
 }
+function ClickableTopicTree({
+  nodes,
+  depth = 0,
+  onSelect,
+}: {
+  nodes: TopicNode[];
+  depth?: number;
+  onSelect: (title: string) => void;
+}): React.ReactNode {
+  const [collapsed, setCollapsed] = useState<Set<number>>(
+    () => new Set(nodes.map((_, i) => i).filter(() => depth > 0))
+  );
+  const toggle = (i: number) =>
+    setCollapsed(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
 
+  return (
+    <div>
+      {nodes.map((node, i) => {
+        const hasChildren = Array.isArray(node.subtopics) && node.subtopics.length > 0;
+        const isCollapsed = collapsed.has(i);
+        return (
+          <div key={i} style={{ paddingLeft: depth * 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
+              {hasChildren ? (
+                <button onClick={() => toggle(i)} style={{ flexShrink: 0, background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--text-muted)', fontSize: '0.55rem', lineHeight: 1, display: 'inline-flex', alignItems: 'center', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▾</button>
+              ) : (
+                <span style={{ width: '14px', flexShrink: 0 }} />
+              )}
+              <button
+                onClick={() => onSelect(node.title)}
+                style={{ flex: 1, textAlign: 'left', padding: '5px 9px', borderRadius: '7px', background: 'var(--navy)', border: depth === 0 ? '1px solid rgba(196,160,80,0.25)' : '1px solid var(--border)', color: depth === 0 ? 'var(--text-primary)' : depth === 1 ? 'var(--text-secondary)' : 'var(--text-muted)', fontSize: depth === 0 ? '0.78rem' : depth === 1 ? '0.74rem' : '0.7rem', fontWeight: depth === 0 ? 600 : depth === 1 ? 500 : 400, cursor: 'pointer', lineHeight: 1.4 }}
+              >
+                {node.title}
+              </button>
+            </div>
+            {hasChildren && !isCollapsed && (
+              <ClickableTopicTree nodes={node.subtopics} depth={depth + 1} onSelect={onSelect} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 function flattenTree(nodes: TopicNode[]): string[] {
   const result: string[] = [];
   for (const node of nodes) {
@@ -698,111 +741,13 @@ export default function CoursePage() {
     finally { setSessionSaving(false); }
   };
 
-  // ── Clickable accordion topic tree for the Topics Drawer ──────────────────
-  // Each node shows a click-to-ask button. Nodes with children are collapsible.
-  // Children are collapsed by default at depth > 0 to keep the panel scannable.
-  const ClickableTopicTree = ({
-    nodes,
-    depth = 0,
-  }: {
-    nodes: TopicNode[];
-    depth?: number;
-  }): React.ReactNode => {
-    const [collapsed, setCollapsed] = useState<Set<number>>(
-      () => new Set(nodes.map((_, i) => i).filter(() => depth > 0))
-    );
-    const toggle = (i: number) =>
-      setCollapsed(s => {
-        const n = new Set(s);
-        n.has(i) ? n.delete(i) : n.add(i);
-        return n;
-      });
-
-    return (
-      <div>
-        {nodes.map((node, i) => {
-          const hasChildren =
-            Array.isArray(node.subtopics) && node.subtopics.length > 0;
-          const isCollapsed = collapsed.has(i);
-          const indent = depth * 10;
-
-          return (
-            <div key={i} style={{ paddingLeft: indent }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
-                {/* Collapse toggle */}
-                {hasChildren && (
-                  <button
-                    onClick={() => toggle(i)}
-                    style={{
-                      flexShrink: 0,
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: '0 2px',
-                      color: 'var(--text-muted)',
-                      fontSize: '0.55rem',
-                      lineHeight: 1,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      transition: 'transform 0.15s',
-                      transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-                    }}
-                  >
-                    ▾
-                  </button>
-                )}
-                {!hasChildren && <span style={{ width: '14px', flexShrink: 0 }} />}
-
-                {/* Topic button */}
-                <button
-                  onClick={() => {
-                    sendMessage(
-                      '[TOPIC:' + node.title + '] Explain this topic: "' + node.title + '"'
-                    );
-                    setTopicsOpen(false);
-                  }}
-                  style={{
-                    flex: 1,
-                    textAlign: 'left',
-                    padding: '5px 9px',
-                    borderRadius: '7px',
-                    background: 'var(--navy)',
-                    border: depth === 0
-                      ? '1px solid rgba(196,160,80,0.25)'
-                      : '1px solid var(--border)',
-                    color:
-                      depth === 0
-                        ? 'var(--text-primary)'
-                        : depth === 1
-                        ? 'var(--text-secondary)'
-                        : 'var(--text-muted)',
-                    fontSize: depth === 0 ? '0.78rem' : depth === 1 ? '0.74rem' : '0.7rem',
-                    fontWeight: depth === 0 ? 600 : depth === 1 ? 500 : 400,
-                    cursor: 'pointer',
-                    lineHeight: 1.4,
-                  }}
-                >
-                  {node.title}
-                </button>
-              </div>
-
-              {hasChildren && !isCollapsed && (
-                <ClickableTopicTree nodes={node.subtopics} depth={depth + 1} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
   const loadTopics = async () => {
     if (!courseId) return;
     setTopicsLoading(true);
     try {
       const [ownSnap, sharedSnap] = await Promise.all([
-        getDocs(query(collection(db, 'materials'), where('confirmedCourseId', '==', courseId), where('status', '==', 'approved'))),
-        getDocs(query(collection(db, 'materials'), where('sharedCourseIds', 'array-contains', courseId), where('status', '==', 'approved'))),
+        getDocs(query(collection(db, 'materials'), where('confirmedCourseId', '==', courseId), where('indexed', '==', true))),
+        getDocs(query(collection(db, 'materials'), where('sharedCourseIds', 'array-contains', courseId), where('indexed', '==', true))),
       ]);
       const seen = new Set<string>();
       const allDocs = [...ownSnap.docs, ...sharedSnap.docs].filter(d => {
@@ -1432,7 +1377,14 @@ boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
                     {/* Tree or flat list */}
                     <div style={{ padding: '8px 10px' }}>
                       {mat.tree.length > 0 ? (
-                        <ClickableTopicTree nodes={mat.tree} depth={0} />
+                        <ClickableTopicTree
+                          nodes={mat.tree}
+                          depth={0}
+                          onSelect={(title) => {
+                            sendMessage(`[TOPIC:${title}] Explain this topic: "${title}"`);
+                            setTopicsOpen(false);
+                          }}
+                        />
                       ) : (
                         mat.items.map((item, j) => (
                           <button
