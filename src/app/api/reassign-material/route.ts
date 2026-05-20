@@ -101,25 +101,36 @@ export async function POST(req: NextRequest) {
     const mat = (await matRef.get()).data();
     if (!mat) return NextResponse.json({ error: 'Material not found' }, { status: 404 });
 
-    const oldChunks = await adminDb.collection('material_chunks').where('materialId', '==', materialId).where('deleted', '!=', true).get();
-    const batch = adminDb.batch();
-    oldChunks.docs.forEach(d => batch.update(d.ref, { deleted: true }));
-    batch.update(matRef, { confirmedCourseId: courseId, confirmedCourseName: courseName, updatedAt: FieldValue.serverTimestamp() });
-    await batch.commit();
+    // Update course assignment
+    await matRef.update({
+      confirmedCourseId: courseId,
+      confirmedCourseName: courseName,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
+    // Re-chunk into Qdrant — read from sub-document, fallback to parent doc
     await deleteChunksByMaterial(materialId);
 
-    if (mat.extractedText) {
-      const chunks = semanticChunk(stripTOC(mat.extractedText));
-      const cb = adminDb.batch();
-      chunks.forEach((chunk, idx) => {
-        const r = adminDb.collection('material_chunks').doc();
-        cb.set(r, { materialId, courseId, category: (mat.category ?? 'general') as MaterialCategory, chunkIndex: idx, text: chunk.text, heading: chunk.heading, headingLevel: chunk.headingLevel, ancestorHeadings: chunk.ancestorHeadings, fullPath: chunk.fullPath, wordCount: chunk.wordCount, deleted: false, createdAt: FieldValue.serverTimestamp() });
-      });
-      await cb.commit();
-      await upsertChunks(chunks.map((chunk, i) => ({ id: `${materialId}-${i}`, payload: { materialId, courseId, chunkIndex: i, heading: chunk.heading, fullPath: chunk.fullPath, ancestorHeadings: chunk.ancestorHeadings, text: chunk.text, category: mat.category ?? 'general' } })));
+    const bodySnap = await matRef.collection('body').doc('extracted').get();
+    const extractedText: string = bodySnap.exists
+      ? bodySnap.data()!.extractedText ?? ''
+      : mat.extractedText ?? '';
+
+    if (extractedText) {
+      const chunks = semanticChunk(stripTOC(extractedText));
+      await upsertChunks(
+        chunks.map((chunk, i) => ({
+          id: `${materialId}-${i}`,
+          payload: {
+            materialId, courseId, chunkIndex: i,
+            heading: chunk.heading, fullPath: chunk.fullPath,
+            ancestorHeadings: chunk.ancestorHeadings,
+            text: chunk.text, category: mat.category ?? 'general',
+          },
+        }))
+      );
       await matRef.update({ indexed: true, status: 'approved' });
-      console.log(`[reassign] ${chunks.length} semantic chunks written for ${materialId}`);
+      console.log(`[reassign] ${chunks.length} chunks upserted for ${materialId}`);
     }
     return NextResponse.json({ success: true });
   } catch (e: any) {
