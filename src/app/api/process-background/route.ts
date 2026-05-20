@@ -86,8 +86,8 @@ export async function POST(req: NextRequest) {
 
     if (extraction.method === "ocr_pending") finalStatus = "ocr_pending";
 
+    // Lean parent doc — no extractedText
     await adminDb.collection("materials").doc(materialId).update({
-      extractedText: extraction.text,
       wordCount: extraction.wordCount,
       pageCount: extraction.pageCount ?? 0,
       isScanned: extraction.isScanned,
@@ -100,6 +100,14 @@ export async function POST(req: NextRequest) {
       classifierReason: classification.reason,
       status: finalStatus as any,
     });
+
+    // Heavy text → sub-document
+    if (extraction.text) {
+      await adminDb
+        .collection("materials").doc(materialId)
+        .collection("body").doc("extracted")
+        .set({ extractedText: extraction.text, updatedAt: new Date().toISOString() });
+    }
 
     try {
       await fetch(`https://our-study-ai.vercel.app/api/notify-admins`, {
