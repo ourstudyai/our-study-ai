@@ -258,6 +258,8 @@ export default function LibraryPage() {
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [fullTextViewer, setFullTextViewer] = useState<{ fileName: string; text: string } | null>(null);
+  const [bodyCache, setBodyCache] = useState<Record<string, string>>({});
+  const [bodyFetching, setBodyFetching] = useState<string | null>(null);
 
   const [shelfView, setShelfView] = useState<Record<string, 'spine' | 'list'>>({});
   const [shelfCollapsed, setShelfCollapsed] = useState<Set<string>>(new Set());
@@ -318,6 +320,19 @@ export default function LibraryPage() {
     setViewed(next);
     localStorage.setItem('sjr_viewed', JSON.stringify(Array.from(next)));
   }
+async function fetchBody(materialId: string): Promise<string> {
+    if (bodyCache[materialId]) return bodyCache[materialId];
+    setBodyFetching(materialId);
+    try {
+      const res = await fetch('/api/material-body?materialId=' + encodeURIComponent(materialId));
+      const { extractedText } = await res.json();
+      const text = extractedText ?? '';
+      setBodyCache(c => ({ ...c, [materialId]: text }));
+      return text;
+    } finally {
+      setBodyFetching(null);
+    }
+  }
 
   async function toggleBookmark(m: IndexedMaterial) {
     if (!firebaseUser) return;
@@ -331,9 +346,10 @@ export default function LibraryPage() {
     }
   }
 
-  function handleDownloadTxt(m: IndexedMaterial) {
-    if (!m.extractedText) return;
-    const html = buildHtmlDoc(m.indexDisplayName || m.fileName, m.confirmedCourseName ?? '', m.extractedText, false);
+  async function handleDownloadTxt(m: IndexedMaterial) {
+    const text = await fetchBody(m.id);
+    if (!text) return;
+    const html = buildHtmlDoc(m.indexDisplayName || m.fileName, m.confirmedCourseName ?? '', text, false);
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -343,9 +359,10 @@ export default function LibraryPage() {
     URL.revokeObjectURL(url);
   }
 
-  function handleDownloadPdf(m: IndexedMaterial) {
-    if (!m.extractedText) return;
-    const html = buildHtmlDoc(m.indexDisplayName || m.fileName, m.confirmedCourseName ?? '', m.extractedText, true);
+  async function handleDownloadPdf(m: IndexedMaterial) {
+    const text = await fetchBody(m.id);
+    if (!text) return;
+    const html = buildHtmlDoc(m.indexDisplayName || m.fileName, m.confirmedCourseName ?? '', text, true);
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const win = window.open(url, '_blank');
@@ -576,14 +593,18 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {m.extractedText && (
-          <div style={{ marginBottom: '12px' }}>
-            <button onClick={() => setFullTextViewer({ fileName: m.indexDisplayName || m.fileName, text: m.extractedText! })}
-              style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '7px 14px', color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer' }}>
-              📄 View full text ↗
-            </button>
-          </div>
-        )}
+        <div style={{ marginBottom: '12px' }}>
+          <button
+            onClick={async () => {
+              const text = await fetchBody(m.id);
+              if (text) setFullTextViewer({ fileName: m.indexDisplayName || m.fileName, text });
+            }}
+            disabled={bodyFetching === m.id}
+            style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '7px 14px', color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer' }}
+          >
+            {bodyFetching === m.id ? '⏳ Loading…' : '📄 View full text ↗'}
+          </button>
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {m.confirmedCourseId && (
