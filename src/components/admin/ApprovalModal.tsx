@@ -15,7 +15,17 @@ interface Props {
 
 export default function ApprovalModal({ material, courses, onClose, onDone }: Props) {
 
-  const [ocrText, setOcrText] = useState(material.extractedText || '');
+  const [ocrText, setOcrText] = useState('');
+  const [bodyLoading, setBodyLoading] = useState(true);
+
+  useEffect(() => {
+    setBodyLoading(true);
+    fetch('/api/material-body?materialId=' + encodeURIComponent(material.id))
+      .then(r => r.json())
+      .then(d => setOcrText(d.extractedText ?? ''))
+      .catch(() => setOcrText(''))
+      .finally(() => setBodyLoading(false));
+  }, [material.id]);
   const [selectedCourseId, setSelectedCourseId] = useState((material as any).suggestedCourseId || '');
   const [category, setCategory] = useState(material.category || 'other');
   const [displayName, setDisplayName] = useState(material.fileName || '');
@@ -242,13 +252,19 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
               <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Extracted Text (editable)</span>
               <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{ocrText.split(/\s+/).filter(Boolean).length} words</span>
             </div>
-            <textarea
-              ref={textRef}
-              onScroll={handleTextScroll}
-              value={ocrText}
-              onChange={e => setOcrText(e.target.value)}
-              style={{ flex: 1, ...inp, resize: 'none', lineHeight: 1.7, fontFamily: 'monospace', fontSize: '0.75rem' }}
-            />
+            {bodyLoading ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading text…</p>
+              </div>
+            ) : (
+              <textarea
+                ref={textRef}
+                onScroll={handleTextScroll}
+                value={ocrText}
+                onChange={e => setOcrText(e.target.value)}
+                style={{ flex: 1, ...inp, resize: 'none', lineHeight: 1.7, fontFamily: 'monospace', fontSize: '0.75rem' }}
+              />
+            )}
           </div>
 
           <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', maxHeight: '320px' }}>
