@@ -324,7 +324,6 @@ export async function POST(req: NextRequest) {
       confirmedCourseId: courseId,
       confirmedCourseName: courseName,
       category,
-      extractedText,
       indexed: shouldIndex,
       indexedAt: shouldIndex ? new Date().toISOString() : null,
       indexDisplayName: indexDisplayName || null,
@@ -335,6 +334,11 @@ export async function POST(req: NextRequest) {
       updatedAt: new Date().toISOString(),
       metaStatus: shouldIndex ? 'pending' : null,
     });
+    // Heavy text → sub-document
+    await adminDb
+      .collection('materials').doc(materialId)
+      .collection('body').doc('extracted')
+      .set({ extractedText, updatedAt: new Date().toISOString() });
 
     // ── Fire metadata generation via QStash ───────────────────────────────
     // Replaces the broken cookieless fetch to index-material that always
@@ -347,7 +351,7 @@ export async function POST(req: NextRequest) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.QSTASH_TOKEN}`,
         },
-        body: JSON.stringify({ materialId, category, extractedText }),
+        body: JSON.stringify({ materialId, category }),
       });
       console.log(`[reindex] metadata generation enqueued for ${materialId}`);
     }
