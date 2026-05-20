@@ -488,42 +488,22 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
                 )}
 
                 {/* View full text */}
-                {m.extractedText ? (
-                  <button
-                    onClick={() =>
-                      onOpenViewer('material-text', {
-                        fileName: displayName,
-                        extractedText: m.extractedText,
-                      })
-                    }
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '7px',
-                      border: '1px solid var(--border)',
-                      background: 'transparent',
-                      color: 'var(--text-secondary)',
-                      fontSize: '0.75rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span>📝 View full text</span>
-                    <span style={{ fontSize: '0.65rem' }}>↗</span>
-                  </button>
-                ) : (
-                  <p
-                    style={{
-                      fontSize: '0.72rem',
-                      color: 'var(--text-muted)',
-                      padding: '4px',
-                    }}
-                  >
-                    No extracted text available.
-                  </p>
-                )}
+                <button
+                  onClick={async () => {
+                    const res = await fetch('/api/material-body?materialId=' + encodeURIComponent(m.id));
+                    const { extractedText } = await res.json();
+                    if (extractedText) onOpenViewer('material-text', { fileName: displayName, extractedText });
+                  }}
+                  style={{
+                    width: '100%', padding: '8px 10px', borderRadius: '7px',
+                    border: '1px solid var(--border)', background: 'transparent',
+                    color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}
+                >
+                  <span>📝 View full text</span>
+                  <span style={{ fontSize: '0.65rem' }}>↗</span>
+                </button>
 
                 {/* Generated PDF */}
                 {hasGeneratedPdf && (
