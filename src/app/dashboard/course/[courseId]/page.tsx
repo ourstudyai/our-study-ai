@@ -52,9 +52,31 @@ function ClickableTopicTree({
           <div key={i} style={{ paddingLeft: depth * 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
               {hasChildren ? (
-                <button onClick={() => toggle(i)} style={{ flexShrink: 0, background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--text-muted)', fontSize: '0.55rem', lineHeight: 1, display: 'inline-flex', alignItems: 'center', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▾</button>
+                <button
+                  onClick={e => { e.stopPropagation(); toggle(i); }}
+                  style={{
+                    flexShrink: 0,
+                    background: 'rgba(196,160,80,0.08)',
+                    border: '1px solid rgba(196,160,80,0.15)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    padding: '6px 8px',
+                    color: 'var(--text-muted)',
+                    fontSize: '0.65rem',
+                    lineHeight: 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: '28px',
+                    minHeight: '28px',
+                    transition: 'transform 0.15s',
+                    transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                  }}
+                >
+                  ▾
+                </button>
               ) : (
-                <span style={{ width: '14px', flexShrink: 0 }} />
+                <span style={{ width: '28px', flexShrink: 0 }} />
               )}
               <button
                 onClick={() => onSelect(node.title)}
