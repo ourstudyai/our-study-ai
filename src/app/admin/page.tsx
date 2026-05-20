@@ -466,6 +466,8 @@ export default function AdminPage() {
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [reassigning, setReassigning] = useState<string | null>(null);
   const [reassignCourseId, setReassignCourseId] = useState('');
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   async function handleReassign(materialId: string, courseId: string, courseName: string) {
     try {
@@ -498,7 +500,15 @@ export default function AdminPage() {
       setCourses(cSnap.docs.map(d => ({ id: d.id, ...d.data() } as Course)));
     } finally { setLoading(false); }
   }, [isAdmin]);
-
+useEffect(() => {
+    if (!selected) { setPreviewText(null); return; }
+    setPreviewLoading(true);
+    fetch('/api/material-body?materialId=' + encodeURIComponent(selected.id))
+      .then(r => r.json())
+      .then(d => setPreviewText(d.extractedText ?? null))
+      .catch(() => setPreviewText(null))
+      .finally(() => setPreviewLoading(false));
+  }, [selected?.id]);
   useEffect(() => {
     if (authLoading) return;
     if (!firebaseUser) { router.replace('/login'); return; }
@@ -846,14 +856,17 @@ export default function AdminPage() {
                   {selected.classifierReason && <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2 }}>{selected.classifierReason}</p>}
                 </div>
               )}
-              {selected.extractedText && (
-                <div style={{ marginBottom: 14 }}>
-                  <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Extracted Text Preview</p>
-                  <div style={{ background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', maxHeight: 200, overflowY: 'auto', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
-                    {selected.extractedText.slice(0, 1200).replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/^-\s/gm, '• ')}{selected.extractedText.length > 1200 ? '…' : ''}
-                  </div>
-                </div>
-              )}
+              <div style={{ marginBottom: 14 }}>
+                <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Extracted Text Preview</p>
+                {previewLoading
+                  ? <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Loading…</p>
+                  : previewText
+                    ? <div style={{ background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', maxHeight: 200, overflowY: 'auto', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                        {previewText.slice(0, 1200).replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/^-\s/gm, '• ')}{previewText.length > 1200 ? '…' : ''}
+                      </div>
+                    : <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No extracted text.</p>
+                }
+              </div>
               <div style={{ marginBottom: 16 }}>
                 <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Assign to Course</p>
                 <CourseSelector
@@ -873,11 +886,13 @@ export default function AdminPage() {
                     {actionLoading ? 'Approving…' : '✓ Approve'}
                   </button>
                 )}
-                {selected.status === 'approved' && selected.extractedText && (
+                {selected.status === 'approved' && (
                   <button onClick={async () => {
                     if (!window.confirm('Re-index this material? Old chunks will be replaced.')) return;
                     setActionLoading(true);
                     try {
+                      const { extractedText } = await fetch('/api/material-body?materialId=' + encodeURIComponent(selected.id)).then(r => r.json());
+                      if (!extractedText) { alert('❌ No extracted text found.'); return; }
                       const res = await fetch('/api/admin/reindex-material', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -886,7 +901,7 @@ export default function AdminPage() {
                           courseId: selected.confirmedCourseId ?? selected.suggestedCourseId ?? '',
                           courseName: selected.confirmedCourseName ?? selected.suggestedCourseName ?? '',
                           category: selected.category,
-                          extractedText: selected.extractedText,
+                          extractedText,
                           shouldIndex: true,
                         }),
                       });
@@ -907,25 +922,20 @@ export default function AdminPage() {
                     if (refreshLoading) return;
                     setRefreshLoading(true);
                     try {
-                      const matSnap = await (await import('firebase/firestore')).getDoc(
-        (await import('firebase/firestore')).doc(
-          (await import('@/lib/firebase/config')).db, 'materials', selected.id
-        )
-      );
-      const matData = matSnap.data();
-      if (!matData?.extractedText) { alert('❌ No extracted text found for this material.'); return; }
-      const res = await fetch('/api/admin/reindex-material', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          materialId: selected.id,
-          courseId: selected.confirmedCourseId ?? selected.suggestedCourseId ?? '',
-          courseName: selected.confirmedCourseName ?? selected.suggestedCourseName ?? '',
-          category: selected.category,
-          extractedText: matData.extractedText,
-          shouldIndex: true,
-        }),
-      });
+                      const { extractedText } = await fetch('/api/material-body?materialId=' + encodeURIComponent(selected.id)).then(r => r.json());
+                      if (!extractedText) { alert('❌ No extracted text found for this material.'); return; }
+                      const res = await fetch('/api/admin/reindex-material', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          materialId: selected.id,
+                          courseId: selected.confirmedCourseId ?? selected.suggestedCourseId ?? '',
+                          courseName: selected.confirmedCourseName ?? selected.suggestedCourseName ?? '',
+                          category: selected.category,
+                          extractedText,
+                          shouldIndex: true,
+                        }),
+                      });
       const d = await res.json();
       if (res.ok) { alert('✅ Topics refresh queued successfully.'); }
       else { alert('❌ Failed: ' + (d.error || `Status ${res.status}`)); }
