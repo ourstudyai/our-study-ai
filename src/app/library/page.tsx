@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import AppNav from '@/components/AppNav';
@@ -92,70 +95,37 @@ function Inline({ text }: { text: string }) {
 
 // ── Full markdown renderer ───────────────────────────────────────────────────
 function MarkdownBody({ text }: { text: string }) {
-  const lines = text.split('\n');
-  const nodes: React.ReactNode[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-    if (line.trim() === '') { i++; continue; }
-
-    if (line.startsWith('# ')) {
-      nodes.push(<h1 key={i} style={{ fontFamily: FONT, fontSize: '1.15rem', fontWeight: 700, color: 'var(--gold)', marginTop: '24px', marginBottom: '8px', lineHeight: 1.4, borderBottom: '1px solid rgba(196,160,80,0.25)', paddingBottom: '6px' }}><Inline text={line.slice(2)} /></h1>);
-      i++; continue;
-    }
-    if (line.startsWith('## ')) {
-      nodes.push(<h2 key={i} style={{ fontFamily: FONT, fontSize: '1rem', fontWeight: 700, color: 'var(--gold)', marginTop: '20px', marginBottom: '6px', lineHeight: 1.4, opacity: 0.9 }}><Inline text={line.slice(3)} /></h2>);
-      i++; continue;
-    }
-    if (line.startsWith('### ')) {
-      nodes.push(<h3 key={i} style={{ fontFamily: FONT, fontSize: '0.93rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '16px', marginBottom: '4px', lineHeight: 1.4 }}><Inline text={line.slice(4)} /></h3>);
-      i++; continue;
-    }
-    if (line.startsWith('#### ')) {
-      nodes.push(<h4 key={i} style={{ fontFamily: FONT, fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: '12px', marginBottom: '4px', fontStyle: 'italic' }}><Inline text={line.slice(5)} /></h4>);
-      i++; continue;
-    }
-    if (/^[-*_]{3,}$/.test(line.trim())) {
-      nodes.push(<hr key={i} style={{ border: 'none', borderTop: '1px solid rgba(196,160,80,0.2)', margin: '16px 0' }} />);
-      i++; continue;
-    }
-    if (line.trimStart().startsWith('- ') || line.trimStart().startsWith('* ')) {
-      const items: React.ReactNode[] = [];
-      while (i < lines.length && (lines[i].trimStart().startsWith('- ') || lines[i].trimStart().startsWith('* '))) {
-        const indent = lines[i].search(/\S/);
-        const content = lines[i].trimStart().slice(2);
-        items.push(<li key={i} style={{ paddingLeft: indent > 0 ? '12px' : '0', marginBottom: '3px' }}><Inline text={content} /></li>);
-        i++;
-      }
-      nodes.push(<ul key={`ul${i}`} style={{ paddingLeft: '20px', margin: '6px 0 10px', listStyleType: 'disc', fontSize: '0.85rem', lineHeight: 1.85, color: 'var(--text-primary)', fontFamily: FONT }}>{items}</ul>);
-      continue;
-    }
-    if (/^\d+\.\s/.test(line.trimStart())) {
-      const items: React.ReactNode[] = [];
-      while (i < lines.length && /^\d+\.\s/.test(lines[i].trimStart())) {
-        const content = lines[i].trimStart().replace(/^\d+\.\s/, '');
-        items.push(<li key={i} style={{ marginBottom: '3px' }}><Inline text={content} /></li>);
-        i++;
-      }
-      nodes.push(<ol key={`ol${i}`} style={{ paddingLeft: '24px', margin: '6px 0 10px', fontSize: '0.85rem', lineHeight: 1.85, color: 'var(--text-primary)', fontFamily: FONT }}>{items}</ol>);
-      continue;
-    }
-    const paraLines: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() !== '' &&
-      !lines[i].startsWith('#') &&
-      !lines[i].trimStart().startsWith('- ') &&
-      !lines[i].trimStart().startsWith('* ') &&
-      !/^\d+\.\s/.test(lines[i].trimStart()) &&
-      !/^[-*_]{3,}$/.test(lines[i].trim())
-    ) { paraLines.push(lines[i]); i++; }
-    if (paraLines.length > 0) {
-      nodes.push(<p key={`p${i}`} style={{ fontFamily: FONT, fontSize: '0.85rem', lineHeight: 1.9, color: 'var(--text-primary)', marginBottom: '10px' }}><Inline text={paraLines.join(' ')} /></p>);
-    }
-  }
-  return <>{nodes}</>;
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      components={{
+        h1: ({ children }) => <h1 style={{ fontFamily: FONT, fontSize: '1.15rem', fontWeight: 700, color: 'var(--gold)', marginTop: '24px', marginBottom: '8px', lineHeight: 1.4, borderBottom: '1px solid rgba(196,160,80,0.25)', paddingBottom: '6px' }}>{children}</h1>,
+        h2: ({ children }) => <h2 style={{ fontFamily: FONT, fontSize: '1rem', fontWeight: 700, color: 'var(--gold)', marginTop: '20px', marginBottom: '6px', lineHeight: 1.4, opacity: 0.9 }}>{children}</h2>,
+        h3: ({ children }) => <h3 style={{ fontFamily: FONT, fontSize: '0.93rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '16px', marginBottom: '4px', lineHeight: 1.4 }}>{children}</h3>,
+        h4: ({ children }) => <h4 style={{ fontFamily: FONT, fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: '12px', marginBottom: '4px', fontStyle: 'italic' }}>{children}</h4>,
+        p: ({ children }) => <p style={{ fontFamily: FONT, fontSize: '0.85rem', lineHeight: 1.9, color: 'var(--text-primary)', marginBottom: '10px' }}>{children}</p>,
+        strong: ({ children }) => <strong style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{children}</strong>,
+        em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
+        ul: ({ children }) => <ul style={{ paddingLeft: '20px', margin: '6px 0 10px', listStyleType: 'disc', fontSize: '0.85rem', lineHeight: 1.85, color: 'var(--text-primary)', fontFamily: FONT }}>{children}</ul>,
+        ol: ({ children }) => <ol style={{ paddingLeft: '24px', margin: '6px 0 10px', fontSize: '0.85rem', lineHeight: 1.85, color: 'var(--text-primary)', fontFamily: FONT }}>{children}</ol>,
+        li: ({ children }) => <li style={{ marginBottom: '3px' }}>{children}</li>,
+        hr: () => <hr style={{ border: 'none', borderTop: '1px solid rgba(196,160,80,0.2)', margin: '16px 0' }} />,
+        blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid rgba(196,160,80,0.4)', paddingLeft: '1rem', margin: '0.8rem 0', color: 'var(--text-secondary)', fontStyle: 'italic', fontFamily: FONT }}>{children}</blockquote>,
+        table: ({ children }) => (
+          <div style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.82rem', fontFamily: FONT }}>{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead style={{ background: 'rgba(196,160,80,0.1)' }}>{children}</thead>,
+        tbody: ({ children }) => <tbody>{children}</tbody>,
+        tr: ({ children }) => <tr style={{ borderBottom: '1px solid rgba(196,160,80,0.15)' }}>{children}</tr>,
+        th: ({ children }) => <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--gold)', borderBottom: '2px solid rgba(196,160,80,0.35)', whiteSpace: 'nowrap' }}>{children}</th>,
+        td: ({ children }) => <td style={{ padding: '7px 12px', color: 'var(--text-primary)', verticalAlign: 'top' }}>{children}</td>,
+      }}
+    >
+      {text}
+    </ReactMarkdown>
+  );
 }
 
 // ── Downloads ────────────────────────────────────────────────────────────────
@@ -187,6 +157,25 @@ function buildHtmlDoc(title: string, course: string, text: string, asPdf: boolea
       }
       htmlLines.push('</ol>'); continue;
     }
+    // table — detect | ... | rows
+    if (l.trimStart().startsWith('|')) {
+      htmlLines.push('<table>');
+      let isHeader = true;
+      while (i < lines.length && lines[i].trimStart().startsWith('|')) {
+        const row = lines[i];
+        // skip separator rows like |---|---|
+        if (/^\|[\s\-:|]+\|/.test(row)) { isHeader = false; i++; continue; }
+        const cells = row.split('|').slice(1, -1).map(c => c.trim());
+        if (isHeader) {
+          htmlLines.push('<thead><tr>' + cells.map(c => `<th>${esc(c)}</th>`).join('') + '</tr></thead><tbody>');
+          isHeader = false;
+        } else {
+          htmlLines.push('<tr>' + cells.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>');
+        }
+        i++;
+      }
+      htmlLines.push('</tbody></table>'); continue;
+    }
     // inline bold/italic
     const inline = esc(l)
       .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
@@ -213,6 +202,10 @@ function buildHtmlDoc(title: string, course: string, text: string, asPdf: boolea
     ul,ol{padding-left:24px;margin:6px 0 10px;}
     li{margin-bottom:3px;}
     hr{border:none;border-top:1px solid #c4a050;margin:16px 0;}
+    table{border-collapse:collapse;width:100%;margin:12px 0 16px;font-size:10.5pt;}
+    th{padding:7px 12px;text-align:left;font-weight:700;color:#7a6020;border-bottom:2px solid #c4a050;background:#fdf8ee;white-space:nowrap;}
+    td{padding:6px 12px;border-bottom:1px solid #e8dfc8;vertical-align:top;}
+    tr:nth-child(even) td{background:#fdfaf4;}
     .title-block{margin-bottom:20px;}
     .course{font-size:10pt;color:#666;font-style:italic;margin-bottom:4px;}
     .divider{border:none;border-top:1px solid #c4a050;margin:16px 0 24px;}
