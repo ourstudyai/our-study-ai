@@ -1,5 +1,8 @@
 'use client';
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 
 type ViewerMode = 'past-questions' | 'aoc' | 'material-text' | 'note';
 
@@ -31,86 +34,38 @@ function Inline({ text }: { text: string }) {
 
 // ── Full markdown renderer ───────────────────────────────────────────────────
 function MarkdownBody({ text }: { text: string }) {
-  const lines = text.split('\n');
-  const nodes: React.ReactNode[] = [];
-  let i = 0;
-
   const font = "'Noto Serif', 'Noto Serif Hebrew', 'Noto Serif Thai', Georgia, serif";
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.trim() === '') { i++; continue; }
-
-    if (line.startsWith('# ')) {
-      nodes.push(<h1 key={i} style={{ fontFamily: font, fontSize: '1.15rem', fontWeight: 700, color: 'var(--gold)', marginTop: '24px', marginBottom: '8px', lineHeight: 1.4, borderBottom: '1px solid rgba(196,160,80,0.25)', paddingBottom: '6px' }}><Inline text={line.slice(2)} /></h1>);
-      i++; continue;
-    }
-    if (line.startsWith('## ')) {
-      nodes.push(<h2 key={i} style={{ fontFamily: font, fontSize: '1rem', fontWeight: 700, color: 'var(--gold)', marginTop: '20px', marginBottom: '6px', lineHeight: 1.4, opacity: 0.9 }}><Inline text={line.slice(3)} /></h2>);
-      i++; continue;
-    }
-    if (line.startsWith('### ')) {
-      nodes.push(<h3 key={i} style={{ fontFamily: font, fontSize: '0.93rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '16px', marginBottom: '4px', lineHeight: 1.4 }}><Inline text={line.slice(4)} /></h3>);
-      i++; continue;
-    }
-    if (line.startsWith('#### ')) {
-      nodes.push(<h4 key={i} style={{ fontFamily: font, fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: '12px', marginBottom: '4px', fontStyle: 'italic' }}><Inline text={line.slice(5)} /></h4>);
-      i++; continue;
-    }
-
-    if (/^[-*_]{3,}$/.test(line.trim())) {
-      nodes.push(<hr key={i} style={{ border: 'none', borderTop: '1px solid rgba(196,160,80,0.2)', margin: '16px 0' }} />);
-      i++; continue;
-    }
-
-    if (line.trimStart().startsWith('- ') || line.trimStart().startsWith('* ')) {
-      const items: React.ReactNode[] = [];
-      while (i < lines.length && (lines[i].trimStart().startsWith('- ') || lines[i].trimStart().startsWith('* '))) {
-        const indent = lines[i].search(/\S/);
-        const content = lines[i].trimStart().slice(2);
-        items.push(<li key={i} style={{ paddingLeft: indent > 0 ? '12px' : '0', marginBottom: '3px' }}><Inline text={content} /></li>);
-        i++;
-      }
-      nodes.push(<ul key={`ul${i}`} style={{ paddingLeft: '20px', margin: '6px 0 10px', listStyleType: 'disc', fontSize: '0.85rem', lineHeight: 1.85, color: 'var(--text-primary)', fontFamily: font }}>{items}</ul>);
-      continue;
-    }
-
-    if (/^\d+\.\s/.test(line.trimStart())) {
-      const items: React.ReactNode[] = [];
-      while (i < lines.length && /^\d+\.\s/.test(lines[i].trimStart())) {
-        const content = lines[i].trimStart().replace(/^\d+\.\s/, '');
-        items.push(<li key={i} style={{ marginBottom: '3px' }}><Inline text={content} /></li>);
-        i++;
-      }
-      nodes.push(<ol key={`ol${i}`} style={{ paddingLeft: '24px', margin: '6px 0 10px', fontSize: '0.85rem', lineHeight: 1.85, color: 'var(--text-primary)', fontFamily: font }}>{items}</ol>);
-      continue;
-    }
-
-    // paragraph — collect consecutive plain lines
-    const paraLines: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() !== '' &&
-      !lines[i].startsWith('#') &&
-      !lines[i].trimStart().startsWith('- ') &&
-      !lines[i].trimStart().startsWith('* ') &&
-      !/^\d+\.\s/.test(lines[i].trimStart()) &&
-      !/^[-*_]{3,}$/.test(lines[i].trim())
-    ) {
-      paraLines.push(lines[i]);
-      i++;
-    }
-    if (paraLines.length > 0) {
-      nodes.push(
-        <p key={`p${i}`} style={{ fontFamily: font, fontSize: '0.85rem', lineHeight: 1.9, color: 'var(--text-primary)', marginBottom: '10px' }}>
-          <Inline text={paraLines.join(' ')} />
-        </p>
-      );
-    }
-  }
-
-  return <>{nodes}</>;
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      components={{
+        h1: ({ children }) => <h1 style={{ fontFamily: font, fontSize: '1.15rem', fontWeight: 700, color: 'var(--gold)', marginTop: '24px', marginBottom: '8px', lineHeight: 1.4, borderBottom: '1px solid rgba(196,160,80,0.25)', paddingBottom: '6px' }}>{children}</h1>,
+        h2: ({ children }) => <h2 style={{ fontFamily: font, fontSize: '1rem', fontWeight: 700, color: 'var(--gold)', marginTop: '20px', marginBottom: '6px', lineHeight: 1.4, opacity: 0.9 }}>{children}</h2>,
+        h3: ({ children }) => <h3 style={{ fontFamily: font, fontSize: '0.93rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '16px', marginBottom: '4px', lineHeight: 1.4 }}>{children}</h3>,
+        h4: ({ children }) => <h4 style={{ fontFamily: font, fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: '12px', marginBottom: '4px', fontStyle: 'italic' }}>{children}</h4>,
+        p: ({ children }) => <p style={{ fontFamily: font, fontSize: '0.85rem', lineHeight: 1.9, color: 'var(--text-primary)', marginBottom: '10px' }}>{children}</p>,
+        strong: ({ children }) => <strong style={{ fontWeight: 700 }}>{children}</strong>,
+        em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
+        ul: ({ children }) => <ul style={{ paddingLeft: '20px', margin: '6px 0 10px', listStyleType: 'disc', fontSize: '0.85rem', lineHeight: 1.85, color: 'var(--text-primary)', fontFamily: font }}>{children}</ul>,
+        ol: ({ children }) => <ol style={{ paddingLeft: '24px', margin: '6px 0 10px', fontSize: '0.85rem', lineHeight: 1.85, color: 'var(--text-primary)', fontFamily: font }}>{children}</ol>,
+        li: ({ children }) => <li style={{ marginBottom: '3px' }}>{children}</li>,
+        hr: () => <hr style={{ border: 'none', borderTop: '1px solid rgba(196,160,80,0.2)', margin: '16px 0' }} />,
+        blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid rgba(196,160,80,0.4)', paddingLeft: '1rem', margin: '0.8rem 0', color: 'var(--text-secondary)', fontStyle: 'italic', fontFamily: font }}>{children}</blockquote>,
+        table: ({ children }) => (
+          <div style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.82rem', fontFamily: font }}>{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead style={{ background: 'rgba(196,160,80,0.1)' }}>{children}</thead>,
+        tbody: ({ children }) => <tbody>{children}</tbody>,
+        tr: ({ children }) => <tr style={{ borderBottom: '1px solid rgba(196,160,80,0.15)' }}>{children}</tr>,
+        th: ({ children }) => <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--gold)', borderBottom: '2px solid rgba(196,160,80,0.35)', whiteSpace: 'nowrap' }}>{children}</th>,
+        td: ({ children }) => <td style={{ padding: '7px 12px', color: 'var(--text-primary)', verticalAlign: 'top' }}>{children}</td>,
+      }}
+    >
+      {text}
+    </ReactMarkdown>
+  );
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
