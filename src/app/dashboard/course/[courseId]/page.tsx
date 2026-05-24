@@ -586,7 +586,7 @@ function LoadingCard() {
   return (
     <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', marginBottom: '12px' }}>
       <div style={{
-        maxWidth: '82%', borderRadius: '16px', padding: '16px 20px',
+        maxWidth: '96%', borderRadius: '16px', padding: '16px 20px',
         background: 'var(--navy-card)',
         border: `1px solid ${phaseColor}`,
         boxShadow: `0 0 12px ${phaseColor}33`,
@@ -855,8 +855,7 @@ export default function CoursePage() {
     if (!el) return;
     const onScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = el;
-      const distFromBottom = scrollHeight - scrollTop - clientHeight;
-      setShowScrollDown(distFromBottom > 120);
+      setShowScrollDown(scrollHeight - scrollTop - clientHeight > 120);
       setShowScrollUp(scrollTop > 80);
     };
     el.addEventListener('scroll', onScroll, { passive: true });
@@ -963,19 +962,6 @@ export default function CoursePage() {
   ];
 
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
-
-  const floatBtnStyle: React.CSSProperties = {
-    width: '40px', height: '40px',
-    background: 'transparent',
-    border: 'none',
-    color: 'var(--gold)',
-    fontSize: '1.6rem',
-    fontWeight: 700,
-    cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    opacity: 0.6,
-    transition: 'opacity 0.2s',
-  };
 
   return (
     <div className='flex flex-col w-full' style={{ height: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', overflow: 'hidden', maxWidth: '100vw' }}>
@@ -1098,13 +1084,14 @@ export default function CoursePage() {
               <div key={i} ref={el => { userMsgRefs.current[i] = el; }} style={{ width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                   <div style={{
-                    maxWidth: '82%', wordBreak: 'break-word',
-                    borderRadius: '16px', padding: '10px 16px',
+                    maxWidth: '96%', wordBreak: 'break-word',
+                    borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px',
+                    padding: '10px 16px',
                     fontSize: 'var(--ai-font-size, 18px)',
                     background: msg.role === 'user' ? 'var(--gold-dim)' : 'var(--navy-card)',
-color: 'var(--text-primary)',
-border: msg.role === 'user' ? '1px solid var(--border-strong)' : '1px solid var(--border)',
-boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
+                    color: 'var(--text-primary)',
+                    border: msg.role === 'user' ? '1px solid var(--border-strong)' : '1px solid var(--border)',
+                    boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
                   }}>
                     {msg.role === 'assistant' ? <MarkdownRenderer content={msg.content} /> : msg.content}
                   </div>
@@ -1130,23 +1117,64 @@ boxShadow: msg.role === 'user' ? 'var(--shadow-gold)' : 'var(--shadow-card)',
             {isAiLoading && !streamingMessage && <LoadingCard />}
             {streamingMessage && (
               <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
-                <div style={{ maxWidth: '82%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
+                <div style={{ maxWidth: '96%', wordBreak: 'break-word', borderRadius: '16px', padding: '10px 16px', fontSize: 'var(--ai-font-size, 18px)', background: 'var(--navy-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
                   <MarkdownRenderer content={streamingMessage} />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Floating scroll buttons */}
-          {(showScrollUp || showScrollDown) && (
-            <div style={{ position: 'fixed', right: 14, top: '42vh', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 14, zIndex: 999 }}>
-              {showScrollUp && (
-                <button onClick={scrollToTop} style={{ ...floatBtnStyle, position: 'static' }} title='Scroll to top'>↑</button>
-              )}
-              {showScrollDown && (
-                <button onClick={scrollToBottom} style={{ ...floatBtnStyle, position: 'static' }} title='Scroll to bottom'>↓</button>
-              )}
-            </div>
+          {/* Scroll up button — near top, only when scrolled down */}
+          {showScrollUp && (
+            <button
+              onClick={scrollToTop}
+              style={{
+                position: 'fixed',
+                top: 72,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 999,
+                background: 'var(--navy-card)',
+                border: '1px solid var(--border)',
+                borderRadius: '50%',
+                width: 36,
+                height: 36,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                color: 'var(--text-secondary)',
+                fontSize: '1rem',
+                opacity: 0.85,
+              }}
+            >↑</button>
+          )}
+          {/* Scroll down button — near bottom, only when more content below */}
+          {showScrollDown && (
+            <button
+              onClick={scrollToBottom}
+              style={{
+                position: 'fixed',
+                bottom: 90,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 999,
+                background: 'var(--navy-card)',
+                border: '1px solid var(--border)',
+                borderRadius: '50%',
+                width: 36,
+                height: 36,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                color: 'var(--text-secondary)',
+                fontSize: '1rem',
+                opacity: 0.85,
+              }}
+            >↓</button>
           )}
 
           {/* INPUT */}
