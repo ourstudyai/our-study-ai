@@ -1112,9 +1112,15 @@ export default function CoursePage() {
                 </div>
               </div>
             )}
+          {/* Scroll up button */}
+            {showScrollUp && (
+              <button onClick={scrollToTop} style={{ position: 'sticky', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 999, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.4)', color: 'var(--text-secondary)', fontSize: '1rem', opacity: 0.85, marginLeft: 'auto', marginRight: 'auto' }}>↑</button>
+            )}
+            {/* Scroll down button */}
+            {showScrollDown && (
+              <button onClick={scrollToBottom} style={{ position: 'sticky', bottom: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 999, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.4)', color: 'var(--text-secondary)', fontSize: '1rem', opacity: 0.85, marginLeft: 'auto', marginRight: 'auto' }}>↓</button>
+            )}
           </div>
-
-          {/* Scroll up button — near top, only when scrolled down */}
           {showScrollUp && (
             <button
               onClick={scrollToTop}
