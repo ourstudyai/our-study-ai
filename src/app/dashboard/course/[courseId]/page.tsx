@@ -398,17 +398,7 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
 
           {showTTSSettings && (
             <div style={{
-              position: 'fixed',
-              bottom: '100px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 300,
-              width: 'min(280px, 90vw)',
-              background: 'var(--navy-card)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: '16px',
-              boxShadow: '0 0 0 1px var(--border), 0 24px 64px rgba(0,0,0,0.6), 0 0 32px var(--gold-glow)',
-              overflow: 'hidden',
+              position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 300, width: 'min(280px, 90vw)', background: 'var(--navy-card)', border: '1px solid var(--border-strong)', borderRadius: '16px', boxShadow: '0 0 0 1px var(--border)', overflow: 'hidden',
             }}>
               {/* Header */}
               <div style={{
@@ -1036,7 +1026,7 @@ export default function CoursePage() {
           <div
             ref={chatContainerRef}
             className='flex-1 overflow-y-auto'
-            style={{ padding: '12px 16px', overflowX: 'hidden' }}
+            style={{ padding: '12px 16px', overflowX: 'hidden', position: 'relative' }}
           >
             {isEmpty && (
               <div style={{ height: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
@@ -1129,11 +1119,7 @@ export default function CoursePage() {
             <button
               onClick={scrollToTop}
               style={{
-                position: 'fixed',
-                top: 72,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 999,
+                position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 999,
                 background: 'var(--navy-card)',
                 border: '1px solid var(--border)',
                 borderRadius: '50%',
@@ -1155,11 +1141,7 @@ export default function CoursePage() {
             <button
               onClick={scrollToBottom}
               style={{
-                position: 'fixed',
-                bottom: 90,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 999,
+                position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 999,
                 background: 'var(--navy-card)',
                 border: '1px solid var(--border)',
                 borderRadius: '50%',
