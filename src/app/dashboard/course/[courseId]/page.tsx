@@ -953,7 +953,7 @@ export default function CoursePage() {
 
   const isEmpty = chatHistory.length === 0 && !streamingMessage;
 
-  return (
+   return (
     <div className='flex flex-col w-full' style={{ height: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', overflow: 'hidden', maxWidth: '100vw' }}>
 
       {/* TOP BAR */}
@@ -1022,11 +1022,11 @@ export default function CoursePage() {
         {/* Chat area */}
         <div className='flex flex-col min-h-0' style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
 
-          {/* Messages */}
+          {/* Messages — scrollable container */}
           <div
             ref={chatContainerRef}
             className='flex-1 overflow-y-auto'
-            style={{ padding: '12px 16px', overflowX: 'hidden', position: 'relative' }}
+            style={{ padding: '12px 16px', overflowX: 'hidden' }}
           >
             {isEmpty && (
               <div style={{ height: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
@@ -1041,11 +1041,7 @@ export default function CoursePage() {
                       animation: 'lux-logo-glow 3s ease-in-out infinite',
                     }}
                   />
-                  <p style={{
-                    fontFamily: 'Playfair Display, Georgia, serif',
-                    fontWeight: 700, fontSize: '1rem',
-                    color: 'var(--gold)', marginBottom: '6px', lineHeight: 1.3,
-                  }}>
+                  <p style={{ fontFamily: 'Playfair Display, Georgia, serif', fontWeight: 700, fontSize: '1rem', color: 'var(--gold)', marginBottom: '6px', lineHeight: 1.3 }}>
                     {course.name}
                   </p>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '10px' }}>
@@ -1070,6 +1066,7 @@ export default function CoursePage() {
                 `}</style>
               </div>
             )}
+
             {chatHistory.map((msg, i) => (
               <div key={i} ref={el => { userMsgRefs.current[i] = el; }} style={{ width: '100%', overflowX: 'hidden', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
@@ -1112,55 +1109,32 @@ export default function CoursePage() {
                 </div>
               </div>
             )}
-          {/* Scroll up button */}
-            {showScrollUp && (
-              <button onClick={scrollToTop} style={{ position: 'sticky', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 999, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.4)', color: 'var(--text-secondary)', fontSize: '1rem', opacity: 0.85, marginLeft: 'auto', marginRight: 'auto' }}>↑</button>
-            )}
-            {/* Scroll down button */}
-            {showScrollDown && (
-              <button onClick={scrollToBottom} style={{ position: 'sticky', bottom: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 999, background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.4)', color: 'var(--text-secondary)', fontSize: '1rem', opacity: 0.85, marginLeft: 'auto', marginRight: 'auto' }}>↓</button>
-            )}
           </div>
+          {/* END messages div — scroll buttons live here, outside scroll div, inside position:relative wrapper */}
+
           {showScrollUp && (
             <button
               onClick={scrollToTop}
               style={{
-                position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 999,
-                background: 'var(--navy-card)',
-                border: '1px solid var(--border)',
-                borderRadius: '50%',
-                width: 36,
-                height: 36,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                color: 'var(--text-secondary)',
-                fontSize: '1rem',
-                opacity: 0.85,
+                position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
+                zIndex: 20, background: 'var(--navy-card)', border: '1px solid var(--border)',
+                borderRadius: '50%', width: 36, height: 36, display: 'flex',
+                alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.4)', color: 'var(--text-secondary)',
+                fontSize: '1rem', opacity: 0.85,
               }}
             >↑</button>
           )}
-          {/* Scroll down button — near bottom, only when more content below */}
           {showScrollDown && (
             <button
               onClick={scrollToBottom}
               style={{
-                position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 999,
-                background: 'var(--navy-card)',
-                border: '1px solid var(--border)',
-                borderRadius: '50%',
-                width: 36,
-                height: 36,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                color: 'var(--text-secondary)',
-                fontSize: '1rem',
-                opacity: 0.85,
+                position: 'absolute', bottom: 70, left: '50%', transform: 'translateX(-50%)',
+                zIndex: 20, background: 'var(--navy-card)', border: '1px solid var(--border)',
+                borderRadius: '50%', width: 36, height: 36, display: 'flex',
+                alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.4)', color: 'var(--text-secondary)',
+                fontSize: '1rem', opacity: 0.85,
               }}
             >↓</button>
           )}
@@ -1316,159 +1290,42 @@ export default function CoursePage() {
 
       {/* TOPICS DRAWER */}
       {topicsOpen && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)' }}
-          onClick={() => setTopicsOpen(false)}
-        >
-          <div
-            style={{
-              position: 'absolute', top: 0, right: 0, bottom: 0,
-              width: 'min(320px, 92vw)',
-              background: 'var(--navy-card)',
-              borderLeft: '1px solid var(--border)',
-              display: 'flex', flexDirection: 'column',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div
-              style={{
-                padding: '14px 16px',
-                borderBottom: '1px solid var(--border)',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                flexShrink: 0,
-                background: 'var(--navy-soft)',
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: 'Playfair Display, serif',
-                  fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem',
-                }}
-              >
-                📋 Course Topics
-              </span>
-              <button
-                onClick={() => setTopicsOpen(false)}
-                style={{
-                  background: 'transparent', border: 'none',
-                  color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer',
-                }}
-              >
-                ✕
-              </button>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)' }} onClick={() => setTopicsOpen(false)}>
+          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(320px, 92vw)', background: 'var(--navy-card)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'var(--navy-soft)' }}>
+              <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem' }}>📋 Course Topics</span>
+              <button onClick={() => setTopicsOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.1rem', cursor: 'pointer' }}>✕</button>
             </div>
-
-            {/* Helper hint */}
-            <div
-              style={{
-                padding: '7px 16px 6px',
-                borderBottom: '1px solid var(--border)',
-                flexShrink: 0,
-                background: 'rgba(196,160,80,0.03)',
-              }}
-            >
-              <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Tap any topic to ask the AI about it
-              </p>
+            <div style={{ padding: '7px 16px 6px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'rgba(196,160,80,0.03)' }}>
+              <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Tap any topic to ask the AI about it</p>
             </div>
-
-            {/* Body */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
-              {topicsLoading && (
-                <p
-                  style={{
-                    color: 'var(--text-muted)', fontSize: '0.8rem',
-                    textAlign: 'center', padding: '32px 0',
-                  }}
-                >
-                  Loading…
-                </p>
-              )}
+              {topicsLoading && <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '32px 0' }}>Loading…</p>}
               {!topicsLoading && topics.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '32px 0' }}>
                   <p style={{ fontSize: '1.6rem', marginBottom: '8px' }}>📭</p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                    No topics extracted yet.
-                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No topics extracted yet.</p>
                 </div>
               )}
-              {!topicsLoading &&
-                topics.map((mat, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      marginBottom: '20px',
-                      background: 'rgba(196,160,80,0.02)',
-                      border: '1px solid rgba(196,160,80,0.08)',
-                      borderRadius: '10px',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {/* Material label */}
-                    <div
-                      style={{
-                        padding: '6px 10px',
-                        borderBottom: '1px solid rgba(196,160,80,0.1)',
-                        background: 'rgba(196,160,80,0.05)',
-                      }}
-                    >
-                      <p
-                        style={{
-                          fontSize: '0.6rem',
-                          fontWeight: 700,
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                          color: 'var(--gold)',
-                          opacity: 0.7,
-                        }}
-                      >
-                        {mat.materialName}
-                      </p>
-                    </div>
-
-                    {/* Tree or flat list */}
-                    <div style={{ padding: '8px 10px' }}>
-                      {mat.tree.length > 0 ? (
-                        <ClickableTopicTree
-                          nodes={mat.tree}
-                          depth={0}
-                          onSelect={(title) => {
-                            sendMessage(`[TOPIC:${title}] Explain this topic: "${title}"`);
-                            setTopicsOpen(false);
-                          }}
-                        />
-                      ) : (
-                        mat.items.map((item, j) => (
-                          <button
-                            key={j}
-                            onClick={() => {
-                              sendMessage(
-                                '[TOPIC:' + item + '] Explain this topic: "' + item + '"'
-                              );
-                              setTopicsOpen(false);
-                            }}
-                            style={{
-                              display: 'block',
-                              width: '100%',
-                              textAlign: 'left',
-                              padding: '6px 10px',
-                              borderRadius: '7px',
-                              background: 'var(--navy)',
-                              border: '1px solid var(--border)',
-                              color: 'var(--text-secondary)',
-                              fontSize: '0.76rem',
-                              cursor: 'pointer',
-                              marginBottom: '3px',
-                            }}
-                          >
-                            {item}
-                          </button>
-                        ))
-                      )}
-                    </div>
+              {!topicsLoading && topics.map((mat, i) => (
+                <div key={i} style={{ marginBottom: '20px', background: 'rgba(196,160,80,0.02)', border: '1px solid rgba(196,160,80,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ padding: '6px 10px', borderBottom: '1px solid rgba(196,160,80,0.1)', background: 'rgba(196,160,80,0.05)' }}>
+                    <p style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.7 }}>{mat.materialName}</p>
                   </div>
-                ))}
+                  <div style={{ padding: '8px 10px' }}>
+                    {mat.tree.length > 0 ? (
+                      <ClickableTopicTree nodes={mat.tree} depth={0} onSelect={(title) => { sendMessage(`[TOPIC:${title}] Explain this topic: "${title}"`); setTopicsOpen(false); }} />
+                    ) : (
+                      mat.items.map((item, j) => (
+                        <button key={j} onClick={() => { sendMessage('[TOPIC:' + item + '] Explain this topic: "' + item + '"'); setTopicsOpen(false); }}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', borderRadius: '7px', background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '0.76rem', cursor: 'pointer', marginBottom: '3px' }}>
+                          {item}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1487,20 +1344,11 @@ export default function CoursePage() {
 
       {/* HISTORY OVERLAY */}
       {historyOverlayOpen && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.65)', display: 'flex', flexDirection: 'column' }}
-          onClick={() => setHistoryOverlayOpen(false)}
-        >
-          <div
-            style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '300px', maxWidth: '90vw', background: 'var(--navy-card)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-            onClick={e => e.stopPropagation()}
-          >
+        <div style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.65)', display: 'flex', flexDirection: 'column' }} onClick={() => setHistoryOverlayOpen(false)}>
+          <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '300px', maxWidth: '90vw', background: 'var(--navy-card)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--navy-soft)' }}>
               <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.95rem' }}>🕐 Session History</span>
-              <button
-                onClick={() => setHistoryOverlayOpen(false)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1 }}
-              >✕</button>
+              <button onClick={() => setHistoryOverlayOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
               <StudyMemoryPanel courseId={courseId} chatHistory={chatHistory} defaultSection="history" />
