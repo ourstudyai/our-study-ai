@@ -3,10 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getFilteredCourses, getAllCourses } from '@/lib/firestore/courses';
+import { getFilteredCourses } from '@/lib/firestore/courses';
 import { Course, Department } from '@/lib/types';
 import MiniLoader from '@/components/MiniLoader';
-import LuxLoader from '@/components/LuxLoader';
 import { db } from '@/lib/firebase/config';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 
@@ -38,7 +37,6 @@ export default function DashboardPage() {
   const [activeYear, setActiveYear] = useState<number>(userYear);
   const [activeSemester, setActiveSemester] = useState<number>(userProfile?.currentSemester ?? 1);
   const [courses, setCourses] = useState<Course[]>([]);
-  const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [timetable, setTimetable] = useState<any>(null);
@@ -59,10 +57,6 @@ export default function DashboardPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [activeDept, activeYear, activeSemester]);
-
-  useEffect(() => {
-    getAllCourses().then(setAllCourses).catch(console.error);
-  }, []);
 
   useEffect(() => {
     if (!userProfile?.department || !userProfile?.year) return;
