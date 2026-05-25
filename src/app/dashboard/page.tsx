@@ -39,7 +39,6 @@ export default function DashboardPage() {
   const [activeSemester, setActiveSemester] = useState<number>(userProfile?.currentSemester ?? 1);
   const [courses, setCourses] = useState<Course[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
-  const [showAll, setShowAll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [timetable, setTimetable] = useState<any>(null);
