@@ -170,6 +170,7 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [topicsOpen, setTopicsOpen] = useState<Set<string>>(new Set());
   const [fetchingUrl, setFetchingUrl] = useState<string | null>(null);
+  const [viewerLoading, setViewerLoading] = useState<string | null>(null);
   const [fileUrls, setFileUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -490,9 +491,14 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
                 {/* View full text */}
                 <button
                   onClick={async () => {
-                    const res = await fetch('/api/material-body?materialId=' + encodeURIComponent(m.id));
-                    const { extractedText } = await res.json();
-                    if (extractedText) onOpenViewer('material-text', { fileName: displayName, extractedText });
+                  setViewerLoading(m.id);
+                    try {
+                      const res = await fetch('/api/material-body?materialId=' + encodeURIComponent(m.id));
+                      const { extractedText } = await res.json();
+                      if (extractedText) onOpenViewer('material-text', { fileName: displayName, extractedText });
+                    } finally {
+                      setViewerLoading(null);
+                    }
                   }}
                   style={{
                     width: '100%', padding: '8px 10px', borderRadius: '7px',
@@ -501,14 +507,15 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   }}
                 >
-                  <span>📝 View full text</span>
+                  <span>{viewerLoading === m.id ? '⏳ Loading…' : '📝 View full text'}</span>
                   <span style={{ fontSize: '0.65rem' }}>↗</span>
                 </button>
 
                 {/* Generated PDF */}
                 {hasGeneratedPdf && (
                   <button
-                    onClick={async () => {
+                  disabled={viewerLoading === m.id}
+                  onClick={async () => {
                       const url = await getGeneratedPdfUrl(m);
                       if (url) window.open(url, '_blank');
                     }}
