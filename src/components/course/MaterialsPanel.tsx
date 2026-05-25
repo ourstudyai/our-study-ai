@@ -490,6 +490,7 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
 
                 {/* View full text */}
                 <button
+                  disabled={viewerLoading === m.id}
                   onClick={async () => {
                   setViewerLoading(m.id);
                     try {
@@ -514,7 +515,6 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
                 {/* Generated PDF */}
                 {hasGeneratedPdf && (
                   <button
-                  disabled={viewerLoading === m.id}
                   onClick={async () => {
                       const url = await getGeneratedPdfUrl(m);
                       if (url) window.open(url, '_blank');
