@@ -468,6 +468,8 @@ export default function AdminPage() {
   const [reassignCourseId, setReassignCourseId] = useState('');
   const [previewText, setPreviewText] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [deleteConfirmMaterial, setDeleteConfirmMaterial] = useState<Material | null>(null);
+  const [reviewConfirmMaterial, setReviewConfirmMaterial] = useState<Material | null>(null);
 
   async function handleReassign(materialId: string, courseId: string, courseName: string) {
     try {
@@ -575,7 +577,7 @@ useEffect(() => {
   }
 
   async function handleDelete(m: Material) {
-    if (!window.confirm('Permanently delete this material?')) return;
+    setDeleteConfirmMaterial(null);
     setActionLoading(true);
     try {
       const res = await fetch('/api/admin/delete-material', {
@@ -631,6 +633,7 @@ useEffect(() => {
           <UploadsPanel
             uploads={filterAndSort(uploads)}
             onRefresh={load}
+            onDelete={handleDelete}
             firebaseUser={firebaseUser}
           />
         )}
@@ -1036,22 +1039,14 @@ useEffect(() => {
                     color: '#fca5a5', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
                   }}>⚠ Quarantine</button>
                 )}
-                {selected.status === 'quarantined' && (
-                  <button onClick={async () => {
-                    if (!window.confirm('Send this material back to review?')) return;
-                    setActionLoading(true);
-                    try {
-                      await updateDoc(doc(db, 'materials', selected.id), { status: 'pending_review', updatedAt: new Date().toISOString() });
-                      load();
-                      setSelected(null);
-                    } finally { setActionLoading(false); }
-                  }} disabled={actionLoading} style={{
+                {(selected.status === 'quarantined' || selected.status === 'approved' || selected.status === 'indexed') && (
+                  <button onClick={() => setReviewConfirmMaterial(selected)} disabled={actionLoading} style={{
                     width: '100%', padding: '10px', background: 'transparent',
                     border: '1px solid rgba(234,179,8,0.4)', borderRadius: 10,
                     color: '#fde68a', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
                   }}>↩ Send Back to Review</button>
                 )}
-                <button onClick={() => handleDelete(selected)} disabled={actionLoading} style={{
+                <button onClick={() => setDeleteConfirmMaterial(selected)} disabled={actionLoading} style={{
                   width: '100%', padding: '10px', background: 'transparent',
                   border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10,
                   color: '#ef4444', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
@@ -1069,6 +1064,117 @@ useEffect(() => {
           onClose={() => { setApprovalOpen(false); setSelected(null); }}
           onDone={() => { setApprovalOpen(false); setSelected(null); load(); }}
         />
+      )}
+
+      {reviewConfirmMaterial && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 10001,
+          background: 'rgba(5,10,24,0.88)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div style={{
+            background: 'var(--navy-card)',
+            border: '1px solid rgba(234,179,8,0.3)',
+            borderRadius: 16, padding: '28px 24px',
+            maxWidth: 340, width: '100%',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+          }}>
+            <p style={{ fontSize: '1.6rem', textAlign: 'center', marginBottom: 12 }}>↩</p>
+            <p style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 8 }}>
+              Send back to review?
+            </p>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textAlign: 'center', lineHeight: 1.5, marginBottom: 6 }}>
+              {reviewConfirmMaterial.indexDisplayName || reviewConfirmMaterial.fileName}
+            </p>
+            <p style={{ fontSize: '0.74rem', color: '#fde68a', textAlign: 'center', lineHeight: 1.6, marginBottom: 24 }}>
+              This material will be hidden from students and moved back to the uploads queue for editing and re-approval.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setReviewConfirmMaterial(null)}
+                style={{
+                  flex: 1, padding: '11px', background: 'transparent',
+                  border: '1px solid var(--border)', borderRadius: 10,
+                  color: 'var(--text-muted)', fontSize: '0.84rem',
+                  cursor: 'pointer', fontWeight: 600,
+                }}
+              >Cancel</button>
+              <button
+                onClick={async () => {
+                  setActionLoading(true);
+                  try {
+                    await updateDoc(doc(db, 'materials', reviewConfirmMaterial.id), {
+                      status: 'pending_review',
+                      updatedAt: new Date().toISOString(),
+                    });
+                    load();
+                    setSelected(null);
+                    setReviewConfirmMaterial(null);
+                  } finally { setActionLoading(false); }
+                }}
+                disabled={actionLoading}
+                style={{
+                  flex: 1, padding: '11px',
+                  background: 'rgba(234,179,8,0.15)',
+                  border: '1px solid rgba(234,179,8,0.4)',
+                  borderRadius: 10, color: '#fde68a',
+                  fontSize: '0.84rem', fontWeight: 700,
+                  cursor: 'pointer', opacity: actionLoading ? 0.6 : 1,
+                }}
+              >{actionLoading ? 'Moving…' : 'Send to review'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmMaterial && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 10001,
+          background: 'rgba(5,10,24,0.88)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div style={{
+            background: 'var(--navy-card)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            borderRadius: 16, padding: '28px 24px',
+            maxWidth: 340, width: '100%',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+          }}>
+            <p style={{ fontSize: '1.6rem', textAlign: 'center', marginBottom: 12 }}>🗑️</p>
+            <p style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 8 }}>
+              Delete permanently?
+            </p>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textAlign: 'center', lineHeight: 1.5, marginBottom: 6 }}>
+              {deleteConfirmMaterial.indexDisplayName || deleteConfirmMaterial.fileName}
+            </p>
+            <p style={{ fontSize: '0.74rem', color: '#fca5a5', textAlign: 'center', lineHeight: 1.6, marginBottom: 24 }}>
+              Removes the file from storage, all extracted text, and all indexed chunks. Cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteConfirmMaterial(null)}
+                style={{
+                  flex: 1, padding: '11px', background: 'transparent',
+                  border: '1px solid var(--border)', borderRadius: 10,
+                  color: 'var(--text-muted)', fontSize: '0.84rem',
+                  cursor: 'pointer', fontWeight: 600,
+                }}
+              >Cancel</button>
+              <button
+                onClick={() => handleDelete(deleteConfirmMaterial)}
+                disabled={actionLoading}
+                style={{
+                  flex: 1, padding: '11px', background: '#ef4444',
+                  border: 'none', borderRadius: 10, color: 'white',
+                  fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer',
+                  opacity: actionLoading ? 0.6 : 1,
+                }}
+              >{actionLoading ? 'Deleting…' : 'Delete permanently'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </AppNav>
   );
@@ -1121,7 +1227,8 @@ function ReassignPicker({ courses, defaultCourseId, onConfirm, onCancel }: {
   const [dept, setDept] = useState('');
   const [year, setYear] = useState('');
   const [sem, setSem] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch]         = useState('');
+  const [deleteConfirmMaterial, setDeleteConfirmMaterial] = useState<Material | null>(null);
   const [selectedId, setSelectedId] = useState(defaultCourseId);
 
   const depts = Array.from(new Set(courses.map(c => c.department))).sort();
