@@ -18,14 +18,25 @@ export async function POST(req: NextRequest) {
 
     const { materialId, publicId } = await req.json();
     if (!materialId) return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
-    // Delete chunks using adminDb (client SDK has no auth in server context)
+
+    // 1. Delete Qdrant chunks
     const { deleteChunksByMaterial } = await import('@/lib/qdrant/upsert');
     await deleteChunksByMaterial(materialId);
+
+    // 2. Delete R2 file
     if (publicId) {
       try { await r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: publicId })); }
       catch (err) { console.warn("[delete-material] R2 delete failed:", err); }
     }
+
+    // 3. Delete body sub-document (may not exist for older materials — ignore error)
+    try {
+      await adminDb.collection("materials").doc(materialId).collection("body").doc("extracted").delete();
+    } catch {}
+
+    // 4. Delete parent Firestore doc
     await adminDb.collection("materials").doc(materialId).delete();
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[delete-material]", err);
