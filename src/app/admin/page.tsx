@@ -1085,7 +1085,7 @@ useEffect(() => {
               Send back to review?
             </p>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textAlign: 'center', lineHeight: 1.5, marginBottom: 6 }}>
-              {reviewConfirmMaterial.indexDisplayName || reviewConfirmMaterial.fileName}
+              {reviewConfirmMaterial.fileName}
             </p>
             <p style={{ fontSize: '0.74rem', color: '#fde68a', textAlign: 'center', lineHeight: 1.6, marginBottom: 24 }}>
               This material will be hidden from students and moved back to the uploads queue for editing and re-approval.
@@ -1147,7 +1147,7 @@ useEffect(() => {
               Delete permanently?
             </p>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textAlign: 'center', lineHeight: 1.5, marginBottom: 6 }}>
-              {deleteConfirmMaterial.indexDisplayName || deleteConfirmMaterial.fileName}
+              {deleteConfirmMaterial.fileName}
             </p>
             <p style={{ fontSize: '0.74rem', color: '#fca5a5', textAlign: 'center', lineHeight: 1.6, marginBottom: 24 }}>
               Removes the file from storage, all extracted text, and all indexed chunks. Cannot be undone.
