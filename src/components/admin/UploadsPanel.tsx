@@ -6,6 +6,7 @@ import { Material } from '@/lib/firestore/materials';
 interface Props {
   uploads: Material[];
   onRefresh: () => void;
+  onDelete: (m: Material) => Promise<void>;
   firebaseUser: any;
 }
 
@@ -21,17 +22,19 @@ function isPreviewable(mimeType?: string) {
   return mimeType === 'application/pdf' || mimeType.startsWith('image/');
 }
 
-function ocrWarning(mimeType?: string, fileName?: string) {
+function ocrWarning(mimeType?: string) {
   const isPdf = mimeType === 'application/pdf';
   const isImage = mimeType?.startsWith('image/');
   if (isPdf || isImage) return 'This will consume processing credits. Only proceed if the file is worth indexing.';
   return 'Only proceed if the file is worth indexing.';
 }
 
-export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props) {
+export default function UploadsPanel({ uploads, onRefresh, onDelete, firebaseUser }: Props) {
   const [previewMaterial, setPreviewMaterial] = useState<Material | null>(null);
   const [ocrLoading, setOcrLoading] = useState<string | null>(null);
   const [confirmMaterialId, setConfirmMaterialId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   async function triggerOcr(materialId: string) {
     setOcrLoading(materialId);
@@ -58,12 +61,24 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
     }
   }
 
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await onDelete(deleteTarget);
+      setDeleteTarget(null);
+      onRefresh();
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
   const confirmMaterial = uploads.find(u => u.id === confirmMaterialId);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
-      {/* In-app confirm modal */}
+      {/* OCR confirm modal */}
       {confirmMaterialId && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 10000,
@@ -80,7 +95,7 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
               Send to OCR?
             </p>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.6, marginBottom: 20 }}>
-              {ocrWarning(confirmMaterial?.mimeType, confirmMaterial?.fileName)}
+              {ocrWarning(confirmMaterial?.mimeType)}
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
@@ -90,9 +105,7 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
                   border: '1px solid var(--border)', borderRadius: 10,
                   color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer',
                 }}
-              >
-                Cancel
-              </button>
+              >Cancel</button>
               <button
                 onClick={() => triggerOcr(confirmMaterialId)}
                 style={{
@@ -100,9 +113,57 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
                   border: 'none', borderRadius: 10,
                   color: '#0a0f1e', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
                 }}
-              >
-                Proceed
-              </button>
+              >Proceed</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm modal */}
+      {deleteTarget && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 10001,
+          background: 'rgba(5,10,24,0.88)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div style={{
+            background: 'var(--navy-card)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            borderRadius: 16, padding: '28px 24px',
+            maxWidth: 340, width: '100%',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+          }}>
+            <p style={{ fontSize: '1.6rem', textAlign: 'center', marginBottom: 12 }}>🗑️</p>
+            <p style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 8 }}>
+              Delete this material?
+            </p>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 6, lineHeight: 1.5 }}>
+              {deleteTarget.fileName}
+            </p>
+            <p style={{ fontSize: '0.74rem', color: '#fca5a5', textAlign: 'center', lineHeight: 1.6, marginBottom: 24 }}>
+              This permanently removes the file from storage and Firestore. Cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                style={{
+                  flex: 1, padding: '11px', background: 'transparent',
+                  border: '1px solid var(--border)', borderRadius: 10,
+                  color: 'var(--text-muted)', fontSize: '0.84rem',
+                  cursor: 'pointer', fontWeight: 600,
+                }}
+              >Cancel</button>
+              <button
+                onClick={handleDelete}
+                disabled={deleteLoading}
+                style={{
+                  flex: 1, padding: '11px', background: '#ef4444',
+                  border: 'none', borderRadius: 10, color: 'white',
+                  fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer',
+                  opacity: deleteLoading ? 0.6 : 1,
+                }}
+              >{deleteLoading ? 'Deleting…' : 'Delete permanently'}</button>
             </div>
           </div>
         </div>
@@ -136,9 +197,7 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
                 fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
                 opacity: ocrLoading === previewMaterial.id ? 0.6 : 1,
               }}
-            >
-              {ocrLoading === previewMaterial.id ? 'Queuing…' : 'Send to OCR →'}
-            </button>
+            >{ocrLoading === previewMaterial.id ? 'Queuing…' : 'Send to OCR →'}</button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {previewMaterial.mimeType === 'application/pdf' ? (
@@ -203,10 +262,17 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
                   color: 'var(--gold)', borderRadius: 7, padding: '5px 12px',
                   fontSize: '0.75rem', cursor: 'pointer',
                 }}
-              >
-                👁 Preview
-              </button>
+              >👁 Preview</button>
             )}
+            <button
+              onClick={() => setDeleteTarget(m)}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(239,68,68,0.25)',
+                color: '#fca5a5', borderRadius: 7, padding: '5px 12px',
+                fontSize: '0.75rem', cursor: 'pointer',
+              }}
+            >🗑 Delete</button>
             <button
               onClick={() => setConfirmMaterialId(m.id!)}
               disabled={ocrLoading === m.id}
@@ -217,9 +283,7 @@ export default function UploadsPanel({ uploads, onRefresh, firebaseUser }: Props
                 opacity: ocrLoading === m.id ? 0.6 : 1,
                 marginLeft: 'auto',
               }}
-            >
-              {ocrLoading === m.id ? 'Queuing…' : 'Send to OCR'}
-            </button>
+            >{ocrLoading === m.id ? 'Queuing…' : 'Send to OCR'}</button>
           </div>
         </div>
       ))}
