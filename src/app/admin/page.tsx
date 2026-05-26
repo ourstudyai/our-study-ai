@@ -1039,7 +1039,7 @@ useEffect(() => {
                     color: '#fca5a5', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600,
                   }}>⚠ Quarantine</button>
                 )}
-                {(selected.status === 'quarantined' || selected.status === 'approved' || selected.status === 'indexed') && (
+                {(selected.status === 'quarantined' || selected.status === 'approved') && (
                   <button onClick={() => setReviewConfirmMaterial(selected)} disabled={actionLoading} style={{
                     width: '100%', padding: '10px', background: 'transparent',
                     border: '1px solid rgba(234,179,8,0.4)', borderRadius: 10,
