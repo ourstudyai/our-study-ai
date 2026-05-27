@@ -50,7 +50,6 @@ export default function AppNav({ children }: AppNavProps) {
     userProfile?.displayName ?? null,
     pathname
   );
-  const isSupreme = firebaseUser?.email === 'ourstudyai@gmail.com';
   const faqKey = Object.keys(FAQ_CONTENT).find(k => pathname.startsWith(k)) ?? '';
   const faq = FAQ_CONTENT[faqKey] ?? DEFAULT_FAQ;
 
