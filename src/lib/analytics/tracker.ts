@@ -3,7 +3,6 @@ import {
   collection, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import { randomUUID } from 'crypto';
 
 // ─── Area label from pathname ────────────────────────────────────────────────
 
