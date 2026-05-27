@@ -17,6 +17,7 @@ import { Material } from '@/lib/firestore/materials';
 import AppNav from '@/components/AppNav';
 import ApprovalModal from '@/components/admin/ApprovalModal';
 import UploadsPanel from '@/components/admin/UploadsPanel';
+import LuxLoader from '@/components/LuxLoader';
 const SUPREME = 'ourstudyai@gmail.com';
 
 type Tab = 'uploads' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
@@ -602,14 +603,7 @@ useEffect(() => {
 
   function openDetail(m: Material) { setSelected(m); if (m.status === 'pending_review' || m.status === 'ocr_pending') { setApprovalOpen(true); } else { setDrawerOpen(true); } }
 
-  if (authLoading || loading) return (
-    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)' }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 32, height: 32, border: '2px solid var(--gold)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-        <p style={{ color: 'var(--gold)', fontSize: '0.8rem', opacity: 0.7 }}>Loading</p>
-      </div>
-    </div>
-  );
+  if (authLoading || loading) return <LuxLoader label="Admin Panel" />;
 
   const currentList = listMap[tab] ?? [];
 
