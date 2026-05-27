@@ -11,8 +11,9 @@ import {
 import { db } from '@/lib/firebase/config';
 import {
   collection, getDocs, query, orderBy, where,
-  addDoc, updateDoc, deleteDoc, doc, getDoc, serverTimestamp,
+  addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, serverTimestamp,
 } from 'firebase/firestore';
+import { useCallback } from 'react';
 import { Material } from '@/lib/firestore/materials';
 import AppNav from '@/components/AppNav';
 import ApprovalModal from '@/components/admin/ApprovalModal';
@@ -42,139 +43,197 @@ type Course = { id: string; name: string; code?: string; department: string; yea
 // ============================================================
 // ANALYTICS PANEL (Supreme only)
 // ============================================================
-function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
 
+function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
+  // ── Toggle state ───────────────────────────────────────────────────────────
+  const [masterEnabled, setMasterEnabled] = useState(true);
+  const [features, setFeatures] = useState<Record<string, any>>({});
+  const [toggleLoading, setToggleLoading] = useState<string | null>(null);
+
+  // ── Live data ──────────────────────────────────────────────────────────────
+  const [presence, setPresence] = useState<any[]>([]);
+  const [todaySessions, setTodaySessions] = useState<any[]>([]);
+  const [adminActions, setAdminActions] = useState<any[]>([]);
+  const [actionFilter, setActionFilter] = useState('');
+
+  // ── Legacy aggregated data ─────────────────────────────────────────────────
+  const [legacyData, setLegacyData] = useState<any>(null);
+
+  // ── Sub-tab ────────────────────────────────────────────────────────────────
+  const [subTab, setSubTab] = useState<'live' | 'sessions' | 'actions' | 'stats'>('live');
+
+  const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  // ── Load toggles ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isSupreme) return;
-    async function load() {
+    async function loadToggles() {
       try {
-        const [matsSnap, usersSnap, coursesSnap, flagsSnap, reportsSnap, analyticsSnap, tavilySnap] = await Promise.all([
-          getDocs(collection(db, 'materials')),
-          getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'courses')),
-          getDocs(collection(db, 'flags')),
-          getDocs(collection(db, 'upload_reports')),
-          getDoc(doc(db, 'analytics', 'daily')).catch(() => null),
-          getDoc(doc(db, 'analytics', 'tavily')).catch(() => null),
+        const [masterSnap, featSnap] = await Promise.all([
+          getDoc(doc(db, 'analytics', 'tracking_config')),
+          getDoc(doc(db, 'analytics', 'features')),
         ]);
-
-        const mats = matsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-        const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-        const courses = coursesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-        const flags = flagsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-        const reports = reportsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-        const analytics = analyticsSnap?.exists() ? analyticsSnap.data() : {};
-        const tavilyData = tavilySnap?.exists() ? tavilySnap.data() : {};
-
-        // Material stats
-        const matByStatus: Record<string, number> = {};
-        const matByDept: Record<string, number> = {};
-        const matByType: Record<string, number> = {};
-        const contribCount: Record<string, number> = {};
-        let totalWords = 0;
-        mats.forEach((m: any) => {
-          matByStatus[m.status] = (matByStatus[m.status] || 0) + 1;
-          const dept = m.confirmedCourseName || m.suggestedCourseName || 'Unassigned';
-          matByDept[dept] = (matByDept[dept] || 0) + 1;
-          const ext = (m.fileName || '').split('.').pop()?.toLowerCase() || 'other';
-          matByType[ext] = (matByType[ext] || 0) + 1;
-          if (m.uploadedBy) contribCount[m.uploadedBy] = (contribCount[m.uploadedBy] || 0) + 1;
-          totalWords += m.wordCount || 0;
-        });
-
-        const topContributors = Object.entries(contribCount)
-          .sort((a, b) => (b[1] as number) - (a[1] as number))
-          .slice(0, 5)
-          .map(([uid, count]) => {
-            const u = users.find((x: any) => x.id === uid);
-            const label = u ? (u.displayName || u.email || uid) : uid;
-            return [label, count];
-          });
-
-        // User stats
-        const userByRole: Record<string, number> = {};
-        const userByDept: Record<string, number> = {};
-        const now = Date.now();
-        const oneWeek = 7 * 24 * 60 * 60 * 1000;
-        let newThisWeek = 0;
-        let inactiveCount = 0;
-        users.forEach((u: any) => {
-          userByRole[u.role || 'student'] = (userByRole[u.role || 'student'] || 0) + 1;
-          userByDept[u.department || 'Unknown'] = (userByDept[u.department || 'Unknown'] || 0) + 1;
-          const created = u.createdAt?.toMillis?.() || new Date(u.createdAt || 0).getTime();
-          if (now - created < oneWeek) newThisWeek++;
-          const lastSeen = u.lastSeen?.toMillis?.() || new Date(u.lastSeen || 0).getTime();
-          if (lastSeen && now - lastSeen > oneWeek) inactiveCount++;
-        });
-
-        // Top active users this week (by lastSeen within 7 days)
-        const activeThisWeek = users
-          .filter((u: any) => {
-            const lastSeen = u.lastSeen?.toMillis?.() || new Date(u.lastSeen || 0).getTime();
-            return lastSeen && now - lastSeen < oneWeek;
-          })
-          .sort((a: any, b: any) => {
-            const aT = a.lastSeen?.toMillis?.() || 0;
-            const bT = b.lastSeen?.toMillis?.() || 0;
-            return bT - aT;
-          })
-          .slice(0, 5)
-          .map((u: any) => [u.displayName || u.email || u.id, u.lastSeen?.toDate?.()?.toLocaleDateString?.() || 'recently']);
-
-        // Course stats
-        const courseByDept: Record<string, number> = {};
-        courses.forEach((c: any) => {
-          courseByDept[c.department || 'Unknown'] = (courseByDept[c.department || 'Unknown'] || 0) + 1;
-        });
-
-        // Flag stats
-        const openFlags = flags.filter((f: any) => f.status !== 'resolved').length;
-        const resolvedFlags = flags.filter((f: any) => f.status === 'resolved').length;
-
-        // Analytics tracking data
-        const todayKey = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
-        const todaySessions = analytics[`sessions_${todayKey}`] || 0;
-        const todayMins = analytics[`minutes_${todayKey}`] || 0;
-        const totalSessions = analytics.total_sessions || 0;
-        const totalMinutes = analytics.total_minutes || 0;
-        const topTopics = analytics.top_topics || {};
-        const hourlyActivity = analytics.hourly || {};
-        const todayTag = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
-        const tavilySearchesToday = tavilyData[`searches_${todayTag}`] || 0;
-        const tavilyHitsToday = tavilyData[`cache_hits_${todayTag}`] || 0;
-        const tavilyTotal = tavilyData.total_searches || 0;
-        const tavilyCacheTotal = tavilyData.total_cache_hits || 0;
-        const tavilyLastSearch = tavilyData.last_search || null;
-        const tavilyHitRate = (tavilyTotal + tavilyCacheTotal) > 0
-          ? Math.round((tavilyCacheTotal / (tavilyTotal + tavilyCacheTotal)) * 100) : 0;
-
-        const fmtTime = (mins: number) => {
-          const h = Math.floor(mins / 60);
-          const m = mins % 60;
-          return h > 0 ? `${h}h ${m}m` : `${m}m`;
-        };
-
-        setData({
-          mats, matByStatus, matByDept, matByType, topContributors, totalWords,
-          users, userByRole, userByDept, newThisWeek, inactiveCount,
-          courses, courseByDept, activeThisWeek,
-          flags, openFlags, resolvedFlags,
-          reports,
-          todaySessions, todayMins, totalSessions, totalMinutes,
-          topTopics, hourlyActivity, fmtTime, analytics,
-          tavilySearchesToday, tavilyHitsToday, tavilyTotal, tavilyCacheTotal, tavilyLastSearch, tavilyHitRate,
-        });
-      } catch (e) {
-        console.error('Analytics load error:', e);
-      } finally {
-        setLoading(false);
-      }
+        setMasterEnabled(masterSnap.exists() ? masterSnap.data()?.enabled !== false : true);
+        setFeatures(featSnap.exists() ? featSnap.data() : {});
+      } catch {}
     }
-    load();
+    loadToggles();
   }, [isSupreme, db]);
 
+  // ── Load analytics data (refreshes every 30min or on manual refresh) ───────
+  const loadData = useCallback(async () => {
+    if (!isSupreme) return;
+    setLoading(true);
+    try {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayISO = todayStart.toISOString();
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const [
+        presenceSnap, todaySessionsSnap, adminActionsSnap,
+        allSessionsSnap, matsSnap, usersSnap, coursesSnap,
+      ] = await Promise.all([
+        getDocs(collection(db, 'presence')),
+        getDocs(query(collection(db, 'sessions'), where('startedAt', '>=', todayISO), orderBy('startedAt', 'desc'))),
+        getDocs(query(collection(db, 'admin_actions'), orderBy('at', 'desc'))),
+        getDocs(query(collection(db, 'sessions'), where('startedAt', '>=', sevenDaysAgo))),
+        getDocs(collection(db, 'materials')),
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'courses')),
+      ]);
+
+      setPresence(presenceSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setTodaySessions(todaySessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setAdminActions(adminActionsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+      // ── Legacy aggregation ─────────────────────────────────────────────────
+      const mats = matsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      const allSessions = allSessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
+      // Area breakdown (7d)
+      const areaTime: Record<string, number> = {};
+      const areaFreq: Record<string, number> = {};
+      // User activity (7d)
+      const userTime: Record<string, number> = {};
+      const userFreq: Record<string, number> = {};
+      const userEmail: Record<string, string> = {};
+      let totalDurationToday = 0;
+
+      allSessions.forEach((s: any) => {
+        const dur = s.duration || 0;
+        const uid = s.userId;
+        userTime[uid] = (userTime[uid] || 0) + dur;
+        userFreq[uid] = (userFreq[uid] || 0) + 1;
+        if (s.email) userEmail[uid] = s.email;
+        if (s.startedAt >= todayISO) totalDurationToday += dur;
+        (s.areas || []).forEach((a: any) => {
+          areaTime[a.area] = (areaTime[a.area] || 0) + (a.duration || 0);
+          areaFreq[a.area] = (areaFreq[a.area] || 0) + 1;
+        });
+      });
+
+      // Most active users (7d)
+      const mostActive = Object.entries(userTime)
+        .sort((a, b) => (b[1] as number) - (a[1] as number))
+        .slice(0, 10)
+        .map(([uid, time]) => ({ uid, email: userEmail[uid] || uid, time: time as number, sessions: userFreq[uid] || 0 }));
+
+      // Dormant users (no session in 7d)
+      const activeUids = new Set(allSessions.map((s: any) => s.userId));
+      const dormant = users.filter((u: any) => !activeUids.has(u.id) && u.role !== 'admin' && u.role !== 'chief_admin');
+
+      // Material stats
+      const matByStatus: Record<string, number> = {};
+      const matByType: Record<string, number> = {};
+      mats.forEach((m: any) => {
+        matByStatus[m.status] = (matByStatus[m.status] || 0) + 1;
+        const ext = (m.fileName || '').split('.').pop()?.toLowerCase() || 'other';
+        matByType[ext] = (matByType[ext] || 0) + 1;
+      });
+
+      setLegacyData({
+        mats, users, matByStatus, matByType,
+        areaTime, areaFreq, mostActive, dormant,
+        totalDurationToday,
+        totalUsers: users.length,
+        totalCourses: coursesSnap.size,
+      });
+
+      setLastRefresh(new Date());
+    } catch (e) { console.error('Analytics load error:', e); }
+    finally { setLoading(false); }
+  }, [isSupreme, db]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // ── Toggle helpers ─────────────────────────────────────────────────────────
+  async function toggleMaster() {
+    setToggleLoading('master');
+    try {
+      const newVal = !masterEnabled;
+      const now = new Date().toISOString();
+      const masterRef = doc(db, 'analytics', 'tracking_config');
+      const snap = await getDoc(masterRef);
+      const history = snap.exists() ? (snap.data()?.history || []) : [];
+      history.push({ state: newVal ? 'on' : 'off', at: now });
+      await setDoc(masterRef, { enabled: newVal, toggledAt: now, history });
+      setMasterEnabled(newVal);
+      // Invalidate tracker cache
+      const { invalidateFeatureCache } = await import('@/lib/analytics/tracker');
+      invalidateFeatureCache();
+    } catch (e) { console.error(e); }
+    finally { setToggleLoading(null); }
+  }
+
+  async function toggleFeature(feature: string) {
+    setToggleLoading(feature);
+    try {
+      const current = features[feature]?.enabled !== false;
+      const newVal = !current;
+      const now = new Date().toISOString();
+      const featRef = doc(db, 'analytics', 'features');
+      const snap = await getDoc(featRef);
+      const existing = snap.exists() ? snap.data() : {};
+      const history = existing?.[feature]?.history || [];
+      history.push({ state: newVal ? 'on' : 'off', at: now });
+      await setDoc(featRef, {
+        ...existing,
+        [feature]: { enabled: newVal, toggledAt: now, history },
+      });
+      setFeatures((f: any) => ({ ...f, [feature]: { ...(f[feature] || {}), enabled: newVal, toggledAt: now, history } }));
+      const { invalidateFeatureCache } = await import('@/lib/analytics/tracker');
+      invalidateFeatureCache();
+    } catch (e) { console.error(e); }
+    finally { setToggleLoading(null); }
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const fmtDur = (secs: number) => {
+    if (!secs) return '0m';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  const fmtTime = (iso: string) => {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const fmtDateTime = (iso: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' +
+      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const isOnline = (lastSeen: string) =>
+    lastSeen && (Date.now() - new Date(lastSeen).getTime()) < 6 * 60 * 1000; // 6min window
+
+  // ── Guard ──────────────────────────────────────────────────────────────────
   if (!isSupreme) return (
     <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
       <p style={{ fontSize: '2rem' }}>🔒</p>
@@ -182,149 +241,351 @@ function AnalyticsPanel({ db, isSupreme }: { db: any; isSupreme: boolean }) {
     </div>
   );
 
-  if (loading) return <div style={{ padding: 32, color: 'var(--text-muted)' }}>Loading analytics...</div>;
-  if (!data) return <div style={{ padding: 32, color: 'var(--text-muted)' }}>No data available.</div>;
-
+  // ── UI helpers ─────────────────────────────────────────────────────────────
   const card = (title: string, value: string | number, sub?: string, color?: string) => (
     <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
-      padding: '16px 18px', flex: '1 1 140px', minWidth: 130
+      background: 'var(--navy-card)', border: '1px solid var(--border)',
+      borderRadius: 12, padding: '14px 16px', flex: '1 1 130px', minWidth: 120,
     }}>
-      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>{title}</div>
-      <div style={{ fontSize: '1.6rem', fontWeight: 700, color: color || 'var(--gold)', margin: '4px 0' }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sub}</div>}
+      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>{title}</div>
+      <div style={{ fontSize: '1.5rem', fontWeight: 700, color: color || 'var(--gold)', margin: '4px 0' }}>{value}</div>
+      {sub && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{sub}</div>}
     </div>
   );
 
-  const section = (title: string, children: React.ReactNode) => (
-    <div style={{ marginBottom: 28 }}>
-      <p style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--text-muted)', marginBottom: 10 }}>{title}</p>
-      {children}
-    </div>
+  const sectionHead = (title: string) => (
+    <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--gold)', opacity: 0.6, marginBottom: 10, marginTop: 24 }}>{title}</p>
   );
 
   const row = (label: string, value: any, color?: string) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
-      <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{label}</span>
-      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: color || 'var(--gold)' }}>{value}</span>
+      <span style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>{label}</span>
+      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: color || 'var(--gold)' }}>{value}</span>
     </div>
   );
 
-  return (
-    <div style={{ padding: '0 0 60px' }}>
-
-      {section('Live Activity', (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          {card('Today Sessions', data.todaySessions, 'chat sessions today')}
-          {card('Today Time', data.fmtTime(data.todayMins), 'total usage today')}
-          {card('All-time Sessions', data.totalSessions)}
-          {card('All-time Time', data.fmtTime(data.totalMinutes))}
+  const ToggleRow = ({ label, feature, cost, history }: { label: string; feature: string; cost: string; history?: any[] }) => {
+    const enabled = features[feature]?.enabled !== false;
+    const toggledAt = features[feature]?.toggledAt;
+    const gaps = (history || features[feature]?.history || [])
+      .filter((h: any, i: number, arr: any[]) => h.state === 'off' && arr[i + 1])
+      .map((h: any, i: number, arr: any[]) => {
+        const off = new Date(h.at);
+        const on = new Date(arr[i + 1]?.at);
+        const mins = Math.round((on.getTime() - off.getTime()) / 60000);
+        return `${fmtDateTime(h.at)} → ${fmtDateTime(arr[i + 1]?.at)} (${mins}m gap)`;
+      });
+    return (
+      <div style={{ background: 'var(--navy-card)', border: `1px solid ${enabled ? 'rgba(196,160,80,0.2)' : 'rgba(239,68,68,0.2)'}`, borderRadius: 12, padding: '12px 14px', marginBottom: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <div>
+            <p style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>{label}</p>
+            <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Cost: {cost}</p>
+          </div>
+          <button
+            onClick={() => toggleFeature(feature)}
+            disabled={toggleLoading === feature || !masterEnabled}
+            style={{
+              padding: '6px 16px', borderRadius: 99, border: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: '0.75rem',
+              background: enabled ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+              color: enabled ? '#22c55e' : '#ef4444',
+              opacity: toggleLoading === feature ? 0.5 : 1,
+            }}
+          >{toggleLoading === feature ? '…' : enabled ? '● ON' : '○ OFF'}</button>
         </div>
-      ))}
+        {toggledAt && <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Last toggled: {fmtDateTime(toggledAt)}</p>}
+        {gaps.length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 3 }}>Gap history:</p>
+            {gaps.slice(-3).map((g: string, i: number) => (
+              <p key={i} style={{ fontSize: '0.6rem', color: '#fca5a5' }}>⏸ {g}</p>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
-      {section('🔍 Tavily Web Search Credits', (
-        <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-            {card('API Calls Today', data.tavilySearchesToday, 'credits used today', '#f90')}
-            {card('Cache Hits Today', data.tavilyHitsToday, 'credits saved today', 'var(--success, #4caf50)')}
-            {card('Total API Calls', data.tavilyTotal, 'all-time credits used', '#f90')}
-            {card('Total Cache Hits', data.tavilyCacheTotal, 'all-time credits saved', 'var(--success, #4caf50)')}
-          </div>
-          {row('Cache Hit Rate', `${data.tavilyHitRate}%`, data.tavilyHitRate > 50 ? 'var(--success, #4caf50)' : '#f90')}
-          {row('Last API Search', data.tavilyLastSearch ? new Date(data.tavilyLastSearch).toLocaleString() : 'Never')}
-        </>
-      ))}
+  // ── Sub-tabs ───────────────────────────────────────────────────────────────
+  const SUBTABS = [
+    { key: 'live', label: '🟢 Live' },
+    { key: 'sessions', label: '📊 Sessions' },
+    { key: 'actions', label: '🛡 Admin Log' },
+    { key: 'stats', label: '📈 Stats' },
+  ] as const;
 
-      {section('🔍 Tavily Search Credits', (
-        <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-            {card('API Calls Today', data.tavilySearchesToday, 'credits used today', '#f90')}
-            {card('Cache Hits Today', data.tavilyHitsToday, 'credits saved today', 'var(--success, #4caf50)')}
-            {card('Total API Calls', data.tavilyTotal, 'all-time credits used', '#f90')}
-            {card('Total Saved', data.tavilyCacheTotal, 'all-time credits saved', 'var(--success, #4caf50)')}
-          </div>
-          {row('Cache Hit Rate', `${data.tavilyHitRate}%`, data.tavilyHitRate > 50 ? 'var(--success, #4caf50)' : '#f90')}
-          {row('Last API Search', data.tavilyLastSearch ? new Date(data.tavilyLastSearch).toLocaleString() : 'Never')}
-        </>
-      ))}
+  return (
+    <div style={{ paddingBottom: 80 }}>
 
-      {section('Users', (
-        <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-            {card('Total Users', data.users.length)}
-            {card('New This Week', data.newThisWeek, 'joined in last 7 days', 'var(--success, #4caf50)')}
-            {card('Inactive 7d+', data.inactiveCount, 'no activity in a week', '#e07')}
+      {/* ── Master toggle ── */}
+      <div style={{
+        background: masterEnabled ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)',
+        border: `1px solid ${masterEnabled ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+        borderRadius: 14, padding: '16px 16px', marginBottom: 20,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <p style={{ fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 700, color: 'var(--gold)', marginBottom: 2 }}>
+              Tracking Master Switch
+            </p>
+            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              {masterEnabled ? 'All enabled features are actively recording.' : 'All tracking paused. No data is being written.'}
+            </p>
           </div>
-          {Object.entries(data.userByRole).map(([role, count]: any) => row(role, count))}
-          <div style={{ marginTop: 10 }}>
-            {Object.entries(data.userByDept).map(([dept, count]: any) => row(dept, count))}
-          </div>
-          {data.activeThisWeek.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>Most Active This Week</p>
-              {data.activeThisWeek.map(([name, date]: any) => row(name, date))}
+          <button
+            onClick={toggleMaster}
+            disabled={toggleLoading === 'master'}
+            style={{
+              padding: '8px 20px', borderRadius: 99, border: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: '0.82rem',
+              background: masterEnabled ? '#22c55e' : '#ef4444',
+              color: 'white',
+              opacity: toggleLoading === 'master' ? 0.5 : 1,
+            }}
+          >{toggleLoading === 'master' ? '…' : masterEnabled ? '● ON' : '○ OFF'}</button>
+        </div>
+      </div>
+
+      {/* ── Feature toggles (ordered by cost) ── */}
+      {sectionHead('Feature Toggles — Highest Cost First')}
+      <ToggleRow
+        label="① Presence & Live Users"
+        feature="presence"
+        cost="~7,680 writes/day at 40 users (5min heartbeat)"
+      />
+      <ToggleRow
+        label="② Session Tracking"
+        feature="sessions"
+        cost="~1,200 writes/day (start + end + area changes)"
+      />
+      <ToggleRow
+        label="③ Admin Action Log"
+        feature="admin_actions"
+        cost="~50 writes/day (action-triggered only)"
+      />
+
+      {/* ── Refresh bar ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 4 }}>
+        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+          {lastRefresh ? `Last refreshed: ${fmtDateTime(lastRefresh.toISOString())}` : 'Loading…'}
+        </p>
+        <button
+          onClick={loadData}
+          disabled={loading}
+          style={{ fontSize: '0.72rem', padding: '4px 12px', borderRadius: 8, background: 'transparent', border: '1px solid var(--border)', color: 'var(--gold)', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}
+        >{loading ? 'Refreshing…' : '↺ Refresh'}</button>
+      </div>
+
+      {/* ── Sub-tab bar ── */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, marginTop: 12, overflowX: 'auto' }}>
+        {SUBTABS.map(t => (
+          <button key={t.key} onClick={() => setSubTab(t.key)} style={{
+            padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
+            fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap',
+            background: subTab === t.key ? 'var(--gold)' : 'var(--navy-card)',
+            color: subTab === t.key ? '#0a0f1e' : 'var(--text-muted)',
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {loading && <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textAlign: 'center', padding: 20 }}>Loading analytics…</p>}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SUB-TAB: LIVE
+      ══════════════════════════════════════════════════════════════════════ */}
+      {!loading && subTab === 'live' && (
+        <div>
+          {sectionHead('Who\'s Online Right Now')}
+          {presence.filter(p => isOnline(p.lastSeen)).length === 0 ? (
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>No one online right now.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {presence
+                .filter(p => isOnline(p.lastSeen))
+                .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+                .map(p => (
+                  <div key={p.id} style={{ background: 'var(--navy-card)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>{p.displayName || p.email}</p>
+                      <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{p.email}</p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ fontSize: '0.72rem', color: '#22c55e', fontWeight: 700 }}>{p.currentArea}</p>
+                      <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>seen {fmtTime(p.lastSeen)}</p>
+                    </div>
+                  </div>
+                ))}
             </div>
           )}
-        </>
-      ))}
 
-      {section('Materials', (
-        <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-            {card('Total', data.mats.length)}
-            {card('Approved', data.matByStatus['approved'] || 0, undefined, 'var(--success, #4caf50)')}
-            {card('Pending', data.matByStatus['pending_review'] || 0, undefined, '#f90')}
-            {card('Quarantined', data.matByStatus['quarantined'] || 0, undefined, '#e07')}
+          {sectionHead('Recently Seen (Last 6 Hours)')}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {presence
+              .filter(p => !isOnline(p.lastSeen) && p.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 6 * 3600 * 1000)
+              .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+              .map(p => (
+                <div key={p.id} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{p.displayName || p.email}</p>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>last seen {fmtTime(p.lastSeen)} · {p.currentArea}</p>
+                </div>
+              ))}
           </div>
-          {card('Total Words', (data.totalWords || 0).toLocaleString(), 'across all materials')}
-          <div style={{ marginTop: 12 }}>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>By File Type</p>
-            {Object.entries(data.matByType).sort((a: any, b: any) => b[1] - a[1]).map(([ext, count]: any) => row(`.${ext}`, count))}
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>Top Contributors</p>
-            {data.topContributors.map(([email, count]: any) => row(email, `${count} uploads`))}
-          </div>
-        </>
-      ))}
-
-      {section('Courses', (
-        <>
-          {card('Total Courses', data.courses.length)}
-          <div style={{ marginTop: 10 }}>
-            {Object.entries(data.courseByDept).map(([dept, count]: any) => row(dept, count))}
-          </div>
-        </>
-      ))}
-
-      {section('Flags & Reports', (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          {card('Open Flags', data.openFlags, undefined, '#e07')}
-          {card('Resolved', data.resolvedFlags, undefined, 'var(--success, #4caf50)')}
-          {card('Upload Errors', data.reports.length, undefined, '#f90')}
         </div>
-      ))}
+      )}
 
-      {Object.keys(data.topTopics).length > 0 && section('Top Topics Studied', (
+      {/* ══════════════════════════════════════════════════════════════════════
+          SUB-TAB: SESSIONS
+      ══════════════════════════════════════════════════════════════════════ */}
+      {!loading && subTab === 'sessions' && legacyData && (
         <div>
-          {Object.entries(data.topTopics).sort((a: any, b: any) => b[1] - a[1]).slice(0, 10).map(([topic, count]: any) => row(topic, count))}
-        </div>
-      ))}
+          {sectionHead('Today\'s App Uptime')}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+            {card('Total Usage Today', fmtDur(legacyData.totalDurationToday), 'sum of all user sessions')}
+            {card('Sessions Today', todaySessions.length, 'individual sessions')}
+            {card('Unique Users Today', new Set(todaySessions.map((s: any) => s.userId)).size + '')}
+          </div>
 
-      {Object.keys(data.hourlyActivity).length > 0 && section('Most Active Hours', (
+          {sectionHead('Today\'s Sessions')}
+          {todaySessions.length === 0 ? (
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>No sessions recorded today.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {todaySessions.map((s: any) => (
+                <div key={s.id} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                    <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>{s.email}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 700 }}>{fmtDur(s.duration)}</p>
+                  </div>
+                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                    {fmtTime(s.startedAt)} → {s.endedAt ? fmtTime(s.endedAt) : '(active)'}
+                  </p>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {(s.areas || []).map((a: any, i: number) => (
+                      <span key={i} style={{ fontSize: '0.6rem', background: 'rgba(196,160,80,0.08)', color: 'var(--gold)', borderRadius: 99, padding: '1px 7px' }}>
+                        {a.area} {a.duration ? `(${fmtDur(a.duration)})` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {sectionHead('Most Active Users — Last 7 Days')}
+          {legacyData.mostActive.length === 0 ? (
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>No session data yet.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {legacyData.mostActive.map((u: any, i: number) => (
+                <div key={u.uid} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--gold)', fontWeight: 700, minWidth: 18 }}>#{i + 1}</span>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{u.email}</p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 700 }}>{fmtDur(u.time)}</p>
+                    <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{u.sessions} session{u.sessions !== 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {sectionHead('Area Usage — Last 7 Days')}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {Object.entries(legacyData.areaTime)
+              .sort((a: any, b: any) => b[1] - a[1])
+              .map(([area, time]: any) => (
+                <div key={area} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px', display: 'flex', justifyContent: 'space-between' }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>{area}</p>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 700 }}>{fmtDur(time)}</p>
+                    <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{legacyData.areaFreq[area] || 0} visits</p>
+                  </div>
+                </div>
+              ))}
+          </div>
+
+          {sectionHead(`Dormant Users — No Activity in 7+ Days (${legacyData.dormant.length})`)}
+          {legacyData.dormant.length === 0 ? (
+            <p style={{ fontSize: '0.8rem', color: '#22c55e', textAlign: 'center', padding: 12 }}>All users active in the last 7 days. ✓</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {legacyData.dormant.map((u: any) => (
+                <div key={u.id} style={{ background: 'var(--navy-card)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '8px 14px', display: 'flex', justifyContent: 'space-between' }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{u.displayName || u.email}</p>
+                  <p style={{ fontSize: '0.65rem', color: '#fca5a5' }}>dormant</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SUB-TAB: ADMIN LOG
+      ══════════════════════════════════════════════════════════════════════ */}
+      {!loading && subTab === 'actions' && (
         <div>
-          {Object.entries(data.hourlyActivity).sort((a: any, b: any) => b[1] - a[1]).slice(0, 8).map(([hour, count]: any) => row(`${hour}:00`, `${count} sessions`))}
+          {sectionHead('Admin Action Log')}
+          <input
+            value={actionFilter}
+            onChange={e => setActionFilter(e.target.value)}
+            placeholder="Filter by action, email, or target…"
+            style={{ width: '100%', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', color: 'var(--text-primary)', fontSize: '0.78rem', marginBottom: 12, boxSizing: 'border-box' as const }}
+          />
+          {adminActions
+            .filter(a => !actionFilter || [a.action, a.email, a.targetName, a.details].join(' ').toLowerCase().includes(actionFilter.toLowerCase()))
+            .map(a => (
+              <div key={a.id} style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, background: 'rgba(196,160,80,0.1)', color: 'var(--gold)', borderRadius: 99, padding: '1px 7px' }}>
+                        {a.action.replace(/_/g, ' ')}
+                      </span>
+                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{a.email}</span>
+                    </div>
+                    {a.targetName && <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 2 }}>{a.targetName}</p>}
+                    {a.details && <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{a.details}</p>}
+                  </div>
+                  <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtDateTime(a.at)}</p>
+                </div>
+              </div>
+            ))}
+          {adminActions.length === 0 && (
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>No admin actions recorded yet.</p>
+          )}
         </div>
-      ))}
+      )}
 
-      <div style={{ marginTop: 20, padding: 14, background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
-        <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-          📡 Activity data (sessions, time, topics, hourly patterns) accumulates from this point forward via session tracking. Historical data before this feature was enabled is not available.
-        </p>
-      </div>
+      {/* ══════════════════════════════════════════════════════════════════════
+          SUB-TAB: STATS
+      ══════════════════════════════════════════════════════════════════════ */}
+      {!loading && subTab === 'stats' && legacyData && (
+        <div>
+          {sectionHead('Platform Overview')}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+            {card('Total Users', legacyData.totalUsers)}
+            {card('Total Materials', legacyData.mats.length)}
+            {card('Total Courses', legacyData.totalCourses)}
+            {card('Approved', legacyData.matByStatus['approved'] || 0, undefined, '#22c55e')}
+            {card('Pending', legacyData.matByStatus['pending_review'] || 0, undefined, '#eab308')}
+            {card('Quarantined', legacyData.matByStatus['quarantined'] || 0, undefined, '#ef4444')}
+          </div>
+
+          {sectionHead('Materials by File Type')}
+          {Object.entries(legacyData.matByType)
+            .sort((a: any, b: any) => b[1] - a[1])
+            .map(([ext, count]: any) => row(`.${ext}`, count))}
+        </div>
+      )}
+
     </div>
   );
 }
+
 
 // ============================================================
 // REPORTS PANEL with sub-tabs
