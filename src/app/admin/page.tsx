@@ -1691,6 +1691,7 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
 
 // ── Assignments Panel ──────────────────────────────────────────────────────────
 function AssignmentsPanel({ courses }: { courses: Course[] }) {
+  const { firebaseUser } = useAuth();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
