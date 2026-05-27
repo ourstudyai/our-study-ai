@@ -13,12 +13,12 @@ import {
   collection, getDocs, query, orderBy, where,
   addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { useCallback } from 'react';
 import { Material } from '@/lib/firestore/materials';
 import AppNav from '@/components/AppNav';
 import ApprovalModal from '@/components/admin/ApprovalModal';
 import UploadsPanel from '@/components/admin/UploadsPanel';
 import LuxLoader from '@/components/LuxLoader';
+import { logAdminAction } from '@/lib/analytics/tracker';
 const SUPREME = 'ourstudyai@gmail.com';
 
 type Tab = 'uploads' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
@@ -824,6 +824,7 @@ useEffect(() => {
     setActionLoading(true);
     try {
       await updateMaterial(m.id, { status: 'approved', confirmedCourseId: courseId ?? m.suggestedCourseId ?? '', confirmedCourseName: courseName ?? m.suggestedCourseName ?? '' });
+      logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'material_approved', targetId: m.id, targetName: m.fileName, details: (courseId ?? '') + (courseName ? ' / ' + courseName : '') }).catch(() => {});
       await load();
       setDrawerOpen(false); setSelected(null);
     } finally { setActionLoading(false); }
@@ -848,6 +849,7 @@ useEffect(() => {
         body: JSON.stringify({ materialId: m.id, publicId: m.publicId }),
       });
       if (!res.ok) { const e = await res.json(); alert('Delete failed: ' + (e.error ?? res.status)); return; }
+      logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'material_deleted', targetId: m.id, targetName: m.fileName, details: m.publicId ?? '' }).catch(() => {});
       await load();
       setDrawerOpen(false); setSelected(null);
     } finally { setActionLoading(false); }
@@ -857,6 +859,7 @@ useEffect(() => {
     setActionLoading(true);
     try {
       await updateDoc(doc(db, 'materials', m.id), { status: 'quarantined' });
+      logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'material_quarantined', targetId: m.id, targetName: m.fileName }).catch(() => {});
       await load();
       setDrawerOpen(false); setSelected(null);
     } finally { setActionLoading(false); }
@@ -1163,8 +1166,10 @@ useEffect(() => {
                           shouldIndex: true,
                         }),
                       });
-                      if (res.ok) { alert('✅ Re-indexed successfully.'); setDrawerOpen(false); setSelected(null); }
-                      else { const d = await res.json(); alert('❌ Failed: ' + (d.error || res.status)); }
+                      if (res.ok) {
+                        logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'material_reindexed', targetId: selected.id, targetName: selected.fileName }).catch(() => {});
+                        alert('✅ Re-indexed successfully.'); setDrawerOpen(false); setSelected(null);
+                      } else { const d = await res.json(); alert('❌ Failed: ' + (d.error || res.status)); }
                     } finally { setActionLoading(false); }
                   }} disabled={actionLoading} style={{
                     width: '100%', padding: '11px', background: 'transparent',
@@ -1195,8 +1200,10 @@ useEffect(() => {
                         }),
                       });
       const d = await res.json();
-      if (res.ok) { alert('✅ Topics refresh queued successfully.'); }
-      else { alert('❌ Failed: ' + (d.error || `Status ${res.status}`)); }
+      if (res.ok) {
+        logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'topics_refreshed', targetId: selected.id, targetName: selected.fileName }).catch(() => {});
+        alert('✅ Topics refresh queued successfully.');
+      } else { alert('❌ Failed: ' + (d.error || `Status ${res.status}`)); }
                     } catch (e: any) {
                       alert('❌ Network error: ' + e?.message);
                     } finally { setRefreshLoading(false); }
@@ -1363,6 +1370,7 @@ useEffect(() => {
                       status: 'pending_review',
                       updatedAt: new Date().toISOString(),
                     });
+                    logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'material_sent_to_review', targetId: reviewConfirmMaterial.id, targetName: reviewConfirmMaterial.fileName }).catch(() => {});
                     load();
                     setSelected(null);
                     setReviewConfirmMaterial(null);
@@ -1585,8 +1593,10 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
       const data = { name: form.name, code: form.code, department: form.department, year: Number(form.year), semester: Number(form.semester), description: form.description, published: form.published };
       if (editId) {
         await updateDoc(doc(db, 'courses', editId), data);
+        logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'course_edited', targetId: editId, targetName: form.name }).catch(() => {});
       } else {
-        await addDoc(collection(db, 'courses'), { ...data, createdAt: serverTimestamp() });
+        const newDoc = await addDoc(collection(db, 'courses'), { ...data, createdAt: serverTimestamp() });
+        logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'course_added', targetId: newDoc.id, targetName: form.name }).catch(() => {});
       }
       setShowForm(false);
       setEditId(null);
@@ -1598,6 +1608,7 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
     if (!isChiefAdmin) { alert('Only chief admin can delete courses. Please contact chief admin.'); return; }
     if (!window.confirm('Delete this course permanently? All linked materials will lose their course assignment.')) return;
     await deleteDoc(doc(db, 'courses', id));
+    logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'course_deleted', targetId: id, targetName: courses.find((c: any) => c.id === id)?.name ?? id }).catch(() => {});
     onRefresh();
   }
 
@@ -1717,6 +1728,8 @@ function AssignmentsPanel({ courses }: { courses: Course[] }) {
   async function handleCancel(id: string) {
     if (!window.confirm('Cancel this assignment?')) return;
     await updateDoc(doc(db, 'assignments', id), { status: 'cancelled', updatedAt: new Date().toISOString() });
+    const a = assignments.find((x: any) => x.id === id);
+    logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'assignment_cancelled', targetId: id, targetName: a?.title ?? id }).catch(() => {});
     await loadAssignments();
   }
 
@@ -1830,8 +1843,11 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
     setActionLoading(uid);
     try {
       const res = await fetch('/api/admin/set-role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUid: uid, role, idToken: await firebaseUser?.getIdToken(true) }) });
-      if (res.ok) setUsers(u => u.map(x => x.uid === uid ? { ...x, role } : x));
-      else { const d = await res.json(); alert('Role change failed: ' + (d.error || res.status)); }
+      if (res.ok) {
+        setUsers(u => u.map(x => x.uid === uid ? { ...x, role } : x));
+        const u = users.find((x: any) => x.uid === uid);
+        logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'user_role_changed', targetId: uid, targetName: u?.email ?? uid, details: '→ ' + role }).catch(() => {});
+      } else { const d = await res.json(); alert('Role change failed: ' + (d.error || res.status)); }
     } finally { setActionLoading(null); }
   }
 
@@ -1843,6 +1859,8 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
     try {
       await updateDoc(doc(db, 'users', uid), { isActive: false, updatedAt: new Date().toISOString() });
       setUsers(u => u.map(x => x.uid === uid ? { ...x, isActive: false } : x));
+      const u = users.find((x: any) => x.uid === uid);
+      logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'user_deactivated', targetId: uid, targetName: u?.email ?? uid }).catch(() => {});
     } finally { setActionLoading(null); }
   }
 
@@ -1852,6 +1870,8 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
     try {
       await updateDoc(doc(db, 'users', uid), { isActive: true, updatedAt: new Date().toISOString() });
       setUsers(u => u.map(x => x.uid === uid ? { ...x, isActive: true } : x));
+      const u = users.find((x: any) => x.uid === uid);
+      logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'user_reactivated', targetId: uid, targetName: u?.email ?? uid }).catch(() => {});
     } finally { setActionLoading(null); }
   }
 
@@ -1860,7 +1880,9 @@ function UsersPanel({ currentUserEmail }: { currentUserEmail: string }) {
     if (uid === firebaseUser?.uid) { alert('You cannot delete your own account.'); return; }
     setActionLoading(uid);
     try {
+      const u = users.find((x: any) => x.uid === uid);
       await updateDoc(doc(db, 'users', uid), { isActive: false, deletedAt: new Date().toISOString(), fcmToken: null });
+      logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'user_deleted', targetId: uid, targetName: u?.email ?? uid }).catch(() => {});
       setConfirmDelete(null);
       setUsers(u => u.filter(x => x.uid !== uid));
     } catch { alert('Delete failed.'); }
