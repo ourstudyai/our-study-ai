@@ -6,6 +6,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase/config';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, writeBatch, where } from 'firebase/firestore';
 import SettingsPanel from '@/components/SettingsPanel';
+import { useSessionTracker } from '@/hooks/useSessionTracker';
 
 const FAQ_CONTENT: Record<string, { title: string; content: string }> = {
   '/dashboard': { title: 'Dashboard Guide', content: `**Your Dashboard**\n\nBrowse all courses available to your year and department.\n\n**Opening a course**\nTap any course card to enter the AI study chat.\n\n**Navigation**\n- **Library** — Browse indexed study materials\n- **Contribute** — Upload lecture notes and past questions\n- **Admin** — Manage materials (admins only)` },
@@ -42,6 +43,13 @@ export default function AppNav({ children }: AppNavProps) {
   const notifRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'chief_admin';
+  const isSupreme = firebaseUser?.email === 'ourstudyai@gmail.com';
+  useSessionTracker(
+    firebaseUser?.uid ?? null,
+    firebaseUser?.email ?? null,
+    userProfile?.displayName ?? null,
+    pathname
+  );
   const isSupreme = firebaseUser?.email === 'ourstudyai@gmail.com';
   const faqKey = Object.keys(FAQ_CONTENT).find(k => pathname.startsWith(k)) ?? '';
   const faq = FAQ_CONTENT[faqKey] ?? DEFAULT_FAQ;
