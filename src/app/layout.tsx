@@ -2,12 +2,14 @@ import type { Metadata } from 'next';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import AppShell from '@/components/AppShell';
 import SettingsPanel from '@/components/SettingsPanel';
+import ServiceWorkerManager from '@/components/ServiceWorkerManager';
+import OfflineIndicator from '@/components/OfflineIndicator';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: "Lux Studiorum",
   description:
-    'AI-powered study platform for St. Jerome\'s Formation House. Grounded in course materials, with structured responses and mastery tracking.',
+    'A Catholic seminary study platform grounded in course materials, with AI chat powered by those same materials.',
   keywords: ['seminary', 'theology', 'philosophy', 'AI tutor', 'Catholic education'],
   manifest: '/manifest.json',
   appleWebApp: {
@@ -33,25 +35,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
         <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
         <link rel="manifest" href="/manifest.json" />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').then(reg => {
-        reg.update();
-      });
-                });
-              }
-            `,
-          }}
-        />
       </head>
       <body className="min-h-screen antialiased">
         <AuthProvider>
           <AppShell>
+            <OfflineIndicator />
             {children}
             <SettingsPanel />
+            <ServiceWorkerManager />
           </AppShell>
         </AuthProvider>
       </body>
