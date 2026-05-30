@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <meta name="theme-color" content="#0d1b2a" />
+  <title>Offline — Lux Studiorum</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: #0d1b2a;
+      color: #e8d9b5;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+    }
+    .card {
+      max-width: 340px;
+      width: 100%;
+    }
+    .icon {
+      font-size: 3rem;
+      margin-bottom: 20px;
+      opacity: 0.7;
+    }
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #c4a050;
+      margin-bottom: 10px;
+      letter-spacing: 0.01em;
+    }
+    p {
+      font-size: 0.875rem;
+      line-height: 1.7;
+      color: #a89060;
+      margin-bottom: 24px;
+    }
+    button {
+      background: rgba(196,160,80,0.15);
+      border: 1px solid rgba(196,160,80,0.35);
+      color: #c4a050;
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: rgba(196,160,80,0.25); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📖</div>
+    <h1>You're offline</h1>
+    <p>
+      Any page or material you've already opened is still available.
+      Navigate back to continue reading or studying.
+    </p>
+    <button onclick="history.back()">Go back</button>
+  </div>
+</body>
+</html>
