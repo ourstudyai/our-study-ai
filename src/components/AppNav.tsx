@@ -286,7 +286,7 @@ export default function AppNav({ children }: AppNavProps) {
 
   const Logo = () => (
     <button onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', background: 'transparent', border: 'none', padding: '0' }}>
-      <img src="https://i.imgur.com/MPk1vBA.png" alt="Onus Meum Leve" style={{ width: '32px', height: '32px', objectFit: 'contain', flexShrink: 0 }} />
+      <img src="/icons/icon-192.png" alt="Onus Meum Leve" style={{ width: '32px', height: '32px', objectFit: 'contain', flexShrink: 0 }} />
       <div style={{ textAlign: 'left' }}>
         <div style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', lineHeight: 1.2 }}>Lux Studiorum</div>
         <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>Lux in Tenebris</div>
@@ -349,7 +349,7 @@ export default function AppNav({ children }: AppNavProps) {
   </div>
   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
     <img
-      src="https://i.imgur.com/MPk1vBA.png"
+      src="/icons/icon-192.png"
       alt="Lux Studiorum"
       style={{ width: '32px', height: '32px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px var(--gold-glow))' }}
     />

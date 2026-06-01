@@ -38,7 +38,7 @@ export default function LoginPage() {
   if (loading) {
     return (
       <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)' }}>
-        <img src="https://i.imgur.com/MPk1vBA.png" alt="" style={{ width: '48px', height: '48px', objectFit: 'contain', opacity: 0.6, animation: 'lux-breathe 2s ease-in-out infinite' }} />
+        <img src="/icons/icon-192.png" alt="" style={{ width: '48px', height: '48px', objectFit: 'contain', opacity: 0.6, animation: 'lux-breathe 2s ease-in-out infinite' }} />
         <style>{`@keyframes lux-breathe { 0%,100%{opacity:0.3} 50%{opacity:0.8} }`}</style>
       </div>
     );
@@ -76,7 +76,7 @@ export default function LoginPage() {
             marginBottom: '20px',
           }}>
             <img
-              src="https://i.imgur.com/MPk1vBA.png"
+              src="/icons/icon-192.png"
               alt="Lux Studiorum"
               style={{
                 width: '96px',

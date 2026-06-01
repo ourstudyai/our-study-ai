@@ -48,7 +48,7 @@ export default function LuxLoader({ label }: { label?: string }) {
 
         {/* Logo */}
         <img
-          src="https://i.imgur.com/MPk1vBA.png"
+          src="/icons/icon-192.png"
           alt="Lux Studiorum"
           style={{
             width: '52px',

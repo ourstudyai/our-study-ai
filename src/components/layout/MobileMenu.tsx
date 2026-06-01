@@ -7,7 +7,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { signOut } from '@/lib/firebase/auth';
 import { updateUserProfile, softDeleteUserAccount } from '@/lib/firestore/users';
 
-const LOGO = 'https://i.imgur.com/MPk1vBA.png';
+const LOGO = '/icons/icon-192.png';
 const SUPREME = 'ourstudyai@gmail.com';
 const DEPARTMENTS = ['philosophy', 'theology'];
 const YEARS = [1, 2, 3, 4];

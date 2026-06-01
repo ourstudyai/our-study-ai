@@ -1032,7 +1032,7 @@ export default function CoursePage() {
               <div style={{ height: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
                 <div style={{ textAlign: 'center', maxWidth: '280px', padding: '0 24px' }}>
                   <img
-                    src="https://i.imgur.com/MPk1vBA.png"
+                    src="/icons/icon-192.png"
                     alt="Lux Studiorum"
                     style={{
                       width: '52px', height: '52px', objectFit: 'contain',

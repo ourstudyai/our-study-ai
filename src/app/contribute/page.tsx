@@ -609,7 +609,7 @@ export default function ContributePage() {
       justifyContent: 'center', background: 'var(--navy)',
     }}>
       <img
-        src="https://i.imgur.com/MPk1vBA.png" alt=""
+        src="/icons/icon-192.png" alt=""
         style={{ width: '44px', height: '44px', objectFit: 'contain', opacity: 0.5, animation: 'lux-breathe 2s ease-in-out infinite' }}
       />
       <style>{`@keyframes lux-breathe{0%,100%{opacity:0.3}50%{opacity:0.8}}`}</style>
@@ -636,7 +636,7 @@ export default function ContributePage() {
         {/* Brand */}
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <img
-            src="https://i.imgur.com/MPk1vBA.png" alt="Lux Studiorum"
+            src="/icons/icon-192.png" alt="Lux Studiorum"
             style={{
               width: '64px', height: '64px', objectFit: 'contain', marginBottom: '16px',
               filter: 'drop-shadow(0 0 16px var(--gold-glow))',

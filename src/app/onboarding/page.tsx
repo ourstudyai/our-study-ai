@@ -71,7 +71,7 @@ export default function OnboardingPage() {
     return (
       <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-          <img src="https://i.imgur.com/MPk1vBA.png" alt="" style={{ width: '48px', height: '48px', objectFit: 'contain', opacity: 0.7, animation: 'lux-breathe 2s ease-in-out infinite' }} />
+          <img src="/icons/icon-192.png" alt="" style={{ width: '48px', height: '48px', objectFit: 'contain', opacity: 0.7, animation: 'lux-breathe 2s ease-in-out infinite' }} />
           <style>{`@keyframes lux-breathe { 0%,100%{opacity:0.4} 50%{opacity:0.9} }`}</style>
         </div>
       </div>
@@ -105,7 +105,7 @@ export default function OnboardingPage() {
         {/* Logo + wordmark */}
         <div style={{ textAlign: 'center', marginBottom: '36px' }}>
           <img
-            src="https://i.imgur.com/MPk1vBA.png"
+            src="/icons/icon-192.png"
             alt="Lux Studiorum"
             style={{ width: '64px', height: '64px', objectFit: 'contain', marginBottom: '14px', filter: 'drop-shadow(0 0 12px var(--gold-glow))' }}
           />

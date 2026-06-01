@@ -49,7 +49,7 @@ export default function Navbar() {
             ☰
           </button>
           <div className="md:hidden flex items-center gap-2">
-            <img src="https://i.imgur.com/MPk1vBA.png" alt="Onus Meum Leve" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+            <img src="/icons/icon-192.png" alt="Onus Meum Leve" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
             <span className="text-sm font-bold font-display">Lux Studiorum</span>
           </div>
         </div>
