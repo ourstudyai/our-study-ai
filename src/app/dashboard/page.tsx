@@ -6,6 +6,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { getFilteredCourses } from '@/lib/firestore/courses';
 import { Course, Department } from '@/lib/types';
 import MiniLoader from '@/components/MiniLoader';
+import { fetchCoverage, CoverageMap } from '@/lib/coverage';
+import { SemesterCoveragePanel, CourseCoverageBadges } from '@/components/CoveragePanel';
 import { db } from '@/lib/firebase/config';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 
@@ -40,6 +42,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [timetable, setTimetable] = useState<any>(null);
+  const [coverage, setCoverage] = useState<CoverageMap | null>(null);
+  const [yearCourses, setYearCourses] = useState<Course[]>([]);
 
   const getAccessibleYears = (_dept: Department): number[] => [1, 2, 3, 4];
   const accessibleYears = getAccessibleYears(activeDept);
@@ -57,6 +61,16 @@ export default function DashboardPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [activeDept, activeYear, activeSemester]);
+
+  useEffect(() => {
+    fetchCoverage().then(setCoverage);
+  }, []);
+
+  useEffect(() => {
+    Promise.all([1, 2].map((sem) => getFilteredCourses(activeDept, activeYear, sem)))
+      .then((r) => setYearCourses(r.flat()))
+      .catch(() => setYearCourses([]));
+  }, [activeDept, activeYear]);
 
   useEffect(() => {
     if (!userProfile?.department || !userProfile?.year) return;
@@ -266,6 +280,15 @@ export default function DashboardPage() {
                 {courses.length} course{courses.length !== 1 ? 's' : ''}
               </p>
 
+              {coverage && (
+                <SemesterCoveragePanel
+                  courses={courses}
+                  yearCourses={yearCourses}
+                  coverage={coverage}
+                  title={'Year ' + activeYear + ' · Semester ' + activeSemester + ' upload progress'}
+                />
+              )}
+
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
@@ -353,6 +376,8 @@ export default function DashboardPage() {
                       <span style={{ opacity: 0.4 }}>·</span>
                       <span>S{course.semester}</span>
                     </div>
+
+                    {coverage && <CourseCoverageBadges courseId={course.id} coverage={coverage} />}
                   </button>
                 ))}
               </div>

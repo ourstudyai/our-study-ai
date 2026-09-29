@@ -17,12 +17,13 @@ import { Material } from '@/lib/firestore/materials';
 import AppNav from '@/components/AppNav';
 import ApprovalModal from '@/components/admin/ApprovalModal';
 import UploadsPanel from '@/components/admin/UploadsPanel';
+import CoverageTab from '@/components/admin/CoverageTab';
 import LuxLoader from '@/components/LuxLoader';
 import { logAdminAction } from '@/lib/analytics/tracker';
 const SUPREME = 'ourstudyai@gmail.com';
 
 type Tab = 'uploads' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
-           'users' | 'reports' | 'courses' | 'timetables' | 'assignments' | 'analytics';
+           'users' | 'reports' | 'courses' | 'timetables' | 'assignments' | 'analytics' | 'coverage';
 
 const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] = [
   { key: 'uploads',      label: 'Uploads',     icon: '📥' },
@@ -31,6 +32,7 @@ const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] =
   { key: 'quarantined',  label: 'Quarantined', icon: '⚠' },
   { key: 'resurrection', label: 'Resurrection',icon: '↺' },
   { key: 'courses',      label: 'Courses',     icon: '📚' },
+  { key: 'coverage',     label: 'Coverage',    icon: '🎯' },
   { key: 'assignments',  label: 'Assignments', icon: '📋' },
   { key: 'timetables',   label: 'Timetables',  icon: '🗓' },
   { key: 'users',        label: 'Users',       icon: '👥' },
@@ -966,6 +968,9 @@ useEffect(() => {
 
         {/* Courses tab */}
         {tab === 'courses' && <CoursesPanel courses={courses} onRefresh={load} />}
+
+        {/* Coverage tab */}
+        {tab === 'coverage' && <CoverageTab courses={courses} />}
 
         {/* Assignments tab */}
         {tab === 'assignments' && <AssignmentsPanel courses={courses} />}
