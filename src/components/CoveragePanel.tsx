@@ -68,9 +68,9 @@ export function SemesterCoveragePanel({ courses, yearCourses, coverage, title }:
       </p>
 
       <Row label="Handouts" done={s.handoutCourses} total={s.totalCourses}
-        extra={s.handoutsAvailable + ' available'} color={hColor} />
+        extra={s.handoutsAvailable + (s.handoutsAvailable === 1 ? ' handout' : ' handouts') + ' available'} color={hColor} />
       <Row label="Past questions" done={s.pastQuestionCourses} total={s.totalCourses}
-        extra={s.pastQuestionsAvailable + ' available'} color={pColor} />
+        extra={s.pastQuestionsAvailable + (s.pastQuestionsAvailable === 1 ? ' past question' : ' past questions') + ' available'} color={pColor} />
 
       {y && (
         <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '10px' }}>

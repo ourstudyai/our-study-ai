@@ -99,10 +99,10 @@ export default function CoverageTab({ courses }: { courses: AdminCourse[] }) {
           {overall.completeCourses}/{overall.totalCourses} courses fully covered
         </p>
         <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-          Handouts: {overall.handoutCourses}/{overall.totalCourses} courses · {overall.handoutsAvailable} available
+          Handouts: {overall.handoutCourses}/{overall.totalCourses} courses · {overall.handoutsAvailable} {overall.handoutsAvailable === 1 ? 'handout' : 'handouts'} available
         </p>
         <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-          Past questions: {overall.pastQuestionCourses}/{overall.totalCourses} courses · {overall.pastQuestionsAvailable} available
+          Past questions: {overall.pastQuestionCourses}/{overall.totalCourses} courses · {overall.pastQuestionsAvailable} {overall.pastQuestionsAvailable === 1 ? 'past question' : 'past questions'} available
         </p>
       </div>
 
