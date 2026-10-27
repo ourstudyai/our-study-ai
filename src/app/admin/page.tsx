@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import {
@@ -735,15 +735,31 @@ export default function AdminPage() {
   const [deleteConfirmMaterial, setDeleteConfirmMaterial] = useState<Material | null>(null);
   const [reviewConfirmMaterial, setReviewConfirmMaterial] = useState<Material | null>(null);
 
+  const [fDept, setFDept] = useState('');
+  const [fYear, setFYear] = useState('');
+  const [fSem, setFSem] = useState('');
+  const courseById = useMemo(() => { const m = new Map<string, Course>(); courses.forEach(c => m.set(c.id, c)); return m; }, [courses]);
+  const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
+  function courseText(id: string): string {
+    const c = courseById.get(id);
+    if (!c) return '\u26a0 course not found (' + id + ')';
+    return c.name + ' \u00b7 ' + (c.code || '\u2014') + ' \u00b7 ' + cap(String(c.department)) + ' Y' + c.year + ' S' + (c.semester ?? '?');
+  }
+  function allocLine(m: Material): string {
+    const shared = (((m as any).sharedCourseIds || []) as string[]).length;
+    const base = m.confirmedCourseId ? courseText(m.confirmedCourseId) : (m.confirmedCourseName || '');
+    return base + (shared > 0 ? ' \u00b7 +' + shared + ' shared' : '');
+  }
+
   async function handleReassign(materialId: string, courseId: string, courseName: string) {
     try {
       const idToken = await firebaseUser?.getIdToken(true);
       if (!idToken) { alert('Not authenticated. Please refresh and try again.'); return; }
-      const res = await fetch('/api/index-material', {
+      const res = await fetch('/api/reassign-material', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ materialId: selected?.id, action: 'add' }),
+        body: JSON.stringify({ materialId, courseId, courseName, idToken }),
       });
       if (res.ok) { alert('Reassigned successfully!'); setReassigning(null); setReassignCourseId(''); await load(); }
       else { const d = await res.json(); alert('Failed: ' + (d.error || res.status)); }
@@ -782,21 +798,34 @@ useEffect(() => {
     load();
   }, [authLoading, firebaseUser, isAdmin, load, router]);
 
-  function filterAndSort(list: Material[]) {
-    if (!search) return list;
+  function filterAndSort(list: Material[], byCourse = false) {
     const q = search.toLowerCase();
-    return list.filter(m =>
-      m.fileName?.toLowerCase().includes(q) ||
-      m.uploaderEmail?.toLowerCase().includes(q) ||
-      m.suggestedCourseName?.toLowerCase().includes(q) ||
-      m.detectedCourseName?.toLowerCase().includes(q)
-    );
+    return list.filter(m => {
+      const c = m.confirmedCourseId ? courseById.get(m.confirmedCourseId) : undefined;
+      if (byCourse && (fDept || fYear || fSem)) {
+        const ids = [m.confirmedCourseId, ...(((m as any).sharedCourseIds || []) as string[])].filter(Boolean) as string[];
+        const cs = ids.map(id => courseById.get(id)).filter(Boolean) as Course[];
+        if (fDept && !cs.some(x => String(x.department) === fDept)) return false;
+        if (fYear && !cs.some(x => String(x.year) === fYear)) return false;
+        if (fSem && !cs.some(x => String(x.semester) === fSem)) return false;
+      }
+      if (!q) return true;
+      return !!(
+        m.fileName?.toLowerCase().includes(q) ||
+        m.uploaderEmail?.toLowerCase().includes(q) ||
+        m.suggestedCourseName?.toLowerCase().includes(q) ||
+        m.detectedCourseName?.toLowerCase().includes(q) ||
+        m.confirmedCourseName?.toLowerCase().includes(q) ||
+        c?.name?.toLowerCase().includes(q) ||
+        c?.code?.toLowerCase().includes(q)
+      );
+    });
   }
 
   const listMap: Partial<Record<Tab, Material[]>> = {
     uploads: filterAndSort(uploads),
     pending: filterAndSort(pending),
-    approved: filterAndSort(approved),
+    approved: filterAndSort(approved, true),
     quarantined: filterAndSort(quarantined),
     resurrection: filterAndSort(resurrection),
   };
@@ -906,6 +935,23 @@ useEffect(() => {
           />
         )}
 
+        {tab === 'approved' && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            {([
+              [fDept, setFDept, 'All depts', Array.from(new Set(courses.map(c => String(c.department)))).map(d => [d, cap(d)])],
+              [fYear, setFYear, 'All years', ['1','2','3','4'].map(y => [y, 'Year ' + y])],
+              [fSem, setFSem, 'All sems', ['1','2'].map(s => [s, 'Sem ' + s])],
+            ] as any[]).map(([val, set, label, opts], i) => (
+              <select key={i} value={val} onChange={e => set(e.target.value)}
+                style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', color: 'var(--text-primary)', fontSize: '0.75rem' }}>
+                <option value="">{label}</option>
+                {opts.map(([v, l]: string[]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            ))}
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{currentList.length} shown</span>
+          </div>
+        )}
+
         {/* Material list */}
         {['pending','approved','quarantined','resurrection'].includes(tab) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -931,8 +977,8 @@ useEffect(() => {
                         {m.wordCount ? <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span> : null}
                       </div>
                       <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-                          {m.confirmedCourseName
-                            ? <span>✅ {m.confirmedCourseName}</span>
+                          {(m.confirmedCourseId || m.confirmedCourseName)
+                            ? <span style={{ color: m.confirmedCourseId && !courseById.get(m.confirmedCourseId) ? '#fca5a5' : undefined }}>✅ {allocLine(m)}</span>
                             : (m.suggestedCourseName || m.detectedCourseName)
                             ? <span style={{opacity:0.6}}>📖 {m.suggestedCourseName || m.detectedCourseName}</span>
                             : null}
@@ -1115,6 +1161,16 @@ useEffect(() => {
                   {selected.wordCount && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{selected.wordCount.toLocaleString()} words</span>}
                 </div>
               </div>
+              {(selected.confirmedCourseId || (((selected as any).sharedCourseIds || []) as string[]).length > 0) && (
+                <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                  <p style={{ fontSize: '0.65rem', fontWeight: 700, color: '#22c55e', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Allocated to</p>
+                  {[selected.confirmedCourseId, ...(((selected as any).sharedCourseIds || []) as string[])].filter(Boolean).map((id, i) => (
+                    <p key={String(id) + i} style={{ fontSize: '0.78rem', color: courseById.get(id as string) ? 'var(--text-primary)' : '#fca5a5', marginBottom: 2 }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{i === 0 ? 'PRIMARY' : 'SHARED'} · </span>{courseText(id as string)}
+                    </p>
+                  ))}
+                </div>
+              )}
               {(selected.suggestedCourseName || selected.detectedCourseName) && (
                 <div style={{ background: 'rgba(196,160,80,0.06)', border: '1px solid rgba(196,160,80,0.15)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
                   <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--gold)', opacity: 0.7, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Classifier Suggestion</p>
