@@ -265,16 +265,8 @@ export default function LibraryPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!firebaseUser) { router.replace('/login'); return; }
-    async function checkAccess() {
-      if (isAdmin) { setHasAccess(true); setAccessChecked(true); return; }
-      try {
-        const ss = await getDoc(doc(db, 'settings', 'library'));
-        if (ss.exists() && ss.data()?.open === true) { setHasAccess(true); }
-        else { router.replace('/library/restricted'); }
-      } catch { router.replace('/library/restricted'); }
-      finally { setAccessChecked(true); }
-    }
-    checkAccess();
+    // Library is open to every signed-in user (no settings/whitelist gate).
+    setHasAccess(true); setAccessChecked(true);
   }, [authLoading, firebaseUser, isAdmin, router]);
 
   useEffect(() => {
@@ -282,7 +274,7 @@ export default function LibraryPage() {
     async function load() {
       setLoading(true);
       try {
-        const snap = await getDocs(query(collection(db, 'materials'), where('indexed', '==', true)));
+        const snap = await getDocs(query(collection(db, 'materials'), where('indexed', '==', true), where('status', '==', 'approved')));
         const mats = snap.docs.map(d => ({ id: d.id, ...d.data() } as IndexedMaterial));
         const courseSnap = await getDocs(collection(db, 'courses'));
         const cMap: Record<string, { name: string; department: string; year: number; semester: number }> = {};
