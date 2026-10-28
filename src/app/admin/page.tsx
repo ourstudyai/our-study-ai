@@ -1627,6 +1627,23 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', code: '', department: 'philosophy', year: 1, semester: 1, description: '', published: true });
+  const [ovBusy, setOvBusy] = useState(false);
+  const [ovReport, setOvReport] = useState('');
+  async function ovPreview() {
+    setOvBusy(true);
+    try { const r = await fetch('/api/admin/s1-overhaul', { credentials: 'include' }); setOvReport(await r.text()); }
+    catch (e: any) { setOvReport('Error: ' + e.message); }
+    setOvBusy(false);
+  }
+  async function ovApply() {
+    if (!window.confirm('Apply the S1 overhaul to the LIVE course list? This recodes, creates and hides courses. It can only run once.')) return;
+    setOvBusy(true);
+    try {
+      const r = await fetch('/api/admin/s1-overhaul', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: 'APPLY S1 OVERHAUL' }) });
+      setOvReport(await r.text()); onRefresh();
+    } catch (e: any) { setOvReport('Error: ' + e.message); }
+    setOvBusy(false);
+  }
 
   const grouped = courses.reduce<Record<string, Course[]>>((acc, c) => {
     const key = `${c.department.charAt(0).toUpperCase() + c.department.slice(1)} · Year ${c.year} · Sem ${c.semester}`;
@@ -1685,6 +1702,15 @@ function CoursesPanel({ courses, onRefresh }: { courses: Course[]; onRefresh: ()
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{courses.length} course{courses.length !== 1 ? 's' : ''}</p>
         <button onClick={openAdd} style={{ background: 'var(--gold)', color: 'var(--navy)', border: 'none', borderRadius: 8, padding: '8px 16px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer' }}>+ Add Course</button>
+      </div>
+
+      <div style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
+        <p style={{ fontFamily: 'Playfair Display, serif', color: 'var(--gold)', fontSize: '0.85rem', fontWeight: 700, marginBottom: 8 }}>S1 course overhaul 2026/27</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={ovPreview} disabled={ovBusy} style={{ background: 'transparent', border: '1px solid var(--gold)', color: 'var(--gold)', borderRadius: 8, padding: '7px 12px', fontSize: '0.75rem', cursor: 'pointer' }}>{ovBusy ? 'Working…' : 'Preview plan (read-only)'}</button>
+          <button onClick={ovApply} disabled={ovBusy} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: 8, padding: '7px 12px', fontSize: '0.75rem', cursor: 'pointer' }}>Apply (chief admin)</button>
+        </div>
+        {ovReport && <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.66rem', lineHeight: 1.5, color: 'var(--text-primary)', marginTop: 10, maxHeight: 460, overflow: 'auto' }}>{ovReport}</pre>}
       </div>
 
       {showForm && (
