@@ -31,7 +31,9 @@ export async function getFilteredCourses(
   );
 
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Course));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Course))
+    .filter((c) => c.published !== false);
 }
 
 export async function getAllCourses(): Promise<Course[]> {

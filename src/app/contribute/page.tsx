@@ -413,7 +413,7 @@ export default function ContributePage() {
     const load = async () => {
       const q = query(collection(db, 'courses'), orderBy('department'));
       const snap = await getDocs(q);
-      setAllCourses(snap.docs.map(d => ({ id: d.id, ...d.data() } as Course)));
+      setAllCourses(snap.docs.map(d => ({ id: d.id, ...d.data() } as Course)).filter((c: any) => c.published !== false));
     };
     load();
   }, []);
