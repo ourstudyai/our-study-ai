@@ -751,6 +751,19 @@ export default function AdminPage() {
     return base + (shared > 0 ? ' \u00b7 +' + shared + ' shared' : '');
   }
 
+  const [ocrRetrying, setOcrRetrying] = useState<string | null>(null);
+  async function retryOcr(materialId: string) {
+    setOcrRetrying(materialId);
+    try {
+      await firebaseUser?.getIdToken(true);
+      const res = await fetch('/api/admin/trigger-ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ materialId }) });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) alert('Failed to queue OCR: ' + ((d as any).error || res.status));
+      else await load();
+    } catch (e: any) { alert('Error: ' + e.message); }
+    finally { setOcrRetrying(null); }
+  }
+
   async function handleReassign(materialId: string, courseId: string, courseName: string) {
     try {
       const idToken = await firebaseUser?.getIdToken(true);
@@ -983,6 +996,12 @@ useEffect(() => {
                             ? <span style={{opacity:0.6}}>📖 {m.suggestedCourseName || m.detectedCourseName}</span>
                             : null}
                         </p>
+                        {tab === 'resurrection' && (
+                          <div onClick={e => e.stopPropagation()} style={{ marginTop: 6 }}>
+                            {(m as any).ocrError && <p style={{ fontSize: '0.66rem', color: '#fca5a5', marginBottom: 6, wordBreak: 'break-word' }}>⚠ {(m as any).ocrError}</p>}
+                            <button onClick={() => retryOcr(m.id)} disabled={ocrRetrying === m.id} style={{ background: 'transparent', border: '1px solid var(--gold)', color: 'var(--gold)', borderRadius: 8, padding: '5px 10px', fontSize: '0.7rem', cursor: 'pointer' }}>{ocrRetrying === m.id ? 'Queuing…' : '↺ Retry OCR'}</button>
+                          </div>
+                        )}
                     </div>
                     <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                       {isHighConf && <span style={{ fontSize: '0.6rem', background: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: 99, padding: '1px 6px' }}>Auto-ready</span>}
