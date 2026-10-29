@@ -1,14 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { extractText } from "@/lib/processing/extractor";
+import { extractText, ExtractionResult } from "@/lib/processing/extractor";
 import { classifyMaterial, MaterialCategory } from "@/lib/processing/classifier";
 import { adminDb } from "@/lib/firebase/admin";
-import { Redis } from "@upstash/redis";
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,25 +37,23 @@ export async function POST(req: NextRequest) {
 
     console.log(`[process-background] Starting for material ${materialId}`);
 
+    // Always read the file from R2 (Redis is no longer used).
     let buffer = Buffer.alloc(0);
+    let bufferError = "";
     try {
-      const base64 = await redis.get<string>(`file:${materialId}`);
-      if (base64) {
-        buffer = Buffer.from(base64, "base64");
-        console.log("[process-background] Buffer from Redis, size:", buffer.length);
-        await redis.del(`file:${materialId}`);
-      } else {
-        console.warn("[process-background] No buffer in Redis, fetching from R2");
-        const fileRes = await fetch(fileUrl);
-        if (!fileRes.ok) throw new Error(`HTTP ${fileRes.status}`);
-        buffer = Buffer.from(await fileRes.arrayBuffer());
-        console.log("[process-background] Buffer from R2, size:", buffer.length);
-      }
-    } catch (err) {
+      const fileRes = await fetch(fileUrl);
+      if (!fileRes.ok) throw new Error(`HTTP ${fileRes.status}`);
+      buffer = Buffer.from(await fileRes.arrayBuffer());
+      console.log("[process-background] Buffer from R2, size:", buffer.length);
+    } catch (err: any) {
+      bufferError = "Could not download the file from storage: " + String(err?.message ?? err).slice(0, 200);
       console.error("[process-background] Failed to get buffer:", err);
     }
+    if (!bufferError && buffer.length === 0) bufferError = "The stored file is empty (0 bytes).";
 
-    const extraction = await extractText(buffer, mimeType, fileName, fileUrl);
+    const extraction: ExtractionResult = bufferError
+      ? { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: bufferError }
+      : await extractText(buffer, mimeType, fileName, fileUrl);
     console.log(`[process-background] Extraction method: ${extraction.method}, words: ${extraction.wordCount}`);
 
     let finalStatus = "pending_review";
@@ -92,6 +84,7 @@ export async function POST(req: NextRequest) {
       pageCount: extraction.pageCount ?? 0,
       isScanned: extraction.isScanned,
       extractionMethod: extraction.method,
+      ocrError: extraction.error ?? "",
       category: classification.category,
       suggestedCourseId: classification.suggestedCourseId,
       suggestedCourseName: classification.suggestedCourseName,

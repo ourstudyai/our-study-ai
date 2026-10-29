@@ -13,7 +13,10 @@ export type ExtractionResult = {
     pageCount?: number;
     wordCount: number;
     isScanned: boolean;
+    error?: string;
 };
+
+const errMsg = (e: unknown) => String((e as any)?.message ?? e).slice(0, 400);
 
 function countWords(text: string): number {
     if (!text) return 0;
@@ -109,6 +112,10 @@ export async function extractText(
     cloudinaryUrl?: string
 ): Promise<ExtractionResult> {
 
+    if (!buffer || buffer.length === 0) {
+        return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: "The file is empty (0 bytes)." };
+    }
+
     // PDF
     if (mimeType === "application/pdf") {
         try {
@@ -118,8 +125,8 @@ export async function extractText(
             return { text: patched, method: "mistral-ocr", wordCount, pageCount: 1, isScanned: wordCount < 50 };
         } catch (err) {
             console.error("[extractor] Mistral OCR failed for PDF:", err);
+            return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: errMsg(err) };
         }
-        return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
 
     // DOCX
@@ -153,8 +160,8 @@ export async function extractText(
             return { text: ocrText, method: "mistral-ocr", wordCount: countWords(ocrText), isScanned: true };
         } catch (err) {
             console.error("[extractor] Mistral OCR failed for DOCX:", err);
+            return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: errMsg(err) };
         }
-        return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
 
     // Plain text
@@ -178,9 +185,9 @@ export async function extractText(
             return { text: patched, method: "mistral-ocr", wordCount: countWords(patched), isScanned: true };
         } catch (err) {
             console.error("[extractor] Mistral OCR failed for image:", err);
+            return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: errMsg(err) };
         }
-        return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
     }
 
-    return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true };
+    return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: "Unsupported file type: " + (mimeType || fileName) };
 }
