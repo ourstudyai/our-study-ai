@@ -76,3 +76,4 @@ serviceAccount.json
 
 # Allow our upload-coverage API route (not test coverage output)
 !src/app/api/coverage/
+*.tsbuildinfo
