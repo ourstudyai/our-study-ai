@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import AudiobookPlayer from '@/components/AudiobookPlayer';
 import TextSearch from '@/components/TextSearch';
+import FullscreenButton from '@/components/FullscreenToggle';
 
 type ViewerMode = 'past-questions' | 'aoc' | 'material-text' | 'note';
 
@@ -186,6 +187,7 @@ export default function FullPageViewer({ mode, data, relatedDocs = [], onClose, 
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
           <p style={{ flex: 1, fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data?.fileName ?? 'Material'}</p>
           <TextSearch text={data?.extractedText ?? ''} />
+          <FullscreenButton />
         </div>
         <div data-tts-scroll="1" style={{ ...body, maxWidth: '720px', margin: '0 auto', width: '100%' }}>
           {data?.extractedText
