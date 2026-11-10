@@ -4,6 +4,7 @@ import AppShell from '@/components/AppShell';
 import SettingsPanel from '@/components/SettingsPanel';
 import ServiceWorkerManager from '@/components/ServiceWorkerManager';
 import OfflineIndicator from '@/components/OfflineIndicator';
+import { FullscreenRestore } from '@/components/FullscreenToggle';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
             <SettingsPanel />
             <ServiceWorkerManager />
+            <FullscreenRestore />
           </AppShell>
         </AuthProvider>
       </body>
