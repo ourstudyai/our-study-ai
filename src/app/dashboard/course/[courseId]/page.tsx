@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getCourseById } from '@/lib/firestore/courses';
@@ -220,7 +221,7 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (ttsRef.current && !ttsRef.current.contains(e.target as Node)) setShowTTSSettings(false);
+      if (ttsRef.current && !ttsRef.current.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-tts-pop]')) setShowTTSSettings(false);
     };
     if (showTTSSettings) document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -396,10 +397,9 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
             <Gear />
           </button>
 
-          {showTTSSettings && (
-            <div style={{
-              position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 300, width: 'min(280px, 90vw)', background: 'var(--navy-card)', border: '1px solid var(--border-strong)', borderRadius: '16px', boxShadow: '0 0 0 1px var(--border)', overflow: 'hidden',
-            }}>
+          {showTTSSettings && typeof document !== 'undefined' && createPortal(
+            <div data-tts-pop="1" onClick={() => setShowTTSSettings(false)} style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(300px, 100%)', maxHeight: '85vh', overflowY: 'auto', borderRadius: '16px',  background: 'var(--navy-card)', border: '1px solid var(--border-strong)', boxShadow: '0 12px 40px rgba(0,0,0,0.55)' }}>
               {/* Header */}
               <div style={{
                 padding: '10px 14px 8px',
@@ -477,7 +477,8 @@ function MessageActions({ message, messageIndex, courseId, userId, userEmail, co
                 </button>
               </div>
             </div>
-          )}
+          </div>
+          , document.body)}
         </div>
 
         {/* Regenerate */}
