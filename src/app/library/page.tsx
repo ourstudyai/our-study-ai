@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import AudiobookPlayer from '@/components/AudiobookPlayer';
+import TextSearch from '@/components/TextSearch';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import AppNav from '@/components/AppNav';
@@ -638,6 +639,7 @@ async function fetchBody(materialId: string): Promise<string> {
           <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--navy-card)' }}>
             <button onClick={() => setFullTextViewer(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             <p style={{ flex: 1, fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullTextViewer.fileName}</p>
+            <TextSearch text={fullTextViewer.text} />
           </div>
           <div data-tts-scroll="1" style={{ flex: 1, overflowY: 'auto', padding: '20px', maxWidth: '720px', margin: '0 auto', width: '100%' }}>
             <MarkdownBody text={fullTextViewer.text} />
