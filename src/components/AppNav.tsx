@@ -6,7 +6,6 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase/config';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, writeBatch, where } from 'firebase/firestore';
 import SettingsPanel from '@/components/SettingsPanel';
-import FullscreenButton from '@/components/FullscreenToggle';
 import { useSessionTracker } from '@/hooks/useSessionTracker';
 
 const FAQ_CONTENT: Record<string, { title: string; content: string }> = {
@@ -173,7 +172,6 @@ export default function AppNav({ children }: AppNavProps) {
         style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '10px', width: '100%', textAlign: 'left', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500, background: 'transparent', color: 'var(--text-secondary)', border: '1px solid transparent' }}>
         <span>⚙️</span>Settings
       </button>
-      <FullscreenButton variant="row" onAfter={onNav} />
     </div>
   );
 
@@ -318,7 +316,6 @@ export default function AppNav({ children }: AppNavProps) {
         <Logo />
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {isAdmin && <BellButton size="sm" />}
-          <FullscreenButton />
           <button onClick={() => setFaqOpen(true)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 10px', color: 'var(--text-secondary)', cursor: 'pointer' }}>❓</button>
           <button
   onClick={() => setMobileNavOpen(true)}

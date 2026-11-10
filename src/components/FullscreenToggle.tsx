@@ -52,35 +52,13 @@ export function useFullscreen() {
   return { supported, active, toggle };
 }
 
-// Mounted once in the root layout: after a full page reload the browser drops
-// fullscreen, so re-enter on the user's first tap if they were in fullscreen.
-export function FullscreenRestore() {
-  useEffect(() => {
-    let want = false;
-    try { want = localStorage.getItem(KEY) === '1'; } catch {}
-    if (!want || fsElement()) return;
-    const el: any = document.documentElement;
-    if (!(el.requestFullscreen || el.webkitRequestFullscreen)) return;
-    const go = () => {
-      document.removeEventListener('pointerup', go, true);
-      document.removeEventListener('click', go, true);
-      if (!fsElement()) enterFs();
-    };
-    document.addEventListener('pointerup', go, true);
-    document.addEventListener('click', go, true);
-    return () => {
-      document.removeEventListener('pointerup', go, true);
-      document.removeEventListener('click', go, true);
-    };
-  }, []);
-  return null;
-}
-
 const ICON_ENTER = 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5';
 const ICON_EXIT = 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5';
 
 export default function FullscreenButton({ variant = 'icon', onAfter }: { variant?: 'icon' | 'row'; onAfter?: () => void }) {
   const { supported, active, toggle } = useFullscreen();
+  // exit again when the viewer closes, so fullscreen never leaks into the rest of the app
+  useEffect(() => () => { if (fsElement()) exitFs(); }, []);
   if (!supported) return null;
 
   const icon = (
