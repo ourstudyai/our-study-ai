@@ -3,6 +3,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Material } from '@/lib/firestore/materials';
+import { CATEGORY_OPTIONS, normalizeCategory, nameLabel, AUTO_NAME_RE } from '@/lib/categories';
+import { buildNames } from '@/lib/materialNaming';
 
 type Course = { id: string; name: string; code?: string; department: string; year: number; semester: number };
 
@@ -27,8 +29,8 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
       .finally(() => setBodyLoading(false));
   }, [material.id]);
   const [selectedCourseId, setSelectedCourseId] = useState((material as any).suggestedCourseId || '');
-  const [category, setCategory] = useState(material.category || 'other');
-  const [displayName, setDisplayName] = useState(material.fileName || '');
+  const [category, setCategory] = useState(normalizeCategory(material.category) || 'other');
+  const [displayName, setDisplayName] = useState(material.indexDisplayName || material.fileName || '');
 
   const [loading, setLoading] = useState(false);
   const [delConfirm, setDelConfirm] = useState(false);
@@ -112,6 +114,15 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
     setLoading(true); setStatus('Saving and reindexing...');
     try {
       const course = courses.find(c => c.id === selectedCourseId);
+      // Auto-generated names follow the final course and category chosen here.
+      let finalName = displayName;
+      if (course && AUTO_NAME_RE.test(displayName)) {
+        const expected = `${course.code || course.name} · ${nameLabel(category)} `;
+        if (!displayName.startsWith(expected)) {
+          const names = await buildNames(course, [{ id: material.id, fileName: material.fileName, category }]);
+          finalName = names.get(material.id) ?? displayName;
+        }
+      }
       const res = await fetch('/api/admin/reindex-material', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -121,7 +132,7 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
           courseName: course?.name || '',
           category,
           extractedText: ocrText,
-          indexDisplayName: displayName,
+          indexDisplayName: finalName,
           department: course?.department || '',
           year: course?.year || null,
           semester: course?.semester || null,
@@ -287,8 +298,8 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 4 }}>Category</p>
                 <select value={category} onChange={e => setCategory(e.target.value as any)} style={inp}>
-                  {['notes','textbook','past_questions','aoc','other'].map(c => (
-                    <option key={c} value={c}>{c.replace('_',' ')}</option>
+                  {CATEGORY_OPTIONS.map(c => (
+                    <option key={c.key} value={c.key}>{c.label}</option>
                   ))}
                 </select>
               </div>

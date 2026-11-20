@@ -22,8 +22,9 @@ export function buildCourseMap(materials: CourseMaterialMeta[]): string {
   if (!materials || materials.length === 0) return '';
 
   const CAT_LABEL: Record<string, string> = {
-    lecture_notes: 'Lecture Notes',
+    lecture_notes: 'Handout',
     handout: 'Handout',
+    notes: 'Handout',
     syllabus: 'Syllabus',
     past_questions: 'Past Questions',
     aoc: 'Areas of Concentration',

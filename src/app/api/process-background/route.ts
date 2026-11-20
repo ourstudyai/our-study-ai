@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { extractText, ExtractionResult } from "@/lib/processing/extractor";
 import { classifyMaterial, MaterialCategory } from "@/lib/processing/classifier";
 import { adminDb } from "@/lib/firebase/admin";
+import { normalizeCategory } from "@/lib/categories";
 
 export async function POST(req: NextRequest) {
   try {
@@ -85,7 +87,7 @@ export async function POST(req: NextRequest) {
       isScanned: extraction.isScanned,
       extractionMethod: extraction.method,
       ocrError: extraction.error ?? "",
-      category: classification.category,
+      category: (normalizeCategory(classification.category) || "other") as MaterialCategory,
       suggestedCourseId: classification.suggestedCourseId,
       suggestedCourseName: classification.suggestedCourseName,
       detectedCourseName: classification.detectedCourseName,
