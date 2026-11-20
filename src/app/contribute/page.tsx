@@ -21,7 +21,7 @@ interface Course { id: string; name: string; code?: string; department: string; 
 interface Cls { courseId: string | null; courseName: string; category: string; }
 
 type ItemStatus = 'queued' | 'hashing' | 'uploading' | 'done' | 'error';
-interface Item { id: string; file: File; status: ItemStatus; progress: number; error?: string; }
+interface Item { id: string; file: File; status: ItemStatus; progress: number; error?: string; dup?: boolean; }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -68,7 +68,7 @@ export default function ContributePage() {
   const [year, setYear] = useState<number | ''>('');
   const [items, setItems] = useState<Item[]>([]);
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<{ ok: number; fail: number } | null>(null);
+  const [result, setResult] = useState<{ ok: number; fail: number; dup: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [mode, setMode] = useState<'quick' | 'classify'>('quick');
   const [allCourses, setAllCourses] = useState<Course[]>([]);
@@ -117,16 +117,16 @@ export default function ContributePage() {
     return () => window.removeEventListener('beforeunload', h);
   }, [running]);
 
-  async function uploadOne(item: Item, d: string, y: number, cls: Cls | null) {
+  async function uploadOne(item: Item, d: string, y: number, cls: Cls | null): Promise<boolean> {
     setItem(item.id, { status: 'hashing', progress: 0, error: undefined });
     const fileHash = await sha256Hex(item.file);
 
     // Same bytes already on the platform: nothing to upload, count it as received.
     const chk = await fetch('/api/check-hash', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ fileHash }),
+      body: JSON.stringify({ fileHash, dept: d, year: y, courseId: cls?.courseId ?? null, courseName: cls?.courseName ?? null }),
     });
-    if (chk.ok && (await chk.json()).exists) { setItem(item.id, { status: 'done', progress: 100 }); return; }
+    if (chk.ok && (await chk.json()).exists) { setItem(item.id, { status: 'done', progress: 100, dup: true }); return true; }
 
     setItem(item.id, { status: 'uploading', progress: 0 });
     const sigRes = await fetch('/api/cloudinary-signature', {
@@ -148,6 +148,7 @@ export default function ContributePage() {
     });
     if (!reg.ok) throw new Error('Could not save file (' + reg.status + ')');
     setItem(item.id, { status: 'done', progress: 100 });
+    return false;
   }
 
   async function handleUpload() {
@@ -155,12 +156,12 @@ export default function ContributePage() {
     const targets = items.filter(i => i.status === 'queued' || i.status === 'error');
     if (!targets.length) return;
     setRunning(true); setResult(null);
-    let ok = 0, fail = 0;
+    let ok = 0, fail = 0, dup = 0;
 
     for (const item of targets) {
       let done = false;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS && !done; attempt++) {
-        try { await uploadOne(item, dept, year as number, cls); done = true; }
+        try { if (await uploadOne(item, dept, year as number, cls)) dup++; done = true; }
         catch (e: any) {
           if (attempt === MAX_ATTEMPTS) setItem(item.id, { status: 'error', error: e?.message ?? 'Failed' });
           else await sleep(attempt * 1500);
@@ -169,13 +170,13 @@ export default function ContributePage() {
       if (done) ok++; else fail++;
     }
 
-    if (ok > 0) {
+    if (ok - dup > 0) {
       fetch('/api/process-upload', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ notifyOnly: true, count: ok, label: `${DEPT_LABELS[dept]} Year ${year}` }),
+        body: JSON.stringify({ notifyOnly: true, count: ok - dup, label: `${DEPT_LABELS[dept]} Year ${year}` }),
       }).catch(() => {});
     }
-    setResult({ ok, fail });
+    setResult({ ok, fail, dup });
     setRunning(false);
   }
 
@@ -343,7 +344,7 @@ export default function ContributePage() {
                       {it.status === 'queued' && 'Ready'}
                       {it.status === 'hashing' && 'Checking…'}
                       {it.status === 'uploading' && `Uploading ${it.progress}%`}
-                      {it.status === 'done' && 'Received'}
+                      {it.status === 'done' && (it.dup ? 'Already on the platform' : 'Received')}
                       {it.status === 'error' && (it.error ?? 'Failed') + ', tap Retry'}
                     </p>
                   </div>
@@ -366,7 +367,7 @@ export default function ContributePage() {
         {result && !running && (
           <div style={{ background: result.fail ? 'rgba(239,68,68,0.08)' : 'rgba(34,197,94,0.08)', border: `1px solid ${result.fail ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`, borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
             <p style={{ fontSize: '0.82rem', fontWeight: 700, color: result.fail ? '#ef4444' : '#22c55e', marginBottom: 2 }}>
-              {result.ok} file{result.ok !== 1 ? 's' : ''} received{result.fail ? `, ${result.fail} failed` : ''}
+              {result.ok - result.dup} file{result.ok - result.dup !== 1 ? 's' : ''} received{result.dup ? `, ${result.dup} already on the platform` : ''}{result.fail ? `, ${result.fail} failed` : ''}
             </p>
             <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
               {result.fail ? 'Tap Retry to upload the failed files again.' : 'Thank you! Admins will sort them into the right courses.'}

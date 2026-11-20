@@ -288,6 +288,8 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
             ? '📋'
             : m.category === 'textbook'
             ? '📖'
+            : (m.category as string) === 'student_notes'
+            ? '📝'
             : '📄';
         const pageInfo = m.pageCount ? ' · ' + m.pageCount + ' pages' : '';
         const wordInfo =

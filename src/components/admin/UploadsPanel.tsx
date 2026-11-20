@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import { writeBatch, doc } from 'firebase/firestore';
 import { buildNames } from '@/lib/materialNaming';
 import RenameTool from '@/components/admin/RenameTool';
+import HashBackfillTool from '@/components/admin/HashBackfillTool';
+import DuplicateHits from '@/components/admin/DuplicateHits';
 import { db } from '@/lib/firebase/config';
 import { Material } from '@/lib/firestore/materials';
 
@@ -297,7 +299,9 @@ export default function UploadsPanel({ uploads, courses, onRefresh, firebaseUser
       {groups.map(g => (
         <GroupBlock key={g.key} group={g} courses={live} firebaseUser={firebaseUser} forceOpen={searching} onChanged={onRefresh} />
       ))}
+      <DuplicateHits courses={live} firebaseUser={firebaseUser} />
       <RenameTool firebaseUser={firebaseUser} />
+      <HashBackfillTool firebaseUser={firebaseUser} />
     </div>
   );
 }
