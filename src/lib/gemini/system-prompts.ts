@@ -1,5 +1,6 @@
 // System Prompts — Lux Studiorum
 import { StudyMode } from '@/lib/types';
+import { sourceTier } from '@/lib/categories';
 
 // ── Course Map ────────────────────────────────────────────────────────────────
 // Builds a compact text summary of all materials in a course.
@@ -20,13 +21,17 @@ export interface CourseMaterialMeta {
 
 export function buildCourseMap(materials: CourseMaterialMeta[]): string {
   if (!materials || materials.length === 0) return '';
+  // Handouts first, then Student's Notes, then everything else (stable order inside each group).
+  materials = [...materials].sort((a, b) => sourceTier(a.category) - sourceTier(b.category));
 
   const CAT_LABEL: Record<string, string> = {
-    lecture_notes: 'Lecture Notes',
+    lecture_notes: 'Handout',
     handout: 'Handout',
+    notes: 'Handout',
     syllabus: 'Syllabus',
     past_questions: 'Past Questions',
     aoc: 'Areas of Concentration',
+    student_notes: "Student's Notes",
     other: 'Material',
   };
 

@@ -10,6 +10,7 @@ import { getSystemPrompt, buildCourseMap, CourseMaterialMeta } from "@/lib/gemin
 import { searchTavily } from "@/lib/search/tavily";
 import { hybridSearch, searchByHeading } from "@/lib/qdrant/search";
 import { getMistralClient } from "@/lib/mistral/client";
+import { CATEGORY_LABEL, normalizeCategory, sourceTier } from "@/lib/categories";
 
 interface ChunkDoc {
   text: string;
@@ -140,17 +141,29 @@ export async function POST(req: NextRequest) {
           let lowConfidence = false;
           let suggestedPaths: string[] = [];
 
+          // Which type each material is, so retrieved passages can be ranked and tagged.
+          const metaEarly = await courseMetaPromise;
+          const catOf = new Map<string, string>(metaEarly.map(m => [m.id, m.category] as [string, string]));
+          const tagOf = (materialId: string) => {
+            const c = catOf.get(materialId);
+            const l = c ? CATEGORY_LABEL[normalizeCategory(c)] : '';
+            return l ? ` (${l})` : '';
+          };
+          // Handouts first, then Student's Notes, then the rest; relevance order kept inside each group.
+          const prioritise = <T extends { materialId: string }>(rs: T[]): T[] =>
+            [...rs].sort((a, b) => sourceTier(catOf.get(a.materialId)) - sourceTier(catOf.get(b.materialId)));
+
           const topicMatch = message.match(/^\[TOPIC:(.+?)\]/);
           const topicHeading = topicMatch ? topicMatch[1].trim() : null;
 
           if (courseId) {
             try {
               if (topicHeading) {
-                const matched = await searchByHeading(topicHeading, courseId, RAG_TOP_K);
+                const matched = prioritise(await searchByHeading(topicHeading, courseId, RAG_TOP_K));
                 if (matched.length > 0) {
                   ragContext = matched.map(r => {
                     const pathLabel = r.fullPath ? `[${r.fullPath}]` : `[${r.heading ?? 'Section'}]`;
-                    return `${pathLabel}\n${r.text.slice(0, CHUNK_CHAR_LIMIT)}`;
+                    return `${pathLabel}${tagOf(r.materialId)}\n${r.text.slice(0, CHUNK_CHAR_LIMIT)}`;
                   }).join("\n\n");
                   suggestedPaths = Array.from(new Set(matched.slice(0, 5).map(r => r.fullPath ?? r.heading ?? '').filter(Boolean)));
                   lowConfidence = false;
@@ -158,14 +171,16 @@ export async function POST(req: NextRequest) {
                   lowConfidence = true;
                 }
               } else {
-                const qdrantResults = await hybridSearch(message, courseId, RAG_TOP_K);
+                const rawResults = await hybridSearch(message, courseId, RAG_TOP_K);
+                const rawTop = rawResults.reduce((mx, r) => Math.max(mx, r.score), 0);
+                const qdrantResults = prioritise(rawResults);
                 if (qdrantResults.length > 0) {
                   ragContext = qdrantResults.map(r => {
                     const pathLabel = r.fullPath ? `[${r.fullPath}]` : `[${r.heading ?? 'Section'}]`;
-                    return `${pathLabel}\n${r.text.slice(0, CHUNK_CHAR_LIMIT)}`;
+                    return `${pathLabel}${tagOf(r.materialId)}\n${r.text.slice(0, CHUNK_CHAR_LIMIT)}`;
                   }).join("\n\n");
                   suggestedPaths = Array.from(new Set(qdrantResults.slice(0, 5).map(r => r.fullPath ?? r.heading ?? '').filter(Boolean)));
-                  lowConfidence = qdrantResults[0]?.score < 0.005;
+                  lowConfidence = rawTop < 0.005;
                 }
               }
             } catch (err) {
@@ -192,7 +207,7 @@ export async function POST(req: NextRequest) {
               : "";
             semesterSummary = `Note: The match between the student's query and course materials is weak.${pathHint} Gently let the student know the exact terms used in their materials, suggest the relevant section heading if available, and ask if they'd like you to answer from that section or from general knowledge. Do not fabricate material content.\n\nAvailable material excerpts (low relevance):\n\n${ragContext}`;
           } else {
-            semesterSummary = `Relevant course material excerpts (answer primarily from these, use the exact headings and terminology as they appear):\n\nCRITICAL: Answer ONLY from the excerpts below. If the specific information the student is asking about is not present in these excerpts, say so honestly — do not fill gaps from your own training knowledge and label it 📚. You may only use 📚 for content explicitly present in the excerpts below.\n\n${ragContext}`;
+            semesterSummary = `Relevant course material excerpts (answer primarily from these, use the exact headings and terminology as they appear):\n\nSOURCE PRIORITY: The excerpts are listed in priority order and each is tagged with its type. Treat Handouts as the authoritative source and answer from them first. Use Student's Notes only to supplement, clarify, or fill gaps the handouts do not cover, and say so when a point comes only from student notes. If a student's note conflicts with a handout, follow the handout and mention the difference gently.\n\nCRITICAL: Answer ONLY from the excerpts below. If the specific information the student is asking about is not present in these excerpts, say so honestly — do not fill gaps from your own training knowledge and label it 📚. You may only use 📚 for content explicitly present in the excerpts below.\n\n${ragContext}`;
           }
 
           if (materialContext) {

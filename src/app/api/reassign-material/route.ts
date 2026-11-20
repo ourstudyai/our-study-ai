@@ -3,6 +3,7 @@ import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { upsertChunks, deleteChunksByMaterial } from '@/lib/qdrant/upsert';
 import { MaterialCategory } from '@/lib/processing/classifier';
+import { AUTO_NAME_RE, nameLabel } from '@/lib/categories';
 
 const WORD_CEILING = 1500;
 
@@ -102,9 +103,28 @@ export async function POST(req: NextRequest) {
     if (!mat) return NextResponse.json({ error: 'Material not found' }, { status: 404 });
 
     // Update course assignment
+    // An auto-generated name follows the course: "OLD 101 · Handout 2" -> "NEW 202 · Handout N".
+    let newDisplayName: string | null = null;
+    if (mat.confirmedCourseId !== courseId && AUTO_NAME_RE.test(String(mat.indexDisplayName ?? ''))) {
+      const cSnap = await adminDb.collection('courses').doc(courseId).get();
+      const base = String(cSnap.data()?.code || cSnap.data()?.name || courseName);
+      const stem = `${base} · ${nameLabel(mat.category)} `;
+      const others = await adminDb.collection('materials').where('confirmedCourseId', '==', courseId).get();
+      let max = 0;
+      others.docs.forEach(d => {
+        const n = String(d.data().indexDisplayName ?? '');
+        if (n.startsWith(stem)) {
+          const num = Number(n.slice(stem.length));
+          if (!isNaN(num)) max = Math.max(max, num);
+        }
+      });
+      newDisplayName = `${stem}${max + 1}`;
+    }
+
     await matRef.update({
       confirmedCourseId: courseId,
       confirmedCourseName: courseName,
+      ...(newDisplayName ? { indexDisplayName: newDisplayName } : {}),
       updatedAt: FieldValue.serverTimestamp(),
     });
 

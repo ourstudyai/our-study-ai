@@ -1,68 +1,82 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase/admin";
+import { cookies } from "next/headers";
+import type { DecodedIdToken } from "firebase-admin/auth";
+import { adminAuth, adminDb } from "@/lib/firebase/admin";
 import { R2_PUBLIC_URL } from "@/lib/r2";
 
+const CATEGORIES = ["lecture_notes", "past_questions", "aoc", "syllabus", "student_notes", "other"];
+
+// Registers an uploaded file as an unsorted material. No OCR, no extraction:
+// admins sort first, then send to OCR.
 export async function POST(req: NextRequest) {
   try {
-    const session = (await import("next/headers")).cookies().get("session")?.value;
+    const session = cookies().get("session")?.value;
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    try { await (await import("@/lib/firebase/admin")).adminAuth.verifyIdToken(session); }
+    let decoded: DecodedIdToken;
+    try { decoded = await adminAuth.verifyIdToken(session); }
     catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
 
-    const { key, fileHash, fileName, mimeType, uploadedBy, uploadedByRole, uploaderEmail, suggestedCourseName, suggestedCourseId, category } = await req.json();
-    console.log("[process-upload] body:", JSON.stringify({ key, uploadedBy, uploaderEmail, fileName }));
+    const body = await req.json();
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://our-study-ai.vercel.app";
 
-    if (!key || !uploadedBy || !uploaderEmail || !fileName) {
+    // One summary notification per batch, sent by the client after the last file.
+    if (body.notifyOnly) {
+      const count = Number(body.count) || 0;
+      if (count > 0) {
+        try {
+          await fetch(`${appUrl}/api/notify-admins`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "",
+            },
+            body: JSON.stringify({
+              type: "new_upload",
+              title: "📤 New Uploads",
+              body: `${count} file${count !== 1 ? "s" : ""} uploaded for ${String(body.label ?? "review")}, awaiting sorting.`,
+              data: { status: "upload_review" },
+            }),
+          });
+        } catch (e) { console.error("[process-upload] Notify failed:", e); }
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    const { key, fileHash, fileName, mimeType, fileSize, uploadDepartment, uploadYear, suggestedCourseId, suggestedCourseName, category } = body;
+    if (!key || !fileName || !String(key).startsWith("contributions/")) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
 
-    const fileUrl = `${R2_PUBLIC_URL}/${key}`;
+    const userSnap = await adminDb.collection("users").doc(decoded.uid).get();
+    const role = userSnap.data()?.role ?? "student";
+    const now = new Date().toISOString();
     const matRef = adminDb.collection("materials").doc();
-    const materialId = matRef.id;
 
-    console.log("[process-upload] attempting set for", materialId);
-    try {
-      await matRef.set({
-        fileName,
-        mimeType: mimeType ?? "application/octet-stream",
-        fileUrl,
-        publicId: key,
-        fileHash: fileHash ?? "",
-        uploadedBy,
-        uploadedByRole: uploadedByRole ?? "student",
-        uploaderEmail,
-        suggestedCourseName: suggestedCourseName ?? null,
-        suggestedCourseId: suggestedCourseId ?? null,
-        category: category ?? "other",
-        status: "upload_review",
-        indexed: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-      console.log("[process-upload] set succeeded for", materialId);
-    } catch (setErr) {
-      console.error("[process-upload] set FAILED:", setErr);
-      throw setErr;
-    }
+    await matRef.set({
+      fileName,
+      mimeType: mimeType ?? "application/octet-stream",
+      fileUrl: `${R2_PUBLIC_URL}/${key}`,
+      publicId: key,
+      fileHash: fileHash ?? "",
+      fileSize: Number(fileSize) || 0,
+      uploadedBy: decoded.uid,
+      uploadedByRole: role,
+      uploaderEmail: decoded.email ?? "unknown",
+      uploadDepartment: uploadDepartment ?? null,
+      uploadYear: Number(uploadYear) || null,
+      suggestedCourseId: suggestedCourseId || null,
+      suggestedCourseName: suggestedCourseName ? String(suggestedCourseName).slice(0, 200) : null,
+      category: CATEGORIES.includes(category) ? category : null,
+      status: "upload_review",
+      indexed: false,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-    // OCR not auto-queued. Admin triggers manually.
-
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://our-study-ai.vercel.app";
-
-    try {
-      await fetch(`${appUrl}/api/notify-admins`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "new_upload", title: "📤 New Upload", body: `${fileName} was uploaded and is awaiting admin review.`, data: { materialId, status: "upload_review", fileName } }),
-      });
-    } catch (notifyErr) {
-      console.error("[process-upload] Notify failed:", notifyErr);
-    }
-
-    return NextResponse.json({ success: true, materialId, status: "upload_review" });
+    return NextResponse.json({ success: true, materialId: matRef.id, status: "upload_review" });
   } catch (err) {
-    console.error("[process-upload] Unexpected error:", err);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    console.error("[process-upload]", err);
+    return NextResponse.json({ error: "Failed to register upload." }, { status: 500 });
   }
 }

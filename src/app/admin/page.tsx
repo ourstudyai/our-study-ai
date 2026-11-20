@@ -17,16 +17,18 @@ import { Material } from '@/lib/firestore/materials';
 import AppNav from '@/components/AppNav';
 import ApprovalModal from '@/components/admin/ApprovalModal';
 import UploadsPanel from '@/components/admin/UploadsPanel';
+import OcrQueuePanel from '@/components/admin/OcrQueuePanel';
 import CoverageTab from '@/components/admin/CoverageTab';
 import LuxLoader from '@/components/LuxLoader';
 import { logAdminAction } from '@/lib/analytics/tracker';
 const SUPREME = 'ourstudyai@gmail.com';
 
-type Tab = 'uploads' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
+type Tab = 'uploads' | 'ocrqueue' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
            'users' | 'reports' | 'courses' | 'timetables' | 'assignments' | 'analytics' | 'coverage';
 
 const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] = [
   { key: 'uploads',      label: 'Uploads',     icon: '📥' },
+  { key: 'ocrqueue',     label: 'OCR Queue',   icon: '🔍' },
   { key: 'pending',      label: 'Pending',     icon: '⏳' },
   { key: 'approved',     label: 'Approved',    icon: '✓' },
   { key: 'quarantined',  label: 'Quarantined', icon: '⚠' },
@@ -40,7 +42,7 @@ const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] =
   { key: 'analytics',    label: 'Analytics',   icon: '📈', supremeOnly: true },
 ];
 
-type Course = { id: string; name: string; code?: string; department: string; year: number; semester: number; description?: string };
+type Course = { id: string; name: string; code?: string; department: string; year: number; semester: number; description?: string; published?: boolean };
 
 // ============================================================
 // ANALYTICS PANEL (Supreme only)
@@ -716,6 +718,8 @@ export default function AdminPage() {
   const [resurrection, setResurrection] = useState<Material[]>([]);
   const [users, setUsers]           = useState<never[]>([]);
   const [courses, setCourses]       = useState<Course[]>([]);
+  // Hidden/archived courses must never be offered when tagging materials.
+  const liveCourses = courses.filter(c => c.published !== false);
   const [loading, setLoading]       = useState(true);
   const [selected, setSelected]     = useState<Material | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -934,10 +938,13 @@ useEffect(() => {
         {tab === 'uploads' && (
           <UploadsPanel
             uploads={filterAndSort(uploads)}
+            courses={courses}
             onRefresh={load}
-            onDelete={handleDelete}
             firebaseUser={firebaseUser}
           />
+        )}
+        {tab === 'ocrqueue' && (
+          <OcrQueuePanel firebaseUser={firebaseUser} />
         )}
 
         {/* Search */}
@@ -1011,7 +1018,7 @@ useEffect(() => {
                   {reassigning === m.id ? (
                     <div onClick={e => e.stopPropagation()}>
                       <ReassignPicker
-                        courses={courses}
+                        courses={liveCourses}
                         defaultCourseId={m.confirmedCourseId ?? m.suggestedCourseId ?? ''}
                         onConfirm={(cId, cName) => { setReassignCourseId(cId); handleReassign(m.id, cId, cName); }}
                         onCancel={() => { setReassigning(null); setReassignCourseId(''); }}
@@ -1211,7 +1218,7 @@ useEffect(() => {
               <div style={{ marginBottom: 16 }}>
                 <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Assign to Course</p>
                 <CourseSelector
-                  courses={courses}
+                  courses={liveCourses}
                   defaultCourseId={selected.suggestedCourseId ?? ''}
                   onSelect={(id, name) => handleApprove(selected, id, name)}
                   loading={actionLoading}
@@ -1338,7 +1345,7 @@ useEffect(() => {
                       <div style={{ marginTop: 8, padding: 12, background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 8 }}>Select courses to share this material with. It will appear in their Materials panel.</div>
                         <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {courses.filter(c => c.id !== selected.confirmedCourseId).map(c => {
+                          {courses.filter(c => c.id !== selected.confirmedCourseId && (c.published !== false || shareInput.split(',').map(s => s.trim()).includes(c.id))).map(c => {
                             const checked = shareInput.split(',').map(s => s.trim()).filter(Boolean).includes(c.id);
                             return (
                               <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8, background: checked ? 'rgba(196,160,80,0.1)' : 'var(--navy)', cursor: 'pointer', border: `1px solid ${checked ? 'var(--gold)' : 'var(--border)'}` }}>
@@ -1402,7 +1409,7 @@ useEffect(() => {
       {approvalOpen && selected && (
         <ApprovalModal
           material={selected}
-          courses={courses}
+          courses={liveCourses}
           onClose={() => { setApprovalOpen(false); setSelected(null); }}
           onDone={() => { setApprovalOpen(false); setSelected(null); load(); }}
         />

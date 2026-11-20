@@ -218,9 +218,9 @@ export async function POST(req: NextRequest) {
 
       const contentList: string[] = flattenTree(topicTree);
 
-      const indexDisplayName = mat.suggestedCourseName
+      const indexDisplayName = mat.indexDisplayName || (mat.suggestedCourseName
         ? `${mat.suggestedCourseName} — ${(mat.category ?? 'material').replace('_', ' ')}`
-        : mat.fileName;
+        : mat.fileName);
 
       await matRef.update({
         indexed: true,

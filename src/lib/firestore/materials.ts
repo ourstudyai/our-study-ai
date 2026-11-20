@@ -8,6 +8,7 @@ import { MaterialCategory } from "@/lib/processing/classifier";
 
 export type MaterialStatus =
     | "upload_review"
+    | "sorted"
     | "processing"
     | "pending_review"
     | "quarantined"
@@ -33,6 +34,10 @@ export type Material = {
     extractionMethod: string;
     category: MaterialCategory;
     suggestedCourseId: string | null;
+    uploadDepartment?: string | null;
+    uploadYear?: number | null;
+    fileSize?: number;
+    indexDisplayName?: string | null;
     suggestedCourseName: string | null;
     detectedCourseName: string | null;
     confirmedCourseId: string | null;

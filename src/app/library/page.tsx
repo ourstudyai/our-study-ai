@@ -53,12 +53,14 @@ interface IndexedMaterial {
 }
 
 type SortKey = 'recent' | 'name' | 'pages' | 'category';
+const NAT = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 const CAT_COLORS: Record<string, string> = {
   lecture_notes: '#c4a050',
   past_questions: '#818cf8',
   aoc: '#f472b6',
   syllabus: '#2dd4bf',
+  student_notes: '#4ade80',
   other: '#94a3b8',
 };
 const CAT_DARK: Record<string, string> = {
@@ -66,13 +68,15 @@ const CAT_DARK: Record<string, string> = {
   past_questions: '#4338ca',
   aoc: '#be185d',
   syllabus: '#0f766e',
+  student_notes: '#15803d',
   other: '#475569',
 };
 const CAT_LABELS: Record<string, string> = {
-  lecture_notes: 'Lecture Notes',
+  lecture_notes: 'Handout',
   past_questions: 'Past Questions',
   aoc: 'AOC',
   syllabus: 'Syllabus',
+  student_notes: "Student's Notes",
   other: 'Other',
 };
 
@@ -257,7 +261,7 @@ export default function LibraryPage() {
   const [bodyCache, setBodyCache] = useState<Record<string, string>>({});
   const [bodyFetching, setBodyFetching] = useState<string | null>(null);
 
-  const [shelfView, setShelfView] = useState<Record<string, 'spine' | 'list'>>({});
+  const [shelfView, setShelfView] = useState<Record<string, 'covers' | 'spine' | 'list'>>({});
   const [shelfCollapsed, setShelfCollapsed] = useState<Set<string>>(new Set());
 
   const [whitelistEmails, setWhitelistEmails] = useState<{ id: string; email: string }[]>([]);
@@ -407,7 +411,7 @@ async function fetchBody(materialId: string): Promise<string> {
     if (filterCat) list = list.filter(m => m.category === filterCat);
     return [...list].sort((a, b) => {
       if (sort === 'recent') return (b.indexedAt ? new Date(b.indexedAt as string).getTime() : 0) - (a.indexedAt ? new Date(a.indexedAt as string).getTime() : 0);
-      if (sort === 'name') return (a.indexDisplayName || a.fileName).localeCompare(b.indexDisplayName || b.fileName);
+      if (sort === 'name') return NAT.compare(a.indexDisplayName || a.fileName, b.indexDisplayName || b.fileName);
       if (sort === 'pages') return (b.pageCount ?? 0) - (a.pageCount ?? 0);
       if (sort === 'category') return a.category.localeCompare(b.category);
       return 0;
@@ -419,7 +423,7 @@ async function fetchBody(materialId: string): Promise<string> {
   const cats = Array.from(new Set(materials.map(m => m.category).filter(Boolean))) as string[];
 
   const shelfTree = useMemo(() => {
-    const tree: Record<string, Record<string, Record<string, IndexedMaterial[]>>> = {};
+    const tree: Record<string, Record<string, Record<string, Record<string, IndexedMaterial[]>>>> = {};
     const place = (m: IndexedMaterial, courseId: string | null | undefined) => {
       const course = courseId ? (courseMap as any)[courseId] : null;
       const dept = (m.department || course?.department || 'Uncategorised') as string;
@@ -427,8 +431,10 @@ async function fetchBody(materialId: string): Promise<string> {
       const sem = course?.semester ? `Semester ${course.semester}` : m.semester ? `Semester ${m.semester}` : 'Semester Unknown';
       if (!tree[dept]) tree[dept] = {};
       if (!tree[dept][yr]) tree[dept][yr] = {};
-      if (!tree[dept][yr][sem]) tree[dept][yr][sem] = [];
-      if (!tree[dept][yr][sem].find(x => x.id === m.id)) tree[dept][yr][sem].push(m);
+      const ck = courseId && course ? courseId : 'unassigned';
+      if (!tree[dept][yr][sem]) tree[dept][yr][sem] = {};
+      if (!tree[dept][yr][sem][ck]) tree[dept][yr][sem][ck] = [];
+      if (!tree[dept][yr][sem][ck].find(x => x.id === m.id)) tree[dept][yr][sem][ck].push(m);
     };
     for (const m of filtered) {
       place(m, m.confirmedCourseId);
@@ -438,6 +444,30 @@ async function fetchBody(materialId: string): Promise<string> {
   }, [filtered, courseMap]);
 
   const selectedMaterial = selectedId ? materials.find(m => m.id === selectedId) ?? null : null;
+
+  const courseLabel = (ck: string) => {
+    if (ck === 'unassigned') return 'Course not specified';
+    const c = (courseMap as any)[ck];
+    return c ? [c.code, c.name].filter(Boolean).join(' · ') : 'Course not specified';
+  };
+
+  // Under a course heading, drop the repeated course prefix: "PHL 201 · Handout 3" -> "Handout 3".
+  const shortTitle = (m: IndexedMaterial, ck: string) => {
+    const full = m.indexDisplayName || m.fileName;
+    const c = (courseMap as any)[ck];
+    const names = [c?.code, c?.name, ck === m.confirmedCourseId ? m.confirmedCourseName : ''].filter(Boolean) as string[];
+    let t = full;
+    for (const n of names) {
+      const re = new RegExp('^' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[·—–:-]\\s*', 'i');
+      if (re.test(t)) { t = t.replace(re, ''); break; }
+    }
+    const plain: Record<string, string> = {
+      'lecture notes': 'Handout', 'notes': 'Handout', 'past questions': 'Past Questions',
+      'aoc': 'Areas of Concentration', 'syllabus': 'Syllabus', 'material': 'Material', 'other': 'Material',
+    };
+    t = t.trim();
+    return t ? (plain[t.toLowerCase()] ?? t) : full;
+  };
 
   // ── Topic tree renderer (collapsible) ─────────────────────────────────────
   function LibraryTopicTree({ nodes, depth = 0 }: { nodes: TopicNode[]; depth?: number }): React.ReactNode {
@@ -732,10 +762,20 @@ async function fetchBody(materialId: string): Promise<string> {
                       <div key={yr}>
                         <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '14px', paddingLeft: '4px' }}>{yr}</p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                          {Object.entries(semesters).sort(([a], [b]) => a.localeCompare(b)).map(([sem, semMaterials]) => {
+                          {Object.entries(semesters).sort(([a], [b]) => a.localeCompare(b)).map(([sem, semCourses]) => {
                             const shelfKey = `${dept}|${yr}|${sem}`;
                             const isCollapsed = shelfCollapsed.has(shelfKey);
-                            const viewMode = shelfView[shelfKey] ?? 'spine';
+                            const viewMode = shelfView[shelfKey] ?? 'covers';
+                            const cm = courseMap as any;
+                            const courseEntries = Object.entries(semCourses).sort(([a], [b]) => {
+                              if (a === 'unassigned') return 1;
+                              if (b === 'unassigned') return -1;
+                              return NAT.compare(String(cm[a]?.code || cm[a]?.name || ''), String(cm[b]?.code || cm[b]?.name || ''));
+                            });
+                            const semAll = Array.from(new Map(courseEntries.flatMap(([, it]) => it).map(x => [x.id, x] as const)).values());
+                            const cardCourseKey = selectedMaterial
+                              ? courseEntries.find(([, it]) => it.some(x => x.id === selectedMaterial.id))?.[0]
+                              : undefined;
                             return (
                               <div key={sem}>
                                 <div style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
@@ -746,14 +786,14 @@ async function fetchBody(materialId: string): Promise<string> {
                                       <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'inline-block', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▾</span>
                                     </button>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{semMaterials.length} item{semMaterials.length !== 1 ? 's' : ''}</span>
+                                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{semAll.length} item{semAll.length !== 1 ? 's' : ''}</span>
                                       {!isCollapsed && (
                                         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden' }}>
-                                          {(['spine', 'list'] as const).map(mode => (
+                                          {(['covers', 'spine', 'list'] as const).map(mode => (
                                             <button key={mode} onClick={() => setShelfView(v => ({ ...v, [shelfKey]: mode }))}
-                                              title={mode === 'spine' ? 'Spine view' : 'List view'}
-                                              style={{ background: viewMode === mode ? 'rgba(196,160,80,0.18)' : 'transparent', border: 'none', borderRight: mode === 'spine' ? '1px solid var(--border)' : 'none', color: viewMode === mode ? 'var(--gold)' : 'var(--text-muted)', padding: '4px 8px', cursor: 'pointer', fontSize: '0.75rem', lineHeight: 1 }}>
-                                              {mode === 'spine' ? '⫿' : '☰'}
+                                              title={mode === 'covers' ? 'Cover view' : mode === 'spine' ? 'Spine view' : 'List view'}
+                                              style={{ background: viewMode === mode ? 'rgba(196,160,80,0.18)' : 'transparent', border: 'none', borderRight: mode !== 'list' ? '1px solid var(--border)' : 'none', color: viewMode === mode ? 'var(--gold)' : 'var(--text-muted)', padding: '4px 8px', cursor: 'pointer', fontSize: '0.75rem', lineHeight: 1 }}>
+                                              {mode === 'covers' ? '▦' : mode === 'spine' ? '⫿' : '☰'}
                                             </button>
                                           ))}
                                         </div>
@@ -763,7 +803,44 @@ async function fetchBody(materialId: string): Promise<string> {
 
                                   {!isCollapsed && (
                                     <div>
-                                      {viewMode === 'spine' ? (
+                                      {courseEntries.map(([ck, semMaterials]) => (
+                                      <div key={ck}>
+                                      <div style={{ padding: '12px 16px 0', display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                        <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)' }}>{courseLabel(ck)}</span>
+                                        <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{semMaterials.length}</span>
+                                      </div>
+                                      {viewMode === 'covers' ? (
+                                        <div style={{ padding: '12px 16px 0' }}>
+                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: '10px' }}>
+                                            {semMaterials.map(m => {
+                                              const color = CAT_COLORS[m.category] ?? '#94a3b8';
+                                              const darkColor = CAT_DARK[m.category] ?? '#475569';
+                                              const isSelected = selectedId === m.id;
+                                              return (
+                                                <button key={m.id} onClick={() => setSelectedId(isSelected ? null : m.id)} title={m.indexDisplayName || m.fileName}
+                                                  style={{
+                                                    aspectRatio: '3 / 4', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                                                    textAlign: 'left', padding: '9px 8px 8px 12px', cursor: 'pointer',
+                                                    background: `linear-gradient(160deg, ${color}dd 0%, ${darkColor} 100%)`,
+                                                    border: isSelected ? `2px solid ${color}` : '1px solid rgba(255,255,255,0.1)',
+                                                    borderLeft: `6px solid ${darkColor}`, borderRadius: '3px 6px 6px 3px',
+                                                    boxShadow: isSelected ? '0 8px 20px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.35)',
+                                                    transform: isSelected ? 'translateY(-4px)' : 'none', transition: 'transform 0.15s ease',
+                                                  }}>
+                                                  <span style={{ fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>{CAT_LABELS[m.category] ?? ''}</span>
+                                                  <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.8rem', fontWeight: 700, lineHeight: 1.25, color: '#fff', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{shortTitle(m, ck)}</span>
+                                                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.58rem', color: 'rgba(255,255,255,0.75)' }}>
+                                                    {m.pageCount ? <span>{m.pageCount}p</span> : null}
+                                                    {bookmarks.has(m.id) && <span>🔖</span>}
+                                                    {isNew(m) && <span style={{ color: 'rgba(255,220,100,0.95)', fontWeight: 700 }}>NEW</span>}
+                                                  </span>
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                          <div style={{ height: '12px', marginTop: '10px', background: 'linear-gradient(180deg, #5a4220 0%, #3d2c14 100%)', borderTop: '1px solid rgba(255,255,255,0.12)', borderRadius: '0 0 4px 4px' }} />
+                                        </div>
+                                      ) : viewMode === 'spine' ? (
                                         <div>
                                           <div style={{ padding: '20px 16px 0', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                                             <div style={{ display: 'flex', gap: '4px', alignItems: 'flex-end', minWidth: 'max-content' }}>
@@ -773,7 +850,7 @@ async function fetchBody(materialId: string): Promise<string> {
                                                 const isSelected = selectedId === m.id;
                                                 const bookmarked = bookmarks.has(m.id);
                                                 const newBadge = isNew(m);
-                                                const title = m.indexDisplayName || m.fileName;
+                                                const title = shortTitle(m, ck);
                                                 const hashCode = title.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
                                                 const heightVar = SPINE_HEIGHT + (hashCode % 40);
                                                 return (
@@ -799,7 +876,7 @@ async function fetchBody(materialId: string): Promise<string> {
                                             const color = CAT_COLORS[m.category] ?? '#94a3b8';
                                             const isSelected = selectedId === m.id;
                                             const bookmarked = bookmarks.has(m.id);
-                                            const title = m.indexDisplayName || m.fileName;
+                                            const title = shortTitle(m, ck);
                                             return (
                                               <button key={m.id} onClick={() => setSelectedId(isSelected ? null : m.id)}
                                                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '12px', padding: '9px 16px', background: isSelected ? 'rgba(196,160,80,0.07)' : 'transparent', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', textAlign: 'left', transition: 'background 0.12s' }}>
@@ -816,7 +893,9 @@ async function fetchBody(materialId: string): Promise<string> {
                                           })}
                                         </div>
                                       )}
-                                      {selectedMaterial && semMaterials.some(m => m.id === selectedMaterial.id) && renderDetailCard(selectedMaterial)}
+                                      {selectedMaterial && ck === cardCourseKey && renderDetailCard(selectedMaterial)}
+                                      </div>
+                                      ))}
                                     </div>
                                   )}
                                 </div>
