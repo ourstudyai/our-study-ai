@@ -60,6 +60,7 @@ const CAT_COLORS: Record<string, string> = {
   past_questions: '#818cf8',
   aoc: '#f472b6',
   syllabus: '#2dd4bf',
+  student_notes: '#4ade80',
   other: '#94a3b8',
 };
 const CAT_DARK: Record<string, string> = {
@@ -67,6 +68,7 @@ const CAT_DARK: Record<string, string> = {
   past_questions: '#4338ca',
   aoc: '#be185d',
   syllabus: '#0f766e',
+  student_notes: '#15803d',
   other: '#475569',
 };
 const CAT_LABELS: Record<string, string> = {
@@ -74,6 +76,7 @@ const CAT_LABELS: Record<string, string> = {
   past_questions: 'Past Questions',
   aoc: 'AOC',
   syllabus: 'Syllabus',
+  student_notes: "Student's Notes",
   other: 'Other',
 };
 

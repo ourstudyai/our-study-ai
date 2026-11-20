@@ -5,7 +5,7 @@ import type { DecodedIdToken } from "firebase-admin/auth";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
 import { R2_PUBLIC_URL } from "@/lib/r2";
 
-const CATEGORIES = ["lecture_notes", "past_questions", "aoc", "syllabus", "other"];
+const CATEGORIES = ["lecture_notes", "past_questions", "aoc", "syllabus", "student_notes", "other"];
 
 // Registers an uploaded file as an unsorted material. No OCR, no extraction:
 // admins sort first, then send to OCR.

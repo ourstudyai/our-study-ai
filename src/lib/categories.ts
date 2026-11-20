@@ -6,6 +6,7 @@ export const CATEGORY_OPTIONS: { key: string; label: string }[] = [
   { key: 'past_questions', label: 'Past Questions' },
   { key: 'aoc', label: 'Areas of Concentration' },
   { key: 'syllabus', label: 'Syllabus' },
+  { key: 'student_notes', label: "Student's Notes" },
   { key: 'other', label: 'Other' },
 ];
 
@@ -19,6 +20,7 @@ export function normalizeCategory(c?: string | null): string {
   if (!k) return '';
   if (k === 'notes' || k === 'handout' || k === 'handouts' || k === 'lecture_note') return 'lecture_notes';
   if (k === 'textbook') return 'other';
+  if (k === 'student_note' || k === 'students_notes' || k === 'student_s_notes') return 'student_notes';
   return k;
 }
 
@@ -31,4 +33,12 @@ export function nameLabel(category?: string | null): string {
   return CATEGORY_LABEL[c] ?? 'Handout';
 }
 
-export const AUTO_NAME_RE = /^.+ · (Handout|Past Questions|Areas of Concentration|Syllabus|Material) \d+$/;
+export const AUTO_NAME_RE = /^.+ · (Handout|Past Questions|Areas of Concentration|Syllabus|Student's Notes|Material) \d+$/;
+
+// How much the AI trusts a source: Handouts first, then Student's Notes, then the rest.
+export function sourceTier(category?: string | null): number {
+  const c = normalizeCategory(category);
+  if (c === 'lecture_notes') return 0;
+  if (c === 'student_notes') return 1;
+  return 2;
+}
