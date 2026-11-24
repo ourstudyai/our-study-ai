@@ -1,3 +1,4 @@
+import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -83,19 +84,17 @@ function semanticChunk(markdown: string): SemanticChunk[] {
 export async function POST(req: NextRequest) {
   try {
     const { materialId, courseId, courseName, mode, idToken } = await req.json();
-    if (!idToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    let decoded: any;
-    try { decoded = await adminAuth.verifyIdToken(idToken); }
-    catch { return NextResponse.json({ error: 'Unauthorized - please refresh page' }, { status: 401 }); }
-    const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
-    const role = userDoc.data()?.role;
-    const isAdmin = role === 'admin' || role === 'chief_admin' || decoded.email === 'ourstudyai@gmail.com';
-    if (!isAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    let decoded: any = await getRequestUser(req);
+    if (!decoded && idToken) {
+      try { decoded = await adminAuth.verifyIdToken(idToken); } catch { decoded = null; }
+    }
+    if (!decoded) return NextResponse.json({ error: 'Unauthorized - please refresh page' }, { status: 401 });
+    if (!(await isAdminUser(decoded))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const matRef = adminDb.collection('materials').doc(materialId);
 
     if (mode === 'extra') {
-      await matRef.update({ extraCourseIds: FieldValue.arrayUnion(courseId), updatedAt: FieldValue.serverTimestamp() });
+      await matRef.update({ sharedCourseIds: FieldValue.arrayUnion(courseId), updatedAt: FieldValue.serverTimestamp() });
       return NextResponse.json({ success: true });
     }
 

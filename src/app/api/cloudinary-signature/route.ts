@@ -1,17 +1,15 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { r2Client, R2_BUCKET, R2_PUBLIC_URL } from "@/lib/r2";
-import { adminDb, adminAuth } from "@/lib/firebase/admin";
-import { cookies } from "next/headers";
+import { adminDb } from "@/lib/firebase/admin";
 
 export async function POST(req: NextRequest) {
   try {
-    const session = cookies().get("session")?.value;
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    try { await adminAuth.verifyIdToken(session); }
-    catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    const caller = await getRequestUser(req);
+    if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { fileName, folder, fileHash, checkOnly, mimeType } = await req.json();
 

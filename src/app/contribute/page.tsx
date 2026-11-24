@@ -1,5 +1,7 @@
 'use client';
 
+import { authFetch } from '@/lib/auth/authFetch';
+
 import AppNav from '@/components/AppNav';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -122,14 +124,14 @@ export default function ContributePage() {
     const fileHash = await sha256Hex(item.file);
 
     // Same bytes already on the platform: nothing to upload, count it as received.
-    const chk = await fetch('/api/check-hash', {
+    const chk = await authFetch('/api/check-hash', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ fileHash, dept: d, year: y, courseId: cls?.courseId ?? null, courseName: cls?.courseName ?? null }),
     });
     if (chk.ok && (await chk.json()).exists) { setItem(item.id, { status: 'done', progress: 100, dup: true }); return true; }
 
     setItem(item.id, { status: 'uploading', progress: 0 });
-    const sigRes = await fetch('/api/cloudinary-signature', {
+    const sigRes = await authFetch('/api/cloudinary-signature', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ fileName: item.file.name, folder: cls?.courseId ? `contributions/${cls.courseId}` : `contributions/unsorted/${d}-y${y}`, mimeType: item.file.type || 'application/octet-stream' }),
     });
@@ -138,7 +140,7 @@ export default function ContributePage() {
 
     await putFile(signedUrl, item.file, p => setItem(item.id, { progress: p }));
 
-    const reg = await fetch('/api/process-upload', {
+    const reg = await authFetch('/api/process-upload', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({
         key, fileHash, fileName: item.file.name, mimeType: item.file.type || 'application/octet-stream',
@@ -171,7 +173,7 @@ export default function ContributePage() {
     }
 
     if (ok - dup > 0) {
-      fetch('/api/process-upload', {
+      authFetch('/api/process-upload', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ notifyOnly: true, count: ok - dup, label: `${DEPT_LABELS[dept]} Year ${year}` }),
       }).catch(() => {});

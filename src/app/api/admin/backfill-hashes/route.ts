@@ -2,11 +2,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import type { DecodedIdToken } from "firebase-admin/auth";
-import { adminAuth, adminDb } from "@/lib/firebase/admin";
+import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
+import { adminDb } from "@/lib/firebase/admin";
 
-const SUPREME = "ourstudyai@gmail.com";
 const BUDGET_MS = 40_000;
 const MAX_BYTES = 100 * 1024 * 1024;
 
@@ -14,19 +12,10 @@ const MAX_BYTES = 100 * 1024 * 1024;
 // Never deletes anything: it only writes fileHash and reports groups of identical files.
 export async function POST(req: NextRequest) {
   try {
-    const session = cookies().get("session")?.value;
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    let decoded: DecodedIdToken;
-    try { decoded = await adminAuth.verifyIdToken(session); }
-    catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    const decoded = await getRequestUser(req);
+    if (!decoded) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    let allowed = decoded.email === SUPREME;
-    if (!allowed) {
-      const u = await adminDb.collection("users").doc(decoded.uid).get();
-      const role = u.data()?.role;
-      allowed = role === "admin" || role === "chief_admin";
-    }
-    if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await isAdminUser(decoded))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { limit, skipIds } = await req.json().catch(() => ({} as any));
     const skip = new Set<string>(Array.isArray(skipIds) ? skipIds : []);
@@ -73,16 +62,15 @@ export async function POST(req: NextRequest) {
       if (!h) return;
       byHash.set(h, [...(byHash.get(h) ?? []), { id: d.id, fileName: String(m.fileName ?? ""), status: String(m.status ?? "") }]);
     });
-    const duplicates = Array.from(byHash.values())
-      .filter(g => g.length > 1)
-      .slice(0, 15)
-      .map(g => ({ count: g.length, items: g.slice(0, 4) }));
+    const dupGroups = Array.from(byHash.values()).filter(g => g.length > 1);
+    const duplicates = dupGroups.slice(0, 100).map(g => ({ count: g.length, items: g.slice(0, 6) }));
 
     return NextResponse.json({
       processed: done.size,
       failed,
       remaining: todo.length - done.size - failed.length,
       duplicates,
+      duplicateTotal: dupGroups.length,
     });
   } catch (err) {
     console.error("[backfill-hashes]", err);

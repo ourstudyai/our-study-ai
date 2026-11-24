@@ -1,12 +1,10 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import type { DecodedIdToken } from "firebase-admin/auth";
-import { adminAuth, adminDb } from "@/lib/firebase/admin";
+import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
+import { adminDb } from "@/lib/firebase/admin";
 import { AUTO_NAME_RE, nameLabel } from "@/lib/categories";
 
-const SUPREME = "ourstudyai@gmail.com";
 const NAT = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const FILE_EXT = /\.(pdf|docx?|pptx?|jpe?g|png|txt|md|markdown)$/i;
 
@@ -31,19 +29,10 @@ function millis(m: any): number {
 // Preview (apply:false, default) or apply (apply:true) the new naming on approved materials.
 export async function POST(req: NextRequest) {
   try {
-    const session = cookies().get("session")?.value;
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    let decoded: DecodedIdToken;
-    try { decoded = await adminAuth.verifyIdToken(session); }
-    catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    const decoded = await getRequestUser(req);
+    if (!decoded) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    let allowed = decoded.email === SUPREME;
-    if (!allowed) {
-      const u = await adminDb.collection("users").doc(decoded.uid).get();
-      const role = u.data()?.role;
-      allowed = role === "admin" || role === "chief_admin";
-    }
-    if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await isAdminUser(decoded))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { apply } = await req.json().catch(() => ({ apply: false }));
 

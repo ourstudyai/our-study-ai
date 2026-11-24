@@ -1,5 +1,7 @@
 'use client';
 
+import { authFetch } from '@/lib/auth/authFetch';
+
 import { useState } from 'react';
 
 interface DupGroup { count: number; items: { id: string; fileName: string; status: string }[]; }
@@ -13,29 +15,31 @@ export default function HashBackfillTool({ firebaseUser }: { firebaseUser: any }
   const [failed, setFailed] = useState<{ id: string; fileName: string; error: string }[]>([]);
   const [dups, setDups] = useState<DupGroup[]>([]);
   const [finished, setFinished] = useState(false);
+  const [dupTotal, setDupTotal] = useState(0);
+  const [err, setErr] = useState('');
 
   async function run() {
-    setBusy(true); setFinished(false); setFailed([]); setProcessed(0);
+    setBusy(true); setFinished(false); setFailed([]); setProcessed(0); setErr(''); setDupTotal(0);
     const skip: string[] = [];
     const failedAll: { id: string; fileName: string; error: string }[] = [];
     let total = 0, left = 1, guard = 0;
     try {
       await firebaseUser?.getIdToken(true);
       while (left > 0 && guard++ < 300) {
-        const r = await fetch('/api/admin/backfill-hashes', {
+        const r = await authFetch('/api/admin/backfill-hashes', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify({ limit: 25, skipIds: skip }),
         });
         const d = await r.json().catch(() => ({}));
-        if (!r.ok) { alert('Failed: ' + ((d as any).error || r.status)); break; }
+        if (!r.ok) { setErr(`Failed (HTTP ${r.status}): ${(d as any).error || 'no details'}`); break; }
         total += d.processed ?? 0;
         (d.failed ?? []).forEach((f: any) => { skip.push(f.id); failedAll.push(f); });
         left = d.remaining ?? 0;
-        setProcessed(total); setRemaining(left); setFailed([...failedAll]); setDups(d.duplicates ?? []);
+        setProcessed(total); setRemaining(left); setFailed([...failedAll]); setDups(d.duplicates ?? []); setDupTotal(d.duplicateTotal ?? (d.duplicates ?? []).length);
         if ((d.processed ?? 0) === 0 && !(d.failed ?? []).length) break;
       }
       setFinished(left === 0);
-    } catch (e: any) { alert('Error: ' + (e?.message ?? e)); }
+    } catch (e: any) { setErr('Error: ' + (e?.message ?? e)); }
     finally { setBusy(false); }
   }
 
@@ -53,7 +57,8 @@ export default function HashBackfillTool({ firebaseUser }: { firebaseUser: any }
             style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: 'var(--gold)', color: '#0a1020', fontWeight: 700, fontSize: '0.76rem', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
             {busy ? `Working… ${processed} done${remaining !== null ? `, ${remaining} left` : ''}` : 'Start'}
           </button>
-          {(processed > 0 || finished) && !busy && (
+          {err && <p style={{ marginTop: 10, color: '#ef4444', fontWeight: 700 }}>{err}</p>}
+          {(processed > 0 || finished) && !busy && !err && (
             <p style={{ marginTop: 10, color: finished ? '#22c55e' : 'var(--gold)', fontWeight: 700 }}>
               {finished ? 'Finished.' : 'Stopped.'} {processed} file{processed !== 1 ? 's' : ''} hashed{failed.length ? `, ${failed.length} could not be read` : ''}.
             </p>
@@ -63,7 +68,7 @@ export default function HashBackfillTool({ firebaseUser }: { firebaseUser: any }
           ))}
           {dups.length > 0 && (
             <div style={{ marginTop: 10 }}>
-              <p style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{dups.length}{dups.length === 15 ? '+' : ''} group{dups.length !== 1 ? 's' : ''} of identical files</p>
+              <p style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{dupTotal} group{dupTotal !== 1 ? 's' : ''} of identical files{dupTotal > dups.length ? ` (showing first ${dups.length})` : ''}</p>
               {dups.map((g, i) => (
                 <p key={i} style={{ color: 'var(--text-muted)' }}>
                   {g.count}× {g.items.map(x => `${x.fileName} (${x.status})`).join(' · ')}

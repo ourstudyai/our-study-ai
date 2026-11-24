@@ -1,12 +1,10 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
 import { Client } from "@upstash/qstash";
-import type { DecodedIdToken } from "firebase-admin/auth";
-import { adminAuth, adminDb } from "@/lib/firebase/admin";
+import { adminDb } from "@/lib/firebase/admin";
 
-const SUPREME = "ourstudyai@gmail.com";
 const MAX_IDS = 200;
 const PUBLISH_CHUNK = 50;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://our-study-ai.vercel.app";
@@ -17,19 +15,10 @@ const qstash = new Client({ token: process.env.QSTASH_TOKEN! });
 // force=true also re-queues files stuck in 'processing'.
 export async function POST(req: NextRequest) {
   try {
-    const session = cookies().get("session")?.value;
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    let decoded: DecodedIdToken;
-    try { decoded = await adminAuth.verifyIdToken(session); }
-    catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    const decoded = await getRequestUser(req);
+    if (!decoded) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    let allowed = decoded.email === SUPREME;
-    if (!allowed) {
-      const u = await adminDb.collection("users").doc(decoded.uid).get();
-      const role = u.data()?.role;
-      allowed = role === "admin" || role === "chief_admin";
-    }
-    if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await isAdminUser(decoded))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { materialIds, force } = await req.json();
     if (!Array.isArray(materialIds) || materialIds.length === 0) {

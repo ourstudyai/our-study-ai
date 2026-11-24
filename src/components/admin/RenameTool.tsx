@@ -1,5 +1,7 @@
 'use client';
 
+import { authFetch } from '@/lib/auth/authFetch';
+
 import { useState } from 'react';
 
 interface Result { applied: boolean; total: number; renamed: number; keptCurated: number; categoryFixed: number; examples: { from: string; to: string }[]; }
@@ -9,20 +11,21 @@ export default function RenameTool({ firebaseUser }: { firebaseUser: any }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<Result | null>(null);
+  const [err, setErr] = useState('');
 
   async function run(apply: boolean) {
     if (apply && !window.confirm('Rename approved materials now? Curated names are kept; old names are saved for rollback.')) return;
-    setBusy(true);
+    setBusy(true); setErr('');
     try {
       await firebaseUser?.getIdToken(true);
-      const r = await fetch('/api/admin/rename-materials', {
+      const r = await authFetch('/api/admin/rename-materials', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ apply }),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) { alert('Failed: ' + ((d as any).error || r.status)); return; }
+      if (!r.ok) { setErr(`Failed (HTTP ${r.status}): ${(d as any).error || 'no details'}`); return; }
       setRes(d as Result);
-    } catch (e: any) { alert('Error: ' + (e?.message ?? e)); }
+    } catch (e: any) { setErr('Error: ' + (e?.message ?? e)); }
     finally { setBusy(false); }
   }
 
@@ -48,6 +51,7 @@ export default function RenameTool({ firebaseUser }: { firebaseUser: any }) {
               </button>
             )}
           </div>
+          {err && <p style={{ fontSize: '0.74rem', color: '#ef4444', fontWeight: 700, marginBottom: 8 }}>{err}</p>}
           {res && (
             <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               <p style={{ color: res.applied ? '#22c55e' : 'var(--gold)', fontWeight: 700 }}>{res.applied ? 'Applied.' : 'Preview only. Nothing changed yet.'}</p>

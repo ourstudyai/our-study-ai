@@ -1,5 +1,7 @@
 'use client';
 
+import { authFetch } from '@/lib/auth/authFetch';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMaterialsByStatus, Material } from '@/lib/firestore/materials';
 
@@ -88,7 +90,7 @@ export default function OcrQueuePanel({ firebaseUser }: Props) {
     try {
       await firebaseUser?.getIdToken(true);
       for (let i = 0; i < ids.length; i += SEND_CHUNK) {
-        const res = await fetch('/api/admin/send-to-ocr', {
+        const res = await authFetch('/api/admin/send-to-ocr', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify({ materialIds: ids.slice(i, i + SEND_CHUNK), force }),
         });

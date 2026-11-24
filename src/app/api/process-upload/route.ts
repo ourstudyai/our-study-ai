@@ -1,8 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import type { DecodedIdToken } from "firebase-admin/auth";
-import { adminAuth, adminDb } from "@/lib/firebase/admin";
+import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
+import { adminDb } from "@/lib/firebase/admin";
 import { R2_PUBLIC_URL } from "@/lib/r2";
 
 const CATEGORIES = ["lecture_notes", "past_questions", "aoc", "syllabus", "student_notes", "other"];
@@ -11,11 +10,8 @@ const CATEGORIES = ["lecture_notes", "past_questions", "aoc", "syllabus", "stude
 // admins sort first, then send to OCR.
 export async function POST(req: NextRequest) {
   try {
-    const session = cookies().get("session")?.value;
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    let decoded: DecodedIdToken;
-    try { decoded = await adminAuth.verifyIdToken(session); }
-    catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    const decoded = await getRequestUser(req);
+    if (!decoded) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://our-study-ai.vercel.app";

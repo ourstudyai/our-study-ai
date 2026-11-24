@@ -1,5 +1,7 @@
 'use client';
 
+import { authFetch } from '@/lib/auth/authFetch';
+
 import { useCallback, useEffect, useState } from 'react';
 import { collection, getDocs, query, where, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
@@ -38,7 +40,7 @@ export default function DuplicateHits({ courses, firebaseUser }: { courses: Cour
     setBusy(item.id + hit.at);
     try {
       const idToken = await firebaseUser?.getIdToken(true);
-      const res = await fetch('/api/reassign-material', {
+      const res = await authFetch('/api/reassign-material', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ materialId: item.id, courseId: hit.courseId, courseName: hit.courseName, mode: 'extra', idToken }),
       });
