@@ -52,7 +52,7 @@ interface IndexedMaterial {
   createdAt?: { toDate: () => Date } | null;
 }
 
-type SortKey = 'recent' | 'name' | 'pages' | 'category';
+type SortKey = 'recent' | 'name' | 'category';
 const NAT = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 const CAT_COLORS: Record<string, string> = {
@@ -412,7 +412,6 @@ async function fetchBody(materialId: string): Promise<string> {
     return [...list].sort((a, b) => {
       if (sort === 'recent') return (b.indexedAt ? new Date(b.indexedAt as string).getTime() : 0) - (a.indexedAt ? new Date(a.indexedAt as string).getTime() : 0);
       if (sort === 'name') return NAT.compare(a.indexDisplayName || a.fileName, b.indexDisplayName || b.fileName);
-      if (sort === 'pages') return (b.pageCount ?? 0) - (a.pageCount ?? 0);
       if (sort === 'category') return a.category.localeCompare(b.category);
       return 0;
     });
@@ -442,6 +441,43 @@ async function fetchBody(materialId: string): Promise<string> {
     }
     return tree;
   }, [filtered, courseMap]);
+
+  const titleCase = (t: string) => t.replace(/\b\w/g, c => c.toUpperCase());
+  const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const yearNo = (yr: string) => yr.replace(/^Year\s+/i, '');
+  const semNo = (sem: string) => sem.replace(/^Semester\s+/i, '');
+  const shelfId = (dept: string, yr: string, sem: string) => `shelf-${slug(dept)}-${slug(yr)}-${slug(sem)}`;
+  // "Theology 2 · Semester 1"
+  const semHeading = (dept: string, yr: string, sem: string) =>
+    /^\d+$/.test(yearNo(yr)) ? `${titleCase(dept)} ${yearNo(yr)} · ${sem}` : `${titleCase(dept)} · ${yr} · ${sem}`;
+
+  const jumpTargets = useMemo(() => {
+    const out: { id: string; key: string; label: string }[] = [];
+    const multi = Object.keys(shelfTree).length > 1;
+    Object.entries(shelfTree).sort(([a], [b]) => a.localeCompare(b)).forEach(([dept, yrs]) => {
+      Object.entries(yrs).sort(([a], [b]) => NAT.compare(a, b)).forEach(([yr, sems]) => {
+        Object.keys(sems).sort((a, b) => NAT.compare(a, b)).forEach(sem => {
+          const y = /^\d+$/.test(yearNo(yr)) ? `Y${yearNo(yr)}` : 'Y?';
+          const sm = /^\d+$/.test(semNo(sem)) ? `S${semNo(sem)}` : 'S?';
+          out.push({
+            id: shelfId(dept, yr, sem),
+            key: `${dept}|${yr}|${sem}`,
+            label: multi ? `${titleCase(dept)} ${y} · ${sm}` : `${y} · ${sm}`,
+          });
+        });
+      });
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shelfTree]);
+
+  const jumpTo = (t: { id: string; key: string }) => {
+    setShelfCollapsed(prev => {
+      if (!prev.has(t.key)) return prev;
+      const n = new Set(prev); n.delete(t.key); return n;
+    });
+    setTimeout(() => document.getElementById(t.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  };
 
   const selectedMaterial = selectedId ? materials.find(m => m.id === selectedId) ?? null : null;
 
@@ -564,7 +600,6 @@ async function fetchBody(materialId: string): Promise<string> {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
-          {m.pageCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.pageCount} pages</span>}
           {m.wordCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span>}
           {m.indexedAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Added {new Date(m.indexedAt).toLocaleDateString()}</span>}
           <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Uploaded by: A community member</span>
@@ -705,7 +740,6 @@ async function fetchBody(materialId: string): Promise<string> {
               style={{ flex: '1 1 130px', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '9px', padding: '9px 10px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
               <option value="recent">Most recent</option>
               <option value="name">Course A–Z</option>
-              <option value="pages">Most pages</option>
               <option value="category">Category</option>
             </select>
           </div>
@@ -740,6 +774,20 @@ async function fetchBody(materialId: string): Promise<string> {
             ))}
           </div>
 
+          {!loading && filtered.length > 0 && jumpTargets.length > 1 && (
+            <>
+              <style>{`.lux-jump{top:52px}@media (min-width:768px){.lux-jump{top:0}}`}</style>
+              <div className="lux-jump" style={{ position: 'sticky', zIndex: 30, margin: '0 -16px 20px', padding: '8px 16px', background: 'var(--navy)', borderBottom: '1px solid var(--border)', display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                {jumpTargets.map(t => (
+                  <button key={t.id} onClick={() => jumpTo(t)}
+                    style={{ flexShrink: 0, padding: '5px 11px', borderRadius: '99px', border: '1px solid var(--border)', background: 'rgba(196,160,80,0.08)', color: 'var(--gold)', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           {loading ? (
             <MiniLoader label="Loading materials..." />
           ) : filtered.length === 0 ? (
@@ -758,11 +806,18 @@ async function fetchBody(materialId: string): Promise<string> {
                     <div style={{ height: '1px', flex: 1, background: 'linear-gradient(to left, var(--gold), transparent)', opacity: 0.3 }} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                    {Object.entries(deptYears).sort(([a], [b]) => a.localeCompare(b)).map(([yr, semesters]) => (
+                    {Object.entries(deptYears).sort(([a], [b]) => NAT.compare(a, b)).map(([yr, semesters]) => (
                       <div key={yr}>
-                        <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '14px', paddingLeft: '4px' }}>{yr}</p>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '14px', padding: '9px 14px', background: 'rgba(196,160,80,0.10)', borderLeft: '4px solid var(--gold)', borderRadius: '0 8px 8px 0' }}>
+                          <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.02rem', fontWeight: 700, color: 'var(--gold)' }}>
+                            {/^\d+$/.test(yearNo(yr)) ? `${titleCase(dept)} · ${yr}` : 'Year not specified'}
+                          </span>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            {new Set(Object.values(semesters).flatMap(c => Object.values(c).flat().map(x => x.id))).size} items
+                          </span>
+                        </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                          {Object.entries(semesters).sort(([a], [b]) => a.localeCompare(b)).map(([sem, semCourses]) => {
+                          {Object.entries(semesters).sort(([a], [b]) => NAT.compare(a, b)).map(([sem, semCourses]) => {
                             const shelfKey = `${dept}|${yr}|${sem}`;
                             const isCollapsed = shelfCollapsed.has(shelfKey);
                             const viewMode = shelfView[shelfKey] ?? 'covers';
@@ -777,12 +832,12 @@ async function fetchBody(materialId: string): Promise<string> {
                               ? courseEntries.find(([, it]) => it.some(x => x.id === selectedMaterial.id))?.[0]
                               : undefined;
                             return (
-                              <div key={sem}>
+                              <div key={sem} id={shelfId(dept, yr, sem)} style={{ scrollMarginTop: 100 }}>
                                 <div style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
                                   <div style={{ padding: '8px 16px', borderBottom: isCollapsed ? 'none' : '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(196,160,80,0.04)' }}>
                                     <button onClick={() => setShelfCollapsed(s => { const n = new Set(s); n.has(shelfKey) ? n.delete(shelfKey) : n.add(shelfKey); return n; })}
                                       style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '7px', padding: 0 }}>
-                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{sem}</span>
+                                      <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>{semHeading(dept, yr, sem)}</span>
                                       <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'inline-block', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▾</span>
                                     </button>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -830,7 +885,6 @@ async function fetchBody(materialId: string): Promise<string> {
                                                   <span style={{ fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>{CAT_LABELS[m.category] ?? ''}</span>
                                                   <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.8rem', fontWeight: 700, lineHeight: 1.25, color: '#fff', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{shortTitle(m, ck)}</span>
                                                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.58rem', color: 'rgba(255,255,255,0.75)' }}>
-                                                    {m.pageCount ? <span>{m.pageCount}p</span> : null}
                                                     {bookmarks.has(m.id) && <span>🔖</span>}
                                                     {isNew(m) && <span style={{ color: 'rgba(255,220,100,0.95)', fontWeight: 700 }}>NEW</span>}
                                                   </span>
@@ -886,7 +940,6 @@ async function fetchBody(materialId: string): Promise<string> {
                                                   <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.confirmedCourseName || '—'}</p>
                                                 </div>
                                                 <span style={{ fontSize: '0.6rem', fontWeight: 700, color, background: `${color}18`, padding: '2px 7px', borderRadius: '99px', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{m.category?.replace('_', ' ')}</span>
-                                                {m.pageCount && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', flexShrink: 0 }}>{m.pageCount}p</span>}
                                                 {bookmarked && <span style={{ fontSize: '0.75rem', flexShrink: 0 }}>🔖</span>}
                                               </button>
                                             );
