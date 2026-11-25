@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+import { courseLabel } from "@/lib/courseLabel";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
 import { adminDb } from "@/lib/firebase/admin";
@@ -34,14 +35,14 @@ export async function POST(req: NextRequest) {
 
     if (!(await isAdminUser(decoded))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const { apply } = await req.json().catch(() => ({ apply: false }));
+    const { apply, restyle } = await req.json().catch(() => ({ apply: false, restyle: false }));
 
     const [matSnap, courseSnap] = await Promise.all([
       adminDb.collection("materials").where("status", "in", ["approved", "approved_hidden"]).get(),
       adminDb.collection("courses").get(),
     ]);
-    const courses = new Map<string, { name: string; code: string }>();
-    courseSnap.docs.forEach(d => courses.set(d.id, { name: String(d.data().name ?? ""), code: String(d.data().code ?? "") }));
+    const courses = new Map<string, { name: string; code: string; shortName: string }>();
+    courseSnap.docs.forEach(d => courses.set(d.id, { name: String(d.data().name ?? ""), code: String(d.data().code ?? ""), shortName: String(d.data().shortName ?? "") }));
 
     const byCourse = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
     matSnap.docs.forEach(d => {
@@ -52,17 +53,20 @@ export async function POST(req: NextRequest) {
 
     const updates: { id: string; data: Record<string, unknown> }[] = [];
     const examples: { from: string; to: string }[] = [];
-    let renamed = 0, keptCurated = 0, categoryFixed = 0;
+    let renamed = 0, keptCurated = 0, categoryFixed = 0, restyled = 0;
 
     for (const [cid, docs] of Array.from(byCourse.entries())) {
       const c = courses.get(cid)!;
-      const prefix = (c.code || c.name) + " · ";
+      const prefix = courseLabel(c, c.code || c.name) + " · ";
+      // Names made before course-name labels used the code or full name as prefix.
+      const olds = Array.from(new Set([prefix, c.code ? c.code + " · " : "", c.name ? c.name + " · " : ""].filter(Boolean)));
       const max: Record<string, number> = {};
 
       // Numbers already used by names in the new format keep their place.
       docs.forEach(d => {
         const n = String(d.data().indexDisplayName ?? "");
-        const mt = n.startsWith(prefix) && AUTO_NAME_RE.test(n) ? n.slice(prefix.length).match(/^(.*\S) (\d+)$/) : null;
+        const hitP = AUTO_NAME_RE.test(n) ? olds.find(p => n.startsWith(p)) : undefined;
+        const mt = hitP ? n.slice(hitP.length).match(/^(.*\S) (\d+)$/) : null;
         if (mt) max[mt[1]] = Math.max(max[mt[1]] ?? 0, Number(mt[2]));
       });
 
@@ -86,6 +90,33 @@ export async function POST(req: NextRequest) {
         renamed++;
         if (examples.length < 10) examples.push({ from: String(m.indexDisplayName || m.fileName || ""), to: newName });
       }
+
+      // Optional: switch auto names that start with the course code (or full name) to the course-name prefix.
+      if (restyle === true) {
+        const used = new Set(docs.map(d => String(d.data().indexDisplayName ?? "")));
+        for (const d of docs) {
+          if (updates.some(u => u.id === d.id)) continue;
+          const m = d.data();
+          const n = String(m.indexDisplayName ?? "");
+          if (!AUTO_NAME_RE.test(n) || n.startsWith(prefix)) continue;
+          const old = olds.find(p => p !== prefix && n.startsWith(p));
+          if (!old) continue;
+          const mt = n.slice(old.length).match(/^(.*\S) (\d+)$/);
+          if (!mt) continue;
+          let num = Number(mt[2]);
+          let cand = `${prefix}${mt[1]} ${num}`;
+          while (used.has(cand)) { num++; cand = `${prefix}${mt[1]} ${num}`; }
+          used.add(cand);
+          const fixCat = m.category === "notes" || m.category === "handout";
+          updates.push({ id: d.id, data: {
+            indexDisplayName: cand, previousDisplayName: n, updatedAt: new Date().toISOString(),
+            ...(fixCat ? { category: "lecture_notes" } : {}),
+          } });
+          if (fixCat) categoryFixed++;
+          restyled++;
+          if (examples.length < 10) examples.push({ from: n, to: cand });
+        }
+      }
     }
 
     // Materials that are curated but still carry the old 'notes' category get the category fix only.
@@ -105,7 +136,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ applied: apply === true, total: matSnap.size, renamed, keptCurated, categoryFixed, examples });
+    return NextResponse.json({ applied: apply === true, total: matSnap.size, renamed, restyled, keptCurated, categoryFixed, examples });
   } catch (err) {
     console.error("[rename-materials]", err);
     return NextResponse.json({ error: "Rename failed." }, { status: 500 });

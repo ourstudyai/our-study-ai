@@ -1,3 +1,4 @@
+import { courseLabel } from "@/lib/courseLabel";
 import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
@@ -106,14 +107,17 @@ export async function POST(req: NextRequest) {
     let newDisplayName: string | null = null;
     if (mat.confirmedCourseId !== courseId && AUTO_NAME_RE.test(String(mat.indexDisplayName ?? ''))) {
       const cSnap = await adminDb.collection('courses').doc(courseId).get();
-      const base = String(cSnap.data()?.code || cSnap.data()?.name || courseName);
-      const stem = `${base} · ${nameLabel(mat.category)} `;
+      const cData: any = cSnap.data() ?? {};
+      const label = courseLabel({ name: cData.name ?? courseName, code: cData.code, shortName: cData.shortName }, String(courseName ?? ''));
+      const stems = Array.from(new Set([label, cData.code, cData.name].filter(Boolean).map((b: string) => `${b} · ${nameLabel(mat.category)} `)));
+      const stem = stems[0];
       const others = await adminDb.collection('materials').where('confirmedCourseId', '==', courseId).get();
       let max = 0;
       others.docs.forEach(d => {
         const n = String(d.data().indexDisplayName ?? '');
-        if (n.startsWith(stem)) {
-          const num = Number(n.slice(stem.length));
+        const hit = stems.find(sx => n.startsWith(sx));
+        if (hit) {
+          const num = Number(n.slice(hit.length));
           if (!isNaN(num)) max = Math.max(max, num);
         }
       });

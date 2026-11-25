@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { writeBatch, doc } from 'firebase/firestore';
 import { buildNames } from '@/lib/materialNaming';
 import RenameTool from '@/components/admin/RenameTool';
+import CourseShortNames from '@/components/admin/CourseShortNames';
 import HashBackfillTool from '@/components/admin/HashBackfillTool';
 import DuplicateHits from '@/components/admin/DuplicateHits';
 import { db } from '@/lib/firebase/config';
@@ -301,6 +302,7 @@ export default function UploadsPanel({ uploads, courses, onRefresh, firebaseUser
       ))}
       <DuplicateHits courses={live} firebaseUser={firebaseUser} />
       <RenameTool firebaseUser={firebaseUser} />
+      <CourseShortNames />
       <HashBackfillTool firebaseUser={firebaseUser} />
     </div>
   );

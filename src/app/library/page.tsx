@@ -12,10 +12,11 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import AppNav from '@/components/AppNav';
 import { db } from '@/lib/firebase/config';
 import LuxLoader from '@/components/LuxLoader';
+import { courseLabel as courseShortLabel, displayName, downloadBase } from '@/lib/courseLabel';
 import MiniLoader from '@/components/MiniLoader';
 import {
   collection, getDocs, query, where,
-  addDoc, deleteDoc, doc, serverTimestamp,
+  addDoc, deleteDoc, doc, serverTimestamp, updateDoc,
   getDoc,
 } from 'firebase/firestore';
 
@@ -243,6 +244,9 @@ export default function LibraryPage() {
   const [hasAccess, setHasAccess] = useState(false);
   const [materials, setMaterials] = useState<IndexedMaterial[]>([]);
   const [courseMap, setCourseMap] = useState<Record<string, { name: string; department: string; year: number; semester: number }>>({});
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameBusy, setRenameBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -341,12 +345,12 @@ async function fetchBody(materialId: string): Promise<string> {
   async function handleDownloadTxt(m: IndexedMaterial) {
     const text = await fetchBody(m.id);
     if (!text) return;
-    const html = buildHtmlDoc(m.indexDisplayName || m.fileName, m.confirmedCourseName ?? '', text, false);
+    const html = buildHtmlDoc(downloadBase(m, (courseMap as any)[m.confirmedCourseId ?? '']), courseShortLabel((courseMap as any)[m.confirmedCourseId ?? ''], m.confirmedCourseName ?? ''), text, false);
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = (m.indexDisplayName || m.fileName).replace(/\.[^/.]+$/, '') + '.html';
+    a.download = downloadBase(m, (courseMap as any)[m.confirmedCourseId ?? '']) + '.html';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -354,7 +358,7 @@ async function fetchBody(materialId: string): Promise<string> {
   async function handleDownloadPdf(m: IndexedMaterial) {
     const text = await fetchBody(m.id);
     if (!text) return;
-    const html = buildHtmlDoc(m.indexDisplayName || m.fileName, m.confirmedCourseName ?? '', text, true);
+    const html = buildHtmlDoc(downloadBase(m, (courseMap as any)[m.confirmedCourseId ?? '']), courseShortLabel((courseMap as any)[m.confirmedCourseId ?? ''], m.confirmedCourseName ?? ''), text, true);
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const win = window.open(url, '_blank');
@@ -363,6 +367,21 @@ async function fetchBody(materialId: string): Promise<string> {
   }
 
   function handleDownload(m: IndexedMaterial) { window.open(m.fileUrl, '_blank'); }
+
+  // Display name only: nothing else about the material (file, chunks, course) is touched.
+  async function handleRename(m: IndexedMaterial, next: string) {
+    const name = next.trim();
+    if (!name || name === displayName(m)) { setRenamingId(null); return; }
+    setRenameBusy(true);
+    try {
+      await updateDoc(doc(db, 'materials', m.id), {
+        indexDisplayName: name, previousDisplayName: m.indexDisplayName ?? null, updatedAt: new Date().toISOString(),
+      });
+      setMaterials(prev => prev.map(x => (x.id === m.id ? { ...x, indexDisplayName: name } : x)));
+      setRenamingId(null);
+    } catch (e: any) { alert('Rename failed: ' + (e?.message ?? e)); }
+    finally { setRenameBusy(false); }
+  }
 
   async function handleRemoveFromIndex(id: string) {
     await fetch('/api/index-material', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materialId: id, action: 'remove' }) });
@@ -387,7 +406,7 @@ async function fetchBody(materialId: string): Promise<string> {
   }
 
   function exportList(filtered: IndexedMaterial[]) {
-    const lines = filtered.map(m => `${m.confirmedCourseName || 'Unknown Course'} — ${m.indexDisplayName || m.fileName}`).join('\n');
+    const lines = filtered.map(m => `${m.confirmedCourseName || 'Unknown Course'} — ${displayName(m)}`).join('\n');
     const blob = new Blob([lines], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'library-list.txt'; a.click();
@@ -411,7 +430,7 @@ async function fetchBody(materialId: string): Promise<string> {
     if (filterCat) list = list.filter(m => m.category === filterCat);
     return [...list].sort((a, b) => {
       if (sort === 'recent') return (b.indexedAt ? new Date(b.indexedAt as string).getTime() : 0) - (a.indexedAt ? new Date(a.indexedAt as string).getTime() : 0);
-      if (sort === 'name') return NAT.compare(a.indexDisplayName || a.fileName, b.indexDisplayName || b.fileName);
+      if (sort === 'name') return NAT.compare(displayName(a), displayName(b));
       if (sort === 'category') return a.category.localeCompare(b.category);
       return 0;
     });
@@ -489,9 +508,9 @@ async function fetchBody(materialId: string): Promise<string> {
 
   // Under a course heading, drop the repeated course prefix: "PHL 201 · Handout 3" -> "Handout 3".
   const shortTitle = (m: IndexedMaterial, ck: string) => {
-    const full = m.indexDisplayName || m.fileName;
+    const full = displayName(m);
     const c = (courseMap as any)[ck];
-    const names = [c?.code, c?.name, ck === m.confirmedCourseId ? m.confirmedCourseName : ''].filter(Boolean) as string[];
+    const names = [c?.code, c?.name, c?.shortName, courseShortLabel(c), ck === m.confirmedCourseId ? m.confirmedCourseName : ''].filter(Boolean) as string[];
     let t = full;
     for (const n of names) {
       const re = new RegExp('^' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[·—–:-]\\s*', 'i');
@@ -580,7 +599,7 @@ async function fetchBody(materialId: string): Promise<string> {
               {wasViewed && <span style={{ background: 'rgba(107,114,128,0.12)', color: '#6b7280', fontSize: '0.62rem', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', textTransform: 'uppercase' }}>Viewed</span>}
               <span style={{ color: CAT_COLORS[m.category] || 'var(--text-muted)', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{m.category?.replace('_', ' ')}</span>
             </div>
-            <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 700, color: 'var(--gold)', lineHeight: 1.3, marginBottom: '4px' }}>{m.indexDisplayName || m.fileName}</h2>
+            <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 700, color: 'var(--gold)', lineHeight: 1.3, marginBottom: '4px' }}>{displayName(m)}</h2>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{m.confirmedCourseName || '—'}</p>
             {m.sharedCourseIds && m.sharedCourseIds.length > 0 && (
               <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
@@ -599,6 +618,28 @@ async function fetchBody(materialId: string): Promise<string> {
           </div>
         </div>
 
+        {isAdmin && (
+          renamingId === m.id ? (
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+              <input value={renameDraft} onChange={e => setRenameDraft(e.target.value)} autoFocus maxLength={120}
+                onKeyDown={e => { if (e.key === 'Enter') handleRename(m, renameDraft); if (e.key === 'Escape') setRenamingId(null); }}
+                style={{ flex: 1, minWidth: 0, padding: '7px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', fontSize: '0.8rem' }} />
+              <button onClick={() => handleRename(m, renameDraft)} disabled={renameBusy}
+                style={{ padding: '7px 12px', borderRadius: '8px', border: 'none', background: 'var(--gold)', color: '#0a1020', fontWeight: 700, fontSize: '0.74rem', cursor: 'pointer' }}>
+                {renameBusy ? '…' : 'Save'}
+              </button>
+              <button onClick={() => setRenamingId(null)}
+                style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: '0.74rem', cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => { setRenamingId(m.id); setRenameDraft(displayName(m)); }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer', padding: 0, marginBottom: '10px' }}>
+              ✏️ Rename (display name only)
+            </button>
+          )
+        )}
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
           {m.wordCount && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span>}
           {m.indexedAt && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Added {new Date(m.indexedAt).toLocaleDateString()}</span>}
@@ -640,7 +681,7 @@ async function fetchBody(materialId: string): Promise<string> {
             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Related:</span>
             {related.map(r => (
               <button key={r.id} onClick={() => setSelectedId(r.id)} style={{ background: 'rgba(196,160,80,0.08)', border: '1px solid rgba(196,160,80,0.2)', borderRadius: '99px', padding: '2px 8px', color: 'var(--gold)', fontSize: '0.65rem', cursor: 'pointer' }}>
-                {r.indexDisplayName || r.fileName}
+                {displayName(r)}
               </button>
             ))}
           </div>
@@ -650,7 +691,7 @@ async function fetchBody(materialId: string): Promise<string> {
           <button
             onClick={async () => {
               const text = await fetchBody(m.id);
-              if (text) setFullTextViewer({ fileName: m.indexDisplayName || m.fileName, text });
+              if (text) setFullTextViewer({ fileName: displayName(m), text });
             }}
             disabled={bodyFetching === m.id}
             style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '7px 14px', color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer' }}
@@ -872,7 +913,7 @@ async function fetchBody(materialId: string): Promise<string> {
                                               const darkColor = CAT_DARK[m.category] ?? '#475569';
                                               const isSelected = selectedId === m.id;
                                               return (
-                                                <button key={m.id} onClick={() => setSelectedId(isSelected ? null : m.id)} title={m.indexDisplayName || m.fileName}
+                                                <button key={m.id} onClick={() => setSelectedId(isSelected ? null : m.id)} title={displayName(m)}
                                                   style={{
                                                     aspectRatio: '3 / 4', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
                                                     textAlign: 'left', padding: '9px 8px 8px 12px', cursor: 'pointer',
