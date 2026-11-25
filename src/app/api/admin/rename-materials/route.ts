@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-import { courseLabel } from "@/lib/courseLabel";
+import { courseLabel, courseAliases } from "@/lib/courseLabel";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
 import { adminDb } from "@/lib/firebase/admin";
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       const c = courses.get(cid)!;
       const prefix = courseLabel(c, c.code || c.name) + " · ";
       // Names made before course-name labels used the code or full name as prefix.
-      const olds = Array.from(new Set([prefix, c.code ? c.code + " · " : "", c.name ? c.name + " · " : ""].filter(Boolean)));
+      const olds = Array.from(new Set([prefix, ...courseAliases(c).map(a => a + " · ")]));
       const max: Record<string, number> = {};
 
       // Numbers already used by names in the new format keep their place.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -12,7 +12,9 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import AppNav from '@/components/AppNav';
 import { db } from '@/lib/firebase/config';
 import LuxLoader from '@/components/LuxLoader';
-import { courseLabel as courseShortLabel, displayName, downloadBase } from '@/lib/courseLabel';
+import UnsortedBrowser, { LibraryTabs } from '@/components/library/UnsortedBrowser';
+import { Chevron, ShelfRail, groupByCategory } from '@/components/library/shelfUi';
+import { courseLabel as courseShortLabel, courseAliases, displayName, downloadBase } from '@/lib/courseLabel';
 import MiniLoader from '@/components/MiniLoader';
 import {
   collection, getDocs, query, where,
@@ -258,6 +260,14 @@ export default function LibraryPage() {
 
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
   const [viewed, setViewed] = useState<Set<string>>(new Set());
+  const [libView, setLibView] = useState<'library' | 'unsorted'>('library');
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('view') === 'unsorted') setLibView('unsorted');
+  }, []);
+  const switchView = (v: 'library' | 'unsorted') => {
+    setLibView(v);
+    window.history.replaceState(null, '', v === 'unsorted' ? '/library?view=unsorted' : '/library');
+  };
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -490,13 +500,31 @@ async function fetchBody(materialId: string): Promise<string> {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shelfTree]);
 
+  const shut = (k: string) => shelfCollapsed.has(k);
+  const toggleShelf = (k: string) => setShelfCollapsed(s => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const expandAll = () => setShelfCollapsed(new Set());
+  const collapseAll = () => setShelfCollapsed(new Set(jumpTargets.map(t => t.key)));
+
   const jumpTo = (t: { id: string; key: string }) => {
+    const yearKey = t.key.split('|').slice(0, 2).join('|');
     setShelfCollapsed(prev => {
-      if (!prev.has(t.key)) return prev;
-      const n = new Set(prev); n.delete(t.key); return n;
+      if (!prev.has(t.key) && !prev.has(yearKey)) return prev;
+      const n = new Set(prev); n.delete(t.key); n.delete(yearKey); return n;
     });
     setTimeout(() => document.getElementById(t.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
   };
+
+  // A big library starts with every semester closed (so the structure is visible); searching or filtering opens everything.
+  const shelvesInit = useRef(false);
+  useEffect(() => {
+    if (!jumpTargets.length) return;
+    if (search || filterDept || filterYear || filterSem || filterCat) { setShelfCollapsed(new Set()); return; }
+    if (!shelvesInit.current) {
+      shelvesInit.current = true;
+      if (filtered.length > 24) setShelfCollapsed(new Set(jumpTargets.map(t => t.key)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTargets, search, filterDept, filterYear, filterSem, filterCat]);
 
   const selectedMaterial = selectedId ? materials.find(m => m.id === selectedId) ?? null : null;
 
@@ -510,7 +538,7 @@ async function fetchBody(materialId: string): Promise<string> {
   const shortTitle = (m: IndexedMaterial, ck: string) => {
     const full = displayName(m);
     const c = (courseMap as any)[ck];
-    const names = [c?.code, c?.name, c?.shortName, courseShortLabel(c), ck === m.confirmedCourseId ? m.confirmedCourseName : ''].filter(Boolean) as string[];
+    const names = [...courseAliases(c), ck === m.confirmedCourseId ? m.confirmedCourseName : ''].filter(Boolean) as string[];
     let t = full;
     for (const n of names) {
       const re = new RegExp('^' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[·—–:-]\\s*', 'i');
@@ -738,6 +766,19 @@ async function fetchBody(materialId: string): Promise<string> {
 
   if (!hasAccess) return null;
 
+  if (libView === 'unsorted') return (
+    <AppNav>
+      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 16px 60px' }}>
+        <div style={{ paddingTop: '80px', marginBottom: '14px' }}>
+          <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '2px' }}>Unsorted Uploads</h1>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Browse files while they wait for admins to sort and approve them.</p>
+        </div>
+        <LibraryTabs value={libView} onChange={switchView} />
+        <UnsortedBrowser firebaseUser={firebaseUser} />
+      </div>
+    </AppNav>
+  );
+
   return (
     <AppNav>
       {/* Fullscreen text viewer */}
@@ -785,6 +826,8 @@ async function fetchBody(materialId: string): Promise<string> {
             </select>
           </div>
 
+          <LibraryTabs value={libView} onChange={switchView} />
+
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
             {[
               { label: 'Dept', options: depts, value: filterDept, set: setFilterDept },
@@ -815,19 +858,7 @@ async function fetchBody(materialId: string): Promise<string> {
             ))}
           </div>
 
-          {!loading && filtered.length > 0 && jumpTargets.length > 1 && (
-            <>
-              <style>{`.lux-jump{top:52px}@media (min-width:768px){.lux-jump{top:0}}`}</style>
-              <div className="lux-jump" style={{ position: 'sticky', zIndex: 30, margin: '0 -16px 20px', padding: '8px 16px', background: 'var(--navy)', borderBottom: '1px solid var(--border)', display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                {jumpTargets.map(t => (
-                  <button key={t.id} onClick={() => jumpTo(t)}
-                    style={{ flexShrink: 0, padding: '5px 11px', borderRadius: '99px', border: '1px solid var(--border)', background: 'rgba(196,160,80,0.08)', color: 'var(--gold)', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          {!loading && filtered.length > 0 && <ShelfRail targets={jumpTargets} onJump={jumpTo} />}
 
           {loading ? (
             <MiniLoader label="Loading materials..." />
@@ -838,26 +869,41 @@ async function fetchBody(materialId: string): Promise<string> {
               <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Try adjusting your filters or check back later.</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
+            <div className="lux-shelves" style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
+              <style>{`.lux-shelves{padding-right:50px}@media (min-width:1260px){.lux-shelves{padding-right:0}}`}</style>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '-30px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginRight: 'auto' }}>
+                  {filtered.length} item{filtered.length !== 1 ? 's' : ''} · tap a heading to open or close it
+                </span>
+                <button onClick={expandAll} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid rgba(196,160,80,0.4)', background: 'transparent', color: 'var(--gold)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>Expand all</button>
+                <button onClick={collapseAll} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>Collapse all</button>
+              </div>
               {Object.entries(shelfTree).sort(([a], [b]) => a.localeCompare(b)).map(([dept, deptYears]) => (
                 <div key={dept}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                    <div style={{ height: '1px', flex: 1, background: 'linear-gradient(to right, var(--gold), transparent)', opacity: 0.3 }} />
-                    <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.1rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'capitalize', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{dept}</h2>
-                    <div style={{ height: '1px', flex: 1, background: 'linear-gradient(to left, var(--gold), transparent)', opacity: 0.3 }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '26px' }}>
+                    <div style={{ height: '1px', flex: 1, background: 'linear-gradient(to right, transparent, var(--gold))', opacity: 0.5 }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.3rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.22em', whiteSpace: 'nowrap', margin: 0 }}>{dept}</h2>
+                      <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.16em', textTransform: 'uppercase', marginTop: '5px' }}>
+                        ✦ {new Set(Object.values(deptYears).flatMap(s => Object.values(s).flatMap(c => Object.values(c).flat().map(x => x.id)))).size} items ✦
+                      </p>
+                    </div>
+                    <div style={{ height: '1px', flex: 1, background: 'linear-gradient(to left, transparent, var(--gold))', opacity: 0.5 }} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                     {Object.entries(deptYears).sort(([a], [b]) => NAT.compare(a, b)).map(([yr, semesters]) => (
                       <div key={yr}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '14px', padding: '9px 14px', background: 'rgba(196,160,80,0.10)', borderLeft: '4px solid var(--gold)', borderRadius: '0 8px 8px 0' }}>
-                          <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.02rem', fontWeight: 700, color: 'var(--gold)' }}>
+                        <button onClick={() => toggleShelf(`${dept}|${yr}`)} aria-expanded={!shut(`${dept}|${yr}`)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '14px', padding: '11px 14px', background: 'linear-gradient(90deg, rgba(196,160,80,0.18), rgba(196,160,80,0.03))', border: 'none', borderLeft: '4px solid var(--gold)', borderRadius: '0 10px 10px 0' }}>
+                          <Chevron open={!shut(`${dept}|${yr}`)} size={24} />
+                          <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.04em', color: 'var(--gold)', flex: 1 }}>
                             {/^\d+$/.test(yearNo(yr)) ? `${titleCase(dept)} · ${yr}` : 'Year not specified'}
                           </span>
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                            {new Set(Object.values(semesters).flatMap(c => Object.values(c).flat().map(x => x.id))).size} items
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+                            {Object.keys(semesters).length} semester{Object.keys(semesters).length !== 1 ? 's' : ''} · {new Set(Object.values(semesters).flatMap(c => Object.values(c).flat().map(x => x.id))).size} items
                           </span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        </button>
+                        <div style={{ display: shut(`${dept}|${yr}`) ? 'none' : 'flex', flexDirection: 'column', gap: '20px' }}>
                           {Object.entries(semesters).sort(([a], [b]) => NAT.compare(a, b)).map(([sem, semCourses]) => {
                             const shelfKey = `${dept}|${yr}|${sem}`;
                             const isCollapsed = shelfCollapsed.has(shelfKey);
@@ -876,13 +922,13 @@ async function fetchBody(materialId: string): Promise<string> {
                               <div key={sem} id={shelfId(dept, yr, sem)} style={{ scrollMarginTop: 100 }}>
                                 <div style={{ background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
                                   <div style={{ padding: '8px 16px', borderBottom: isCollapsed ? 'none' : '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(196,160,80,0.04)' }}>
-                                    <button onClick={() => setShelfCollapsed(s => { const n = new Set(s); n.has(shelfKey) ? n.delete(shelfKey) : n.add(shelfKey); return n; })}
-                                      style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '7px', padding: 0 }}>
-                                      <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>{semHeading(dept, yr, sem)}</span>
-                                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'inline-block', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▾</span>
+                                    <button onClick={() => toggleShelf(shelfKey)} aria-expanded={!isCollapsed}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', flex: 1, textAlign: 'left', minWidth: 0 }}>
+                                      <Chevron open={!isCollapsed} />
+                                      <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>{semHeading(dept, yr, sem)}</span>
                                     </button>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{semAll.length} item{semAll.length !== 1 ? 's' : ''}</span>
+                                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{courseEntries.length} course{courseEntries.length !== 1 ? 's' : ''} · {semAll.length} item{semAll.length !== 1 ? 's' : ''}</span>
                                       {!isCollapsed && (
                                         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden' }}>
                                           {(['covers', 'spine', 'list'] as const).map(mode => (
@@ -900,11 +946,28 @@ async function fetchBody(materialId: string): Promise<string> {
                                   {!isCollapsed && (
                                     <div>
                                       {courseEntries.map(([ck, semMaterials]) => (
-                                      <div key={ck}>
-                                      <div style={{ padding: '12px 16px 0', display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                                        <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)' }}>{courseLabel(ck)}</span>
-                                        <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{semMaterials.length}</span>
-                                      </div>
+                                      <div key={ck} style={{ borderTop: '1px solid rgba(196,160,80,0.14)' }}>
+                                      <button onClick={() => toggleShelf(`${shelfKey}|${ck}`)} aria-expanded={!shut(`${shelfKey}|${ck}`)}
+                                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '9px', padding: '13px 16px 4px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                                        <Chevron open={!shut(`${shelfKey}|${ck}`)} size={18} />
+                                        <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.03em', flex: 1, minWidth: 0 }}>{courseLabel(ck)}</span>
+                                        <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', flexShrink: 0 }}>{semMaterials.length} item{semMaterials.length !== 1 ? 's' : ''}</span>
+                                      </button>
+                                      {groupByCategory(semMaterials).map(({ key: catKey, label: catLabel, items: semMaterials }) => {
+                                        const catK = `${shelfKey}|${ck}|${catKey}`;
+                                        const catShut = shut(catK);
+                                        const catColor = CAT_COLORS[semMaterials[0]?.category] ?? '#94a3b8';
+                                        return (
+                                      <div key={catKey} style={{ display: shut(`${shelfKey}|${ck}`) ? 'none' : 'block' }}>
+                                        <button onClick={() => toggleShelf(catK)} aria-expanded={!catShut}
+                                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px 4px 38px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                                          <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: catColor, flexShrink: 0 }} />
+                                          <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>{catLabel}</span>
+                                          <span style={{ flex: 1, borderBottom: '1px dotted rgba(255,255,255,0.15)', alignSelf: 'center', marginTop: '2px' }} />
+                                          <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{semMaterials.length}</span>
+                                          <span style={{ fontSize: '0.62rem', color: 'var(--gold)', fontWeight: 700, width: '38px', textAlign: 'right' }}>{catShut ? 'Show' : 'Hide'}</span>
+                                        </button>
+                                        <div style={{ display: catShut ? 'none' : 'block' }}>
                                       {viewMode === 'covers' ? (
                                         <div style={{ padding: '12px 16px 0' }}>
                                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: '10px' }}>
@@ -987,7 +1050,11 @@ async function fetchBody(materialId: string): Promise<string> {
                                           })}
                                         </div>
                                       )}
-                                      {selectedMaterial && ck === cardCourseKey && renderDetailCard(selectedMaterial)}
+                                        </div>
+                                      </div>
+                                        );
+                                      })}
+                                      {!shut(`${shelfKey}|${ck}`) && selectedMaterial && ck === cardCourseKey && renderDetailCard(selectedMaterial)}
                                       </div>
                                       ))}
                                     </div>

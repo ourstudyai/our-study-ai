@@ -1,4 +1,4 @@
-import { courseLabel } from "@/lib/courseLabel";
+import { courseLabel, courseAliases } from "@/lib/courseLabel";
 import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
       const cSnap = await adminDb.collection('courses').doc(courseId).get();
       const cData: any = cSnap.data() ?? {};
       const label = courseLabel({ name: cData.name ?? courseName, code: cData.code, shortName: cData.shortName }, String(courseName ?? ''));
-      const stems = Array.from(new Set([label, cData.code, cData.name].filter(Boolean).map((b: string) => `${b} · ${nameLabel(mat.category)} `)));
+      const stems = Array.from(new Set([label, ...courseAliases({ name: cData.name ?? courseName, code: cData.code, shortName: cData.shortName })].filter(Boolean).map((b: string) => `${b} · ${nameLabel(mat.category)} `)));
       const stem = stems[0];
       const others = await adminDb.collection('materials').where('confirmedCourseId', '==', courseId).get();
       let max = 0;

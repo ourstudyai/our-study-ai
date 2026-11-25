@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
     const alreadyInCourse = !!courseId && (m.confirmedCourseId === courseId || extra.includes(courseId));
 
     // Only remember it when it tells the admin something new: a course request, or a different uploader.
-    const worthRecording = !alreadyInCourse && (!!courseId || m.uploadedBy !== decoded.uid);
+    const ownCopySameCourse = m.uploadedBy === decoded.uid && (m.suggestedCourseId ?? null) === (courseId ?? null);
+    const worthRecording = !alreadyInCourse && !ownCopySameCourse && (!!courseId || m.uploadedBy !== decoded.uid);
     if (worthRecording) {
       const hits: any[] = Array.isArray(m.duplicateHits) ? m.duplicateHits : [];
       const seen = hits.some(h =>
