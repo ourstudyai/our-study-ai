@@ -1,5 +1,7 @@
 'use client';
 
+import TabHelp from '@/components/admin/TabHelp';
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -935,6 +937,7 @@ useEffect(() => {
           </div>
         </div>
 
+        <TabHelp tab={tab} />
         {tab === 'uploads' && (
           <UploadsPanel
             uploads={filterAndSort(uploads)}

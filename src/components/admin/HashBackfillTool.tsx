@@ -1,5 +1,7 @@
 'use client';
 
+import InfoTip from '@/components/admin/InfoTip';
+
 import { authFetch } from '@/lib/auth/authFetch';
 
 import { useState } from 'react';
@@ -50,6 +52,9 @@ export default function HashBackfillTool({ firebaseUser }: { firebaseUser: any }
       </button>
       {open && (
         <div style={{ marginTop: 10, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          <InfoTip
+            todo="Tap the button and keep this page open until it says finished. If files remain, run it again."
+            means="Each older file gets a fingerprint, so a student uploading the same file again is recognised. Nothing is deleted: identical files are only listed for you to review." />
           <p style={{ marginBottom: 10 }}>
             Computes a fingerprint for older materials that don't have one, so re-uploads of those files are recognised too. Nothing is deleted; identical files are only listed.
           </p>

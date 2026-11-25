@@ -260,13 +260,17 @@ export default function LibraryPage() {
 
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
   const [viewed, setViewed] = useState<Set<string>>(new Set());
-  const [libView, setLibView] = useState<'library' | 'unsorted'>('library');
+  const [libView, setLibView] = useState<'library' | 'unsorted' | 'all'>('library');
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('view') === 'unsorted') setLibView('unsorted');
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('view');
+    if (v === 'unsorted' || v === 'all') setLibView(v);
+    const qs = params.get('q');
+    if (qs && v !== 'unsorted' && v !== 'all') setSearch(qs);
   }, []);
-  const switchView = (v: 'library' | 'unsorted') => {
+  const switchView = (v: 'library' | 'unsorted' | 'all') => {
     setLibView(v);
-    window.history.replaceState(null, '', v === 'unsorted' ? '/library?view=unsorted' : '/library');
+    window.history.replaceState(null, '', v === 'library' ? '/library' : `/library?view=${v}`);
   };
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null);
@@ -499,6 +503,45 @@ async function fetchBody(materialId: string): Promise<string> {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shelfTree]);
+
+  const [allSems, setAllSems] = useState(false);
+  const [bypass, setBypass] = useState(false);
+  const [libViewMode, setLibViewMode] = useState<'covers' | 'spine' | 'list'>('covers');
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('lux_lib_view');
+      if (v === 'covers' || v === 'spine' || v === 'list') setLibViewMode(v);
+    } catch { /* ignore */ }
+  }, []);
+  const chooseView = (v: 'covers' | 'spine' | 'list') => {
+    setLibViewMode(v);
+    try { localStorage.setItem('lux_lib_view', v); } catch { /* ignore */ }
+  };
+
+  const classCards = useMemo(() => {
+    const map = new Map<string, { dept: string; year: string; count: number }>();
+    materials.forEach(m => {
+      const d = String(m.department ?? '').trim();
+      const y = m.year ? String(m.year) : '';
+      if (!d || !y) return;
+      const k = `${d}|${y}`;
+      const cur = map.get(k) ?? { dept: d, year: y, count: 0 };
+      cur.count += 1;
+      map.set(k, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => a.dept.localeCompare(b.dept) || NAT.compare(a.year, b.year));
+  }, [materials]);
+
+  const changeClass = () => { setFilterDept(''); setFilterYear(''); setFilterSem(''); setAllSems(false); setBypass(false); };
+  const openInLibrary = (id: string) => {
+    const m = materials.find(x => x.id === id);
+    setLibView('library');
+    window.history.replaceState(null, '', '/library');
+    if (m) {
+      setFilterDept(String(m.department ?? '')); setFilterYear(m.year ? String(m.year) : '');
+      setFilterSem(''); setAllSems(true); setSearch(''); setSelectedId(id);
+    }
+  };
 
   const shut = (k: string) => shelfCollapsed.has(k);
   const toggleShelf = (k: string) => setShelfCollapsed(s => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -766,18 +809,29 @@ async function fetchBody(materialId: string): Promise<string> {
 
   if (!hasAccess) return null;
 
-  if (libView === 'unsorted') return (
+  if (libView !== 'library') return (
     <AppNav>
       <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 16px 60px' }}>
         <div style={{ paddingTop: '80px', marginBottom: '14px' }}>
-          <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '2px' }}>Unsorted Uploads</h1>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Browse files while they wait for admins to sort and approve them.</p>
+          <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '2px' }}>{libView === 'all' ? 'All Files' : 'Unsorted Uploads'}</h1>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {libView === 'all' ? 'Every file on the platform, sorted or not, with where it is now.' : 'Browse files while they wait for admins to sort and approve them.'}
+          </p>
         </div>
         <LibraryTabs value={libView} onChange={switchView} />
-        <UnsortedBrowser firebaseUser={firebaseUser} />
+        <UnsortedBrowser firebaseUser={firebaseUser} mode={libView} onOpenLibrary={openInLibrary} />
       </div>
     </AppNav>
   );
+
+  // Class first, then semester, then the materials load.
+  const classChosen = !!(filterDept && filterYear);
+  const semChosen = !!filterSem || allSems;
+  const landing = !bypass && !classChosen && !search && !filterCat;
+  const needSem = !bypass && classChosen && !semChosen && !search && !filterCat;
+  const semCount = (s: string) => materials.filter(m => m.department === filterDept && String(m.year) === filterYear && String(m.semester) === s).length;
+  const classTotal = materials.filter(m => m.department === filterDept && String(m.year) === filterYear).length;
+  const pickCard: React.CSSProperties = { textAlign: 'left', padding: '16px 14px', borderRadius: '12px', border: '1px solid rgba(196,160,80,0.3)', background: 'linear-gradient(160deg, rgba(196,160,80,0.12), rgba(196,160,80,0.03))', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px' };
 
   return (
     <AppNav>
@@ -858,9 +912,61 @@ async function fetchBody(materialId: string): Promise<string> {
             ))}
           </div>
 
-          {!loading && filtered.length > 0 && <ShelfRail targets={jumpTargets} onJump={jumpTo} />}
+          {!loading && !landing && !needSem && filtered.length > 0 && <ShelfRail targets={jumpTargets} onJump={jumpTo} />}
 
-          {loading ? (
+          {!loading && !search && (classChosen || bypass) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(196,160,80,0.3)', background: 'rgba(196,160,80,0.07)' }}>
+              <span style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, color: 'var(--gold)', fontSize: '0.92rem', marginRight: 'auto' }}>
+                {classChosen ? `${titleCase(filterDept)} · Year ${filterYear}${semChosen ? ` · ${filterSem ? `Semester ${filterSem}` : 'All semesters'}` : ''}` : 'Everything, all classes'}
+              </span>
+              {classChosen && semChosen && (
+                <button onClick={() => { setFilterSem(''); setAllSems(false); }} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>Change semester</button>
+              )}
+              <button onClick={changeClass} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid rgba(196,160,80,0.4)', background: 'transparent', color: 'var(--gold)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>Change class</button>
+            </div>
+          )}
+
+          {!loading && landing && (
+            <div style={{ marginBottom: '24px' }}>
+              <p style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.15rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '4px' }}>Choose your class</p>
+              <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.6 }}>Pick your department and year first, then a semester. The materials load after that. Or type in the search box to look across everything.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px' }}>
+                {classCards.map(c => (
+                  <button key={`${c.dept}|${c.year}`} onClick={() => { setFilterDept(c.dept); setFilterYear(c.year); setFilterSem(''); setAllSems(false); }} style={pickCard}>
+                    <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{c.dept}</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--gold)', fontWeight: 700 }}>Year {c.year}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{c.count} item{c.count !== 1 ? 's' : ''}</span>
+                  </button>
+                ))}
+                <button onClick={() => setBypass(true)} style={{ ...pickCard, border: '1px dashed var(--border)', background: 'transparent' }}>
+                  <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Everything</span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>All classes</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{materials.length} items</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!loading && needSem && (
+            <div style={{ marginBottom: '24px' }}>
+              <p style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.15rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '4px' }}>Choose a semester</p>
+              <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '14px' }}>The materials for it load once you pick.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px' }}>
+                {['1', '2'].map(s => (
+                  <button key={s} onClick={() => setFilterSem(s)} style={pickCard}>
+                    <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Semester {s}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{semCount(s)} item{semCount(s) !== 1 ? 's' : ''}</span>
+                  </button>
+                ))}
+                <button onClick={() => setAllSems(true)} style={{ ...pickCard, border: '1px dashed var(--border)', background: 'transparent' }}>
+                  <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>All semesters</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{classTotal} items</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!loading && (landing || needSem) ? null : loading ? (
             <MiniLoader label="Loading materials..." />
           ) : filtered.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
@@ -877,6 +983,14 @@ async function fetchBody(materialId: string): Promise<string> {
                 </span>
                 <button onClick={expandAll} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid rgba(196,160,80,0.4)', background: 'transparent', color: 'var(--gold)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>Expand all</button>
                 <button onClick={collapseAll} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>Collapse all</button>
+                <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '99px', overflow: 'hidden' }}>
+                  {(['covers', 'spine', 'list'] as const).map(v => (
+                    <button key={v} onClick={() => chooseView(v)} aria-pressed={libViewMode === v}
+                      style={{ padding: '5px 11px', border: 'none', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700, background: libViewMode === v ? 'rgba(196,160,80,0.22)' : 'transparent', color: libViewMode === v ? 'var(--gold)' : 'var(--text-muted)' }}>
+                      {v === 'covers' ? '▦ Covers' : v === 'spine' ? '⫿ Spines' : '☰ List'}
+                    </button>
+                  ))}
+                </div>
               </div>
               {Object.entries(shelfTree).sort(([a], [b]) => a.localeCompare(b)).map(([dept, deptYears]) => (
                 <div key={dept}>
@@ -907,7 +1021,7 @@ async function fetchBody(materialId: string): Promise<string> {
                           {Object.entries(semesters).sort(([a], [b]) => NAT.compare(a, b)).map(([sem, semCourses]) => {
                             const shelfKey = `${dept}|${yr}|${sem}`;
                             const isCollapsed = shelfCollapsed.has(shelfKey);
-                            const viewMode = shelfView[shelfKey] ?? 'covers';
+                            const viewMode = libViewMode;
                             const cm = courseMap as any;
                             const courseEntries = Object.entries(semCourses).sort(([a], [b]) => {
                               if (a === 'unassigned') return 1;
@@ -932,7 +1046,7 @@ async function fetchBody(materialId: string): Promise<string> {
                                       {!isCollapsed && (
                                         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden' }}>
                                           {(['covers', 'spine', 'list'] as const).map(mode => (
-                                            <button key={mode} onClick={() => setShelfView(v => ({ ...v, [shelfKey]: mode }))}
+                                            <button key={mode} onClick={() => chooseView(mode)}
                                               title={mode === 'covers' ? 'Cover view' : mode === 'spine' ? 'Spine view' : 'List view'}
                                               style={{ background: viewMode === mode ? 'rgba(196,160,80,0.18)' : 'transparent', border: 'none', borderRight: mode !== 'list' ? '1px solid var(--border)' : 'none', color: viewMode === mode ? 'var(--gold)' : 'var(--text-muted)', padding: '4px 8px', cursor: 'pointer', fontSize: '0.75rem', lineHeight: 1 }}>
                                               {mode === 'covers' ? '▦' : mode === 'spine' ? '⫿' : '☰'}

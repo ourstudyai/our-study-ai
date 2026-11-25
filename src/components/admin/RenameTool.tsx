@@ -1,5 +1,7 @@
 'use client';
 
+import InfoTip from '@/components/admin/InfoTip';
+
 import { authFetch } from '@/lib/auth/authFetch';
 
 import { useState } from 'react';
@@ -37,6 +39,9 @@ export default function RenameTool({ firebaseUser }: { firebaseUser: any }) {
       </button>
       {open && (
         <div style={{ marginTop: 10 }}>
+          <InfoTip
+            todo={'Tap Preview and read the examples, then Apply. Keep the box ticked to also switch code-style names (like "PHL 201 · Handout 3") to course names.'}
+            means="Only the display name changes. Files, text and course links are untouched. Names you wrote yourself are kept, and each old name is saved so it can be restored." />
           <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 10 }}>
             Gives approved materials with generic names (file names or "Course — type") the same format as new ones, e.g. "PHL 201 · Handout 3", oldest first. Names you wrote yourself are left alone. Preview first.
           </p>

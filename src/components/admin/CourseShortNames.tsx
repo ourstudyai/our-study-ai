@@ -1,5 +1,7 @@
 'use client';
 
+import InfoTip from '@/components/admin/InfoTip';
+
 import { useState } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
@@ -49,6 +51,9 @@ export default function CourseShortNames() {
       </button>
       {open && (
         <div style={{ marginTop: 10, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          <InfoTip
+            todo="Search for a course, type a short name and tap Save. Leave it empty to use the automatic name."
+            means={'The short name appears in file names like "Canon Law · Handout 2" and in downloads. Courses without one use their keywords automatically.'} />
           <p style={{ marginBottom: 8 }}>
             Used in names like "Patristics · Handout 3" and in download file names. Leave blank to use the course name (long names are abbreviated automatically).
           </p>

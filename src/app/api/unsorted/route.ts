@@ -2,10 +2,11 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
 
-// Files that are uploaded but not yet approved into the library. Signed-in users may browse and download
-// them. Uploader identity and every other field stay on the server.
+// Unsorted: uploaded but not yet approved. All files (scope=all): those plus everything already in the library.
+// Signed-in users may browse and download unsorted files. Uploader identity and other fields stay on the server.
 const OPEN = ["upload_review", "sorted", "awaiting_course", "ocr_pending", "processing", "pending_review"];
 const WAITING = ["upload_review", "awaiting_course"];
+const SUPREME = "ourstudyai@gmail.com";
 
 async function caller(req: NextRequest) {
   const header = req.headers.get("authorization") ?? "";
@@ -18,6 +19,13 @@ async function caller(req: NextRequest) {
   return null;
 }
 
+async function isAdmin(decoded: { uid: string; email?: string }) {
+  if (decoded.email === SUPREME) return true;
+  const u = await adminDb.collection("users").doc(decoded.uid).get();
+  const role = u.data()?.role;
+  return role === "admin" || role === "chief_admin";
+}
+
 function millis(v: any): number {
   if (!v) return 0;
   if (typeof v === "string") { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; }
@@ -25,16 +33,25 @@ function millis(v: any): number {
   return 0;
 }
 
+function stateOf(r: any): "waiting" | "processing" | "library" | "removed" {
+  const status = String(r.status);
+  if (status === "approved") return r.indexed ? "library" : "removed";
+  return WAITING.includes(status) ? "waiting" : "processing";
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await caller(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const admin = await isAdmin(user as any);
 
     const id = req.nextUrl.searchParams.get("id");
     if (id) {
       const snap = await adminDb.collection("materials").doc(id).get();
       const m = snap.data();
-      if (!snap.exists || !m || !OPEN.includes(String(m.status)) || !m.fileUrl) {
+      const status = String(m?.status ?? "");
+      const allowed = OPEN.includes(status) || (admin && status === "approved");
+      if (!snap.exists || !m || !allowed || !m.fileUrl) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
 
@@ -58,15 +75,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ url: m.fileUrl, name: m.indexDisplayName || m.fileName || "file" });
     }
 
+    const all = req.nextUrl.searchParams.get("scope") === "all";
     const snap = await adminDb.collection("materials")
-      .where("status", "in", OPEN)
+      .where("status", "in", all ? [...OPEN, "approved"] : OPEN)
       .select("fileName", "indexDisplayName", "uploadDepartment", "uploadYear", "department", "year",
-        "suggestedCourseName", "confirmedCourseName", "fileSize", "mimeType", "createdAt", "status", "fileHash")
+        "suggestedCourseName", "confirmedCourseName", "fileSize", "mimeType", "createdAt", "status", "fileHash", "indexed")
       .get();
 
-    // Identical files (same hash) appear once: the earliest upload.
+    // Identical files (same hash) appear once. A library copy wins; otherwise the earliest upload.
     const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-    rows.sort((a, b) => millis(a.createdAt) - millis(b.createdAt));
+    const rank = (r: any) => (stateOf(r) === "library" ? 0 : 1);
+    rows.sort((a, b) => rank(a) - rank(b) || millis(a.createdAt) - millis(b.createdAt));
     const seen = new Set<string>();
     const unique = rows.filter(r => {
       const h = String(r.fileHash ?? "");
@@ -76,18 +95,22 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
-    const items = unique.reverse().slice(0, 3000).map(r => ({
-      id: r.id,
-      name: String(r.indexDisplayName || r.fileName || "Untitled"),
-      dept: String(r.uploadDepartment || r.department || "").toLowerCase() || null,
-      year: Number(r.uploadYear || r.year) || null,
-      klass: String(r.confirmedCourseName || r.suggestedCourseName || "") || null,
-      size: Number(r.fileSize) || 0,
-      mime: String(r.mimeType || ""),
-      at: millis(r.createdAt),
-      state: WAITING.includes(String(r.status)) ? "waiting" : "processing",
-    }));
-    return NextResponse.json({ items, total: items.length });
+    const items = unique
+      .map(r => ({
+        id: r.id,
+        name: String(r.indexDisplayName || r.fileName || "Untitled"),
+        dept: String(r.uploadDepartment || r.department || "").toLowerCase() || null,
+        year: Number(r.uploadYear || r.year) || null,
+        klass: String(r.confirmedCourseName || r.suggestedCourseName || "") || null,
+        size: Number(r.fileSize) || 0,
+        mime: String(r.mimeType || ""),
+        at: millis(r.createdAt),
+        state: stateOf(r),
+      }))
+      .filter(it => admin || it.state !== "removed")
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 3000);
+    return NextResponse.json({ items, total: items.length, admin });
   } catch (err) {
     console.error("[unsorted]", err);
     return NextResponse.json({ error: "Failed to load." }, { status: 500 });

@@ -52,7 +52,10 @@ export async function POST(req: NextRequest) {
         });
       }
     }
-    return NextResponse.json({ exists: true, status: m.status ?? null, alreadyInCourse });
+    const status = String(m.status ?? "");
+    const where = status === "approved" ? (m.indexed ? "library" : "removed")
+      : ["upload_review", "awaiting_course"].includes(status) ? "unsorted" : "processing";
+    return NextResponse.json({ exists: true, status: m.status ?? null, alreadyInCourse, where, name: m.indexDisplayName || m.fileName || null });
   } catch (err) {
     console.error("[check-hash]", err);
     return NextResponse.json({ error: "Check failed." }, { status: 500 });

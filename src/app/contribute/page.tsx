@@ -23,7 +23,7 @@ interface Course { id: string; name: string; code?: string; department: string; 
 interface Cls { courseId: string | null; courseName: string; category: string; }
 
 type ItemStatus = 'queued' | 'hashing' | 'uploading' | 'done' | 'error';
-interface Item { id: string; file: File; status: ItemStatus; progress: number; error?: string; dup?: boolean; }
+interface Item { id: string; file: File; status: ItemStatus; progress: number; error?: string; dup?: boolean; dupWhere?: string; dupName?: string; }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -119,6 +119,20 @@ export default function ContributePage() {
     return () => window.removeEventListener('beforeunload', h);
   }, [running]);
 
+  // Tells the student exactly where the existing copy is, so they can check it instead of uploading again.
+  const dupLine = (it: Item) => {
+    const w = it.dupWhere ?? '';
+    const label = w === 'library' ? 'the Library' : w === 'removed' ? 'All files' : 'Unsorted';
+    const view = w === 'library' ? 'library' : w === 'removed' ? 'all' : 'unsorted';
+    const href = `/library?view=${view}${it.dupName ? `&q=${encodeURIComponent(it.dupName)}` : ''}`;
+    return (
+      <>
+        Already on the platform{it.dupName ? <> as “{it.dupName}”</> : null}, so it was not uploaded again.{' '}
+        <a href={href} style={{ color: 'var(--gold)', fontWeight: 700 }}>See it in {label}</a>
+      </>
+    );
+  };
+
   async function uploadOne(item: Item, d: string, y: number, cls: Cls | null): Promise<boolean> {
     setItem(item.id, { status: 'hashing', progress: 0, error: undefined });
     const fileHash = await sha256Hex(item.file);
@@ -128,7 +142,10 @@ export default function ContributePage() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ fileHash, dept: d, year: y, courseId: cls?.courseId ?? null, courseName: cls?.courseName ?? null }),
     });
-    if (chk.ok && (await chk.json()).exists) { setItem(item.id, { status: 'done', progress: 100, dup: true }); return true; }
+    if (chk.ok) {
+      const cj = await chk.json();
+      if (cj.exists) { setItem(item.id, { status: 'done', progress: 100, dup: true, dupWhere: cj.where, dupName: cj.name ?? undefined }); return true; }
+    }
 
     setItem(item.id, { status: 'uploading', progress: 0 });
     const sigRes = await authFetch('/api/cloudinary-signature', {
@@ -333,6 +350,12 @@ export default function ContributePage() {
           <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>PDF, Word, PowerPoint, images, text. Choose as many as you like.</p>
         </div>
 
+        <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.6 }}>
+          Already have the file? Check <a href="/library" style={{ color: 'var(--gold)' }}>Library</a>,{' '}
+          <a href="/library?view=unsorted" style={{ color: 'var(--gold)' }}>Unsorted</a> or{' '}
+          <a href="/library?view=all" style={{ color: 'var(--gold)' }}>All files</a> first. Anything we already hold is recognised and not stored twice.
+        </p>
+
         {items.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {items.map(it => (
@@ -346,7 +369,7 @@ export default function ContributePage() {
                       {it.status === 'queued' && 'Ready'}
                       {it.status === 'hashing' && 'Checking…'}
                       {it.status === 'uploading' && `Uploading ${it.progress}%`}
-                      {it.status === 'done' && (it.dup ? 'Already on the platform' : 'Received')}
+                      {it.status === 'done' && (it.dup ? dupLine(it) : 'Received')}
                       {it.status === 'error' && (it.error ?? 'Failed') + ', tap Retry'}
                     </p>
                   </div>
@@ -374,6 +397,14 @@ export default function ContributePage() {
             <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
               {result.fail ? 'Tap Retry to upload the failed files again.' : 'Thank you! Admins will sort them into the right courses.'}
             </p>
+            {result.dup > 0 && (
+              <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 6 }}>
+                Files marked "Already on the platform" were found in our records and not stored twice. Look for them in{' '}
+                <a href="/library" style={{ color: 'var(--gold)', fontWeight: 700 }}>Library</a>,{' '}
+                <a href="/library?view=unsorted" style={{ color: 'var(--gold)', fontWeight: 700 }}>Unsorted</a> or{' '}
+                <a href="/library?view=all" style={{ color: 'var(--gold)', fontWeight: 700 }}>All files</a>.
+              </p>
+            )}
           </div>
         )}
 
