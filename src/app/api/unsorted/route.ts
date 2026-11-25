@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
         at: millis(r.createdAt),
         state: stateOf(r),
       }))
-      .filter(it => admin || it.state !== "removed")
+      .filter(it => it.state !== "removed")
       .sort((a, b) => b.at - a.at)
       .slice(0, 3000);
     return NextResponse.json({ items, total: items.length, admin });

@@ -1,6 +1,8 @@
 'use client';
 
 import TabHelp from '@/components/admin/TabHelp';
+import { authFetch } from '@/lib/auth/authFetch';
+import { displayName } from '@/lib/courseLabel';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -742,6 +744,9 @@ export default function AdminPage() {
   const [reviewConfirmMaterial, setReviewConfirmMaterial] = useState<Material | null>(null);
 
   const [fDept, setFDept] = useState('');
+  const [fRemoved, setFRemoved] = useState('');
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [hiding, setHiding] = useState(false);
   const [fYear, setFYear] = useState('');
   const [fSem, setFSem] = useState('');
   const courseById = useMemo(() => { const m = new Map<string, Course>(); courses.forEach(c => m.set(c.id, c)); return m; }, [courses]);
@@ -844,10 +849,32 @@ useEffect(() => {
   const listMap: Partial<Record<Tab, Material[]>> = {
     uploads: filterAndSort(uploads),
     pending: filterAndSort(pending),
-    approved: filterAndSort(approved, true),
+    approved: filterAndSort(approved, true).filter(m => fRemoved === 'removed' ? !(m as any).indexed : fRemoved === 'library' ? !!(m as any).indexed : true),
     quarantined: filterAndSort(quarantined),
     resurrection: filterAndSort(resurrection),
   };
+
+  const removedCount = approved.filter(m => !(m as any).indexed).length;
+
+  async function putBack(m: Material) {
+    setRestoringId(m.id);
+    try {
+      const r = await authFetch('/api/index-material', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materialId: m.id, action: 'restore' }) });
+      const d: any = await r.json().catch(() => ({}));
+      if (!r.ok) { alert('Could not put it back: ' + (d.error || 'HTTP ' + r.status)); return; }
+      if (d.warning) alert(d.warning);
+      await load();
+    } finally { setRestoringId(null); }
+  }
+
+  async function hideRemovedFromAI() {
+    setHiding(true);
+    try {
+      const r = await authFetch('/api/admin/hide-removed-from-ai', { method: 'POST' });
+      const d: any = await r.json().catch(() => ({}));
+      alert(r.ok ? `Done. ${d.hidden ?? 0} removed file(s) are now hidden from AI search.${d.failed ? ' ' + d.failed + ' failed.' : ''}` : 'Failed: ' + (d.error || 'HTTP ' + r.status));
+    } finally { setHiding(false); }
+  }
 
   const counts: Partial<Record<Tab, number>> = {
     uploads: uploads.length,
@@ -971,6 +998,18 @@ useEffect(() => {
                 {opts.map(([v, l]: string[]) => <option key={v} value={v}>{l}</option>)}
               </select>
             ))}
+            <select value={fRemoved} onChange={e => setFRemoved(e.target.value)}
+              style={{ background: 'var(--navy-card)', border: '1px solid ' + (fRemoved === 'removed' ? '#ef4444' : 'var(--border)'), borderRadius: 8, padding: '6px 8px', color: 'var(--text-primary)', fontSize: '0.75rem' }}>
+              <option value="">Everything approved</option>
+              <option value="library">In the Library</option>
+              <option value="removed">{`Removed from Library (${removedCount})`}</option>
+            </select>
+            {fRemoved === 'removed' && removedCount > 0 && (
+              <button onClick={hideRemovedFromAI} disabled={hiding} title="One-time: make sure files removed earlier are also hidden from AI search"
+                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', cursor: 'pointer' }}>
+                {hiding ? 'Working…' : 'Hide all from AI search'}
+              </button>
+            )}
             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{currentList.length} shown</span>
           </div>
         )}
@@ -992,12 +1031,13 @@ useEffect(() => {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{m.fileName}</p>
+                      <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{tab === 'approved' ? displayName(m) : m.fileName}</p>
                       <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 4 }}>{m.uploaderEmail}</p>
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                         {m.category && <span style={{ fontSize: '0.62rem', background: 'rgba(196,160,80,0.08)', color: 'var(--gold)', borderRadius: 99, padding: '1px 7px' }}>{m.category.replace('_',' ')}</span>}
                         {m.confidence && <span style={{ fontSize: '0.62rem', color: m.confidence === 'high' ? '#22c55e' : '#eab308' }}>● {m.confidence}</span>}
                         {m.wordCount ? <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{m.wordCount.toLocaleString()} words</span> : null}
+                        {tab === 'approved' && !(m as any).indexed && <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#ef4444', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 99, padding: '1px 7px' }}>Removed from Library</span>}
                       </div>
                       <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 4 }}>
                           {(m.confirmedCourseId || m.confirmedCourseName)
@@ -1006,6 +1046,14 @@ useEffect(() => {
                             ? <span style={{opacity:0.6}}>📖 {m.suggestedCourseName || m.detectedCourseName}</span>
                             : null}
                         </p>
+                        {tab === 'approved' && !(m as any).indexed && (
+                          <div onClick={e => e.stopPropagation()} style={{ marginTop: 8 }}>
+                            <button onClick={() => putBack(m)} disabled={restoringId === m.id}
+                              style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: 'var(--gold)', color: '#0a1020', fontWeight: 700, fontSize: '0.74rem', cursor: 'pointer', opacity: restoringId === m.id ? 0.6 : 1 }}>
+                              {restoringId === m.id ? 'Putting back…' : 'Put back in Library'}
+                            </button>
+                          </div>
+                        )}
                         {tab === 'resurrection' && (
                           <div onClick={e => e.stopPropagation()} style={{ marginTop: 6 }}>
                             {(m as any).ocrError && <p style={{ fontSize: '0.66rem', color: '#fca5a5', marginBottom: 6, wordBreak: 'break-word' }}>⚠ {(m as any).ocrError}</p>}
@@ -1107,6 +1155,7 @@ useEffect(() => {
                 {counts[t.key]}
               </span>
             ) : null}
+            {t.key === 'approved' && removedCount > 0 ? <span title="Removed from Library" style={{ fontSize: '0.58rem', fontWeight: 700, color: '#ef4444' }}>{removedCount}↩</span> : null}
           </button>
         ))}
       </div>
@@ -1150,6 +1199,7 @@ useEffect(() => {
                   {counts[t.key]}
                 </span>
               ) : null}
+              {t.key === 'approved' && removedCount > 0 ? <span title="Removed from Library" style={{ fontSize: '0.62rem', fontWeight: 700, color: '#ef4444' }}>{removedCount} removed</span> : null}
             </button>
           ))}
         </div>

@@ -45,15 +45,24 @@ export async function POST(req: NextRequest) {
     courseSnap.docs.forEach(d => courses.set(d.id, { name: String(d.data().name ?? ""), code: String(d.data().code ?? ""), shortName: String(d.data().shortName ?? "") }));
 
     const byCourse = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
+    let noCourse = 0, staleCourse = 0, viaShared = 0;
     matSnap.docs.forEach(d => {
-      const cid = d.data().confirmedCourseId;
-      if (!cid || !courses.has(cid)) return;
+      const m = d.data();
+      let cid = m.confirmedCourseId;
+      if (!cid || !courses.has(cid)) {
+        // Fall back to a shared course so the file is still named (the library shows it under that course).
+        const shared: string[] = [...(m.sharedCourseIds ?? []), ...(m.extraCourseIds ?? [])];
+        const alt = shared.find(s => courses.has(s));
+        if (alt) { cid = alt; viaShared++; }
+        else { if (cid) staleCourse++; else noCourse++; return; }
+      }
       byCourse.set(cid, [...(byCourse.get(cid) ?? []), d]);
     });
 
     const updates: { id: string; data: Record<string, unknown> }[] = [];
     const examples: { from: string; to: string }[] = [];
     let renamed = 0, keptCurated = 0, categoryFixed = 0, restyled = 0;
+    const keptExamples: string[] = [];
 
     for (const [cid, docs] of Array.from(byCourse.entries())) {
       const c = courses.get(cid)!;
@@ -74,6 +83,7 @@ export async function POST(req: NextRequest) {
         .filter(d => isGeneric(String(d.data().indexDisplayName ?? ""), d.data()))
         .sort((a, b) => millis(a.data()) - millis(b.data()) || NAT.compare(String(a.data().fileName ?? ""), String(b.data().fileName ?? "")));
       keptCurated += docs.length - targets.length;
+      docs.filter(d => !targets.includes(d)).slice(0, 5 - keptExamples.length).forEach(d => keptExamples.push(String(d.data().indexDisplayName || d.data().fileName || '')));
 
       for (const d of targets) {
         const m = d.data();
@@ -136,7 +146,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ applied: apply === true, total: matSnap.size, renamed, restyled, keptCurated, categoryFixed, examples });
+    return NextResponse.json({ applied: apply === true, total: matSnap.size, renamed, restyled, keptCurated, categoryFixed, examples, noCourse, staleCourse, viaShared, keptExamples });
   } catch (err) {
     console.error("[rename-materials]", err);
     return NextResponse.json({ error: "Rename failed." }, { status: 500 });

@@ -23,6 +23,7 @@ async function vectorSearch(query: string, courseId: string, topK = 12): Promise
       must_not: [
         { key: 'category', match: { value: 'past_questions' } },
         { key: 'category', match: { value: 'aoc' } },
+        { key: 'indexed', match: { value: false } },
       ],
     },
     with_payload: true,
@@ -71,6 +72,7 @@ export async function searchByHeading(heading: string, courseId: string, topK = 
   const results = await qdrant.scroll(COLLECTION_NAME, {
     filter: {
       must: [{ key: 'courseId', match: { value: courseId } }],
+      must_not: [{ key: 'indexed', match: { value: false } }],
     },
     with_payload: true,
     with_vector: false,

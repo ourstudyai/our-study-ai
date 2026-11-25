@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Chevron } from '@/components/library/shelfUi';
 
-type State = 'waiting' | 'processing' | 'library' | 'removed';
+type State = 'waiting' | 'processing' | 'library';
 type Item = { id: string; name: string; dept: string | null; year: number | null; klass: string | null; size: number; mime: string; at: number; state: State };
 type View = 'library' | 'unsorted' | 'all';
 
@@ -15,7 +15,6 @@ const STATE_INFO: Record<State, { label: string; color: string }> = {
   waiting: { label: 'Unsorted', color: '#eab308' },
   processing: { label: 'Sorted, being processed', color: '#60a5fa' },
   library: { label: 'In the Library', color: '#22c55e' },
-  removed: { label: 'Removed from Library (admins only)', color: '#ef4444' },
 };
 
 export function LibraryTabs({ value, onChange }: { value: View; onChange: (v: View) => void }) {
@@ -156,7 +155,6 @@ export default function UnsortedBrowser({ firebaseUser, mode = 'unsorted', onOpe
             <option value="library">In the Library</option>
             <option value="waiting">Unsorted</option>
             <option value="processing">Being processed</option>
-            {admin && <option value="removed">Removed from Library</option>}
           </select>
         )}
       </div>

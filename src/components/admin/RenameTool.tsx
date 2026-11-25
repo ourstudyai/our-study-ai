@@ -6,7 +6,7 @@ import { authFetch } from '@/lib/auth/authFetch';
 
 import { useState } from 'react';
 
-interface Result { applied: boolean; total: number; renamed: number; restyled?: number; keptCurated: number; categoryFixed: number; examples: { from: string; to: string }[]; }
+interface Result { applied: boolean; total: number; renamed: number; restyled?: number; keptCurated: number; categoryFixed: number; examples: { from: string; to: string }[]; noCourse?: number; staleCourse?: number; viaShared?: number; keptExamples?: string[]; }
 
 // One-off tool: give already-approved materials the same naming as new ones.
 export default function RenameTool({ firebaseUser }: { firebaseUser: any }) {
@@ -66,6 +66,14 @@ export default function RenameTool({ firebaseUser }: { firebaseUser: any }) {
             <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               <p style={{ color: res.applied ? '#22c55e' : 'var(--gold)', fontWeight: 700 }}>{res.applied ? 'Applied.' : 'Preview only. Nothing changed yet.'}</p>
               <p>{res.total} approved · {res.renamed} renamed · {res.restyled ? `${res.restyled} switched to course names · ` : ''}{res.keptCurated} kept as written · {res.categoryFixed} category fixed (notes → handout)</p>
+              {(res.noCourse || res.staleCourse) ? <p style={{ color: '#eab308' }}>⚠ Skipped: {res.noCourse ?? 0} with no course, {res.staleCourse ?? 0} whose course no longer exists. Re-assign them to a course first.</p> : null}
+              {res.viaShared ? <p style={{ color: 'var(--text-muted)' }}>{res.viaShared} named using a shared course (their main course was missing).</p> : null}
+              {res.renamed === 0 && (res.keptExamples ?? []).length > 0 && (
+                <div>
+                  <p style={{ color: '#eab308' }}>Nothing to rename: these names count as written by you, so they were kept:</p>
+                  {(res.keptExamples ?? []).map((n, i) => <p key={i} style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {n}</p>)}
+                </div>
+              )}
               {res.examples.map((e, i) => (
                 <p key={i} style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.from} → <span style={{ color: 'var(--text-primary)' }}>{e.to}</span></p>
               ))}

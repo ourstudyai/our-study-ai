@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/lib/firebase/admin';
 import { cookies } from 'next/headers';
 import { getMistralClient } from '@/lib/mistral/client';
+import { getRequestUser, isAdminUser } from '@/lib/auth/requestUser';
+import { setMaterialVisible } from '@/lib/qdrant/visibility';
 
 // ── Heading skeleton extractor ────────────────────────────────────────────────
 //
@@ -154,16 +156,9 @@ function flattenTree(nodes: TopicNode[]): string[] {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = cookies().get('session')?.value;
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    let decoded: any;
-    try { decoded = await adminAuth.verifyIdToken(session); }
-    catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
-    const uDoc = await adminDb.collection('users').doc(decoded.uid).get();
-    const role = uDoc.data()?.role;
-    if (!(role === 'admin' || role === 'chief_admin' || decoded.email === 'ourstudyai@gmail.com')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const decoded = await getRequestUser(req);
+    if (!decoded) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!(await isAdminUser(decoded))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const { materialId, action = 'add' } = await req.json();
     if (!materialId) return NextResponse.json({ error: 'Missing materialId' }, { status: 400 });
@@ -177,7 +172,19 @@ export async function POST(req: NextRequest) {
     // ── Remove action ──────────────────────────────────────────────────────
     if (action === 'remove') {
       await matRef.update({ indexed: false });
-      return NextResponse.json({ success: true });
+      const warning = await setMaterialVisible(materialId, false);
+      return NextResponse.json({ success: true, ...(warning ? { warning } : {}) });
+    }
+
+    // ── Restore action: put a removed file back in the Library and in AI search ──
+    if (action === 'restore') {
+      if (String(mat.status) !== 'approved') {
+        return NextResponse.json({ error: 'Only approved files can be put back.' }, { status: 400 });
+      }
+      await matRef.update({ indexed: true, updatedAt: new Date().toISOString() });
+      let warning = await setMaterialVisible(materialId, true);
+      if (!warning && !mat.indexedAt) warning = 'Put back, but this file was never indexed for AI search. Open it and re-index if the AI should use it.';
+      return NextResponse.json({ success: true, ...(warning ? { warning } : {}) });
     }
 
     // ── Add / regenerate metadata ──────────────────────────────────────────

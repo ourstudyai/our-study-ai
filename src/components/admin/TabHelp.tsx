@@ -16,8 +16,8 @@ const HELP: Record<string, { todo: string; means: string }> = {
     means: 'Approve with indexing: it appears in the Library and the AI can use it. Approve without indexing: saved but hidden. Quarantine: hidden from students and the AI.',
   },
   approved: {
-    todo: 'Open a material to re-index it, change its course, quarantine it or delete it.',
-    means: 'Quarantine hides it but keeps it. Delete removes the file, its text and its indexed pieces for good and cannot be undone. A material removed from the Library index stays approved (not indexed), so you can still find it here.',
+    todo: 'Open a material to re-index it, change its course, quarantine it or delete it. To find files taken out of the Library, choose "Removed from Library" in the filter, then tap "Put back in Library".',
+    means: 'Quarantine hides it but keeps it. Delete removes the file, its text and its indexed pieces for good and cannot be undone. Removing a file from the Library hides it from students, course pages, chat and AI search, but it stays here as approved, fully intact. Putting it back shows it again everywhere.',
   },
   quarantined: {
     todo: 'Open a file to see its details and decide what to do with it.',

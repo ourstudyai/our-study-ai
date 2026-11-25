@@ -16,6 +16,7 @@ import UnsortedBrowser, { LibraryTabs } from '@/components/library/UnsortedBrows
 import { Chevron, ShelfRail, groupByCategory } from '@/components/library/shelfUi';
 import { courseLabel as courseShortLabel, courseAliases, displayName, downloadBase } from '@/lib/courseLabel';
 import MiniLoader from '@/components/MiniLoader';
+import { authFetch } from '@/lib/auth/authFetch';
 import {
   collection, getDocs, query, where,
   addDoc, deleteDoc, doc, serverTimestamp, updateDoc,
@@ -398,7 +399,7 @@ async function fetchBody(materialId: string): Promise<string> {
   }
 
   async function handleRemoveFromIndex(id: string) {
-    await fetch('/api/index-material', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materialId: id, action: 'remove' }) });
+    await authFetch('/api/index-material', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materialId: id, action: 'remove' }) });
     setMaterials(ms => ms.filter(m => m.id !== id));
     setRemoveConfirm(null);
     if (selectedId === id) setSelectedId(null);
