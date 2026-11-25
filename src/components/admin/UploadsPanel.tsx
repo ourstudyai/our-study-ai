@@ -6,6 +6,7 @@ import { buildNames } from '@/lib/materialNaming';
 import RenameTool from '@/components/admin/RenameTool';
 import CourseShortNames from '@/components/admin/CourseShortNames';
 import HashBackfillTool from '@/components/admin/HashBackfillTool';
+import BackfillCourseFields from '@/components/admin/BackfillCourseFields';
 import DuplicateHits from '@/components/admin/DuplicateHits';
 import { db } from '@/lib/firebase/config';
 import { Material } from '@/lib/firestore/materials';
@@ -98,6 +99,9 @@ function GroupBlock({ group, courses, firebaseUser, forceOpen, onChanged }: {
             status: 'sorted',
             confirmedCourseId: course.id,
             confirmedCourseName: course.name,
+            department: course.department,
+            year: course.year,
+            semester: course.semester,
             ...(names.get(id) ? { indexDisplayName: names.get(id) } : {}),
             sortedBy: firebaseUser?.email ?? '',
             sortedAt: now,
@@ -118,6 +122,7 @@ function GroupBlock({ group, courses, firebaseUser, forceOpen, onChanged }: {
     setBusy(true);
     try {
       const names = new Map<string, string>();
+      const cf = (cid: string) => { const c = courses.find(x => x.id === cid); return c ? { department: c.department, year: c.year, semester: c.semester } : {}; };
       const byCourse = new Map<string, Material[]>();
       suggestedSel.forEach(m => {
         const k = m.suggestedCourseId as string;
@@ -135,6 +140,7 @@ function GroupBlock({ group, courses, firebaseUser, forceOpen, onChanged }: {
             status: 'sorted',
             confirmedCourseId: m.suggestedCourseId,
             confirmedCourseName: m.suggestedCourseName ?? '',
+            ...cf(String(m.suggestedCourseId)),
             ...(names.get(m.id) ? { indexDisplayName: names.get(m.id) } : {}),
             sortedBy: firebaseUser?.email ?? '',
             sortedAt: now,
@@ -304,6 +310,7 @@ export default function UploadsPanel({ uploads, courses, onRefresh, firebaseUser
       <RenameTool firebaseUser={firebaseUser} />
       <CourseShortNames />
       <HashBackfillTool firebaseUser={firebaseUser} />
+      <BackfillCourseFields firebaseUser={firebaseUser} />
     </div>
   );
 }

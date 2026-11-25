@@ -124,9 +124,13 @@ export async function POST(req: NextRequest) {
       newDisplayName = `${stem}${max + 1}`;
     }
 
+    const cf: any = (await adminDb.collection('courses').doc(courseId).get()).data() ?? {};
     await matRef.update({
       confirmedCourseId: courseId,
       confirmedCourseName: courseName,
+      ...(cf.department ? { department: cf.department } : {}),
+      ...(cf.year ? { year: cf.year } : {}),
+      ...(cf.semester ? { semester: cf.semester } : {}),
       ...(newDisplayName ? { indexDisplayName: newDisplayName } : {}),
       updatedAt: FieldValue.serverTimestamp(),
     });

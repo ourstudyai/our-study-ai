@@ -78,9 +78,14 @@ export async function GET(req: NextRequest) {
     const all = req.nextUrl.searchParams.get("scope") === "all";
     const snap = await adminDb.collection("materials")
       .where("status", "in", all ? [...OPEN, "approved"] : OPEN)
-      .select("fileName", "indexDisplayName", "uploadDepartment", "uploadYear", "department", "year",
+      .select("fileName", "indexDisplayName", "uploadDepartment", "uploadYear", "department", "year", "confirmedCourseId",
         "suggestedCourseName", "confirmedCourseName", "fileSize", "mimeType", "createdAt", "status", "fileHash", "indexed")
       .get();
+
+    // Where a file really lives: its confirmed course wins, then its own fields, then what the contributor chose.
+    const courseSnap = await adminDb.collection("courses").select("department", "year").get();
+    const courseDY = new Map<string, { dept: string; year: number }>();
+    courseSnap.docs.forEach(d => { const c: any = d.data(); courseDY.set(d.id, { dept: String(c.department ?? "").toLowerCase(), year: Number(c.year) || 0 }); });
 
     // Identical files (same hash) appear once. A library copy wins; otherwise the earliest upload.
     const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
@@ -99,8 +104,8 @@ export async function GET(req: NextRequest) {
       .map(r => ({
         id: r.id,
         name: String(r.indexDisplayName || r.fileName || "Untitled"),
-        dept: String(r.uploadDepartment || r.department || "").toLowerCase() || null,
-        year: Number(r.uploadYear || r.year) || null,
+        dept: (courseDY.get(String(r.confirmedCourseId ?? ""))?.dept || String(r.uploadDepartment || r.department || "").toLowerCase()) || null,
+        year: (courseDY.get(String(r.confirmedCourseId ?? ""))?.year || Number(r.uploadYear || r.year)) || null,
         klass: String(r.confirmedCourseName || r.suggestedCourseName || "") || null,
         size: Number(r.fileSize) || 0,
         mime: String(r.mimeType || ""),
