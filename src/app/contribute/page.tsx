@@ -23,7 +23,7 @@ interface Course { id: string; name: string; code?: string; department: string; 
 interface Cls { courseId: string | null; courseName: string; category: string; }
 
 type ItemStatus = 'queued' | 'hashing' | 'uploading' | 'done' | 'error';
-interface Item { id: string; file: File; status: ItemStatus; progress: number; error?: string; dup?: boolean; dupWhere?: string; dupName?: string; }
+interface Item { id: string; file: File; status: ItemStatus; progress: number; error?: string; dup?: boolean; dupWhere?: string; dupName?: string; dupFor?: string; dupShare?: boolean; dupPlace?: string; }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -127,7 +127,8 @@ export default function ContributePage() {
     const href = `/library?view=${view}${it.dupName ? `&q=${encodeURIComponent(it.dupName)}` : ''}`;
     return (
       <>
-        Already on the platform{it.dupName ? <> as “{it.dupName}”</> : null}, so it was not uploaded again.{' '}
+        Already on the platform{it.dupName ? <> as “{it.dupName}”</> : null}{it.dupPlace ? <> ({it.dupPlace})</> : null}, so it was not uploaded again.
+        {it.dupShare ? <> We have told the admins it is wanted in {it.dupFor}; they can share it there.</> : null}{' '}
         <a href={href} style={{ color: 'var(--gold)', fontWeight: 700 }}>See it in {label}</a>
       </>
     );
@@ -140,11 +141,11 @@ export default function ContributePage() {
     // Same bytes already on the platform: nothing to upload, count it as received.
     const chk = await authFetch('/api/check-hash', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ fileHash, dept: d, year: y, courseId: cls?.courseId ?? null, courseName: cls?.courseName ?? null }),
+      body: JSON.stringify({ fileHash, dept: d, year: y, courseId: cls?.courseId ?? null, courseName: cls?.courseName ?? null, fileName: item.file.name }),
     });
     if (chk.ok) {
       const cj = await chk.json();
-      if (cj.exists) { setItem(item.id, { status: 'done', progress: 100, dup: true, dupWhere: cj.where, dupName: cj.name ?? undefined }); return true; }
+      if (cj.exists) { setItem(item.id, { status: 'done', progress: 100, dup: true, dupWhere: cj.where, dupName: cj.name ?? undefined, dupFor: `${(DEPT_LABELS as Record<string, string>)[d] ?? d} Year ${y}`, dupShare: !!cj.shareRequested, dupPlace: cj.originalPlace || undefined }); return true; }
     }
 
     setItem(item.id, { status: 'uploading', progress: 0 });

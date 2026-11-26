@@ -307,11 +307,11 @@ export default function UploadsPanel({ uploads, courses, onRefresh, firebaseUser
             ? `${filtered.length} of ${uploads.length} files match.`
             : `${uploads.length} file${uploads.length !== 1 ? 's' : ''} waiting to be sorted. Open a year, tick files, pick semester and course, then Approve & sort. Sorted files move to the OCR Queue.`}
       </p>
+      <DuplicateHits courses={live} firebaseUser={firebaseUser} />
       {groups.map(g => (
         <GroupBlock key={g.key} group={g} courses={live} firebaseUser={firebaseUser} forceOpen={searching} onChanged={onRefresh} />
       ))}
       <AutoSortedReview courses={live} firebaseUser={firebaseUser} refreshKey={uploads.length} onChanged={onRefresh} />
-      <DuplicateHits courses={live} firebaseUser={firebaseUser} />
       <RenameTool firebaseUser={firebaseUser} />
       <CourseShortNames />
       <HashBackfillTool firebaseUser={firebaseUser} />

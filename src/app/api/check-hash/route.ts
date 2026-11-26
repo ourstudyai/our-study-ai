@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     const decoded = await getRequestUser(req);
     if (!decoded) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { fileHash, dept, year, courseId, courseName } = await req.json();
+    const { fileHash, dept, year, courseId, courseName, fileName } = await req.json();
     if (!fileHash || typeof fileHash !== "string") {
       return NextResponse.json({ error: "Missing fileHash." }, { status: 400 });
     }
@@ -28,9 +28,28 @@ export async function POST(req: NextRequest) {
     ];
     const alreadyInCourse = !!courseId && (m.confirmedCourseId === courseId || extra.includes(courseId));
 
-    // Only remember it when it tells the admin something new: a course request, or a different uploader.
+    // Which department/year does the existing copy already serve? (its courses; or, if not sorted yet, the year it was uploaded for)
+    const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+    const covered = new Set<string>();
+    const places: string[] = [];
+    const addPlace = (d: any, y: any) => {
+      if (!d || !y) return;
+      const k = `${String(d).toLowerCase()}|${Number(y)}`;
+      if (covered.has(k)) return;
+      covered.add(k);
+      places.push(`${cap(String(d))} Year ${Number(y)}`);
+    };
+    const placedIn = [m.confirmedCourseId, ...extra].filter(Boolean);
+    for (const cid of placedIn) {
+      const cd: any = (await adminDb.collection("courses").doc(String(cid)).get()).data();
+      addPlace(cd?.department, cd?.year);
+    }
+    if (!placedIn.length) addPlace(m.uploadDepartment, m.uploadYear);
+    const alreadyInYear = !!dept && !!year && covered.has(`${String(dept).toLowerCase()}|${Number(year)}`);
+
+    // Remember it when it tells the admin something new: a class that does not have it yet, or another year that does not.
     const ownCopySameCourse = m.uploadedBy === decoded.uid && (m.suggestedCourseId ?? null) === (courseId ?? null);
-    const worthRecording = !alreadyInCourse && !ownCopySameCourse && (!!courseId || m.uploadedBy !== decoded.uid);
+    const worthRecording = !alreadyInCourse && (courseId ? !ownCopySameCourse : !alreadyInYear);
     if (worthRecording) {
       const hits: any[] = Array.isArray(m.duplicateHits) ? m.duplicateHits : [];
       const seen = hits.some(h =>
@@ -46,6 +65,7 @@ export async function POST(req: NextRequest) {
             year: Number(year) || null,
             courseId: courseId ?? null,
             courseName: courseName ?? null,
+            fileName: fileName ?? null,
             at: new Date().toISOString(),
           }),
           hasDuplicateHits: true,
@@ -55,7 +75,7 @@ export async function POST(req: NextRequest) {
     const status = String(m.status ?? "");
     const where = status === "approved" ? (m.indexed ? "library" : "removed")
       : ["upload_review", "awaiting_course"].includes(status) ? "unsorted" : "processing";
-    return NextResponse.json({ exists: true, status: m.status ?? null, alreadyInCourse, where, name: m.indexDisplayName || m.fileName || null });
+    return NextResponse.json({ exists: true, status: m.status ?? null, alreadyInCourse, alreadyInYear, shareRequested: worthRecording, originalPlace: places.join(" and "), where, name: m.indexDisplayName || m.fileName || null });
   } catch (err) {
     console.error("[check-hash]", err);
     return NextResponse.json({ error: "Check failed." }, { status: 500 });

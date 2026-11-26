@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { upsertChunks, deleteChunksByMaterial } from '@/lib/qdrant/upsert';
+import { copyChunksToCourse } from '@/lib/qdrant/share';
 import { MaterialCategory } from '@/lib/processing/classifier';
 import { AUTO_NAME_RE, nameLabel } from '@/lib/categories';
 
@@ -158,6 +159,13 @@ export async function POST(req: NextRequest) {
       );
       await matRef.update({ indexed: true, status: 'approved' });
       console.log(`[reassign] ${chunks.length} chunks upserted for ${materialId}`);
+      // Shared courses keep their own copy of the chunks; deleting above removed them, so put them back.
+      for (const sid of ((mat.sharedCourseIds ?? []) as string[])) {
+        if (sid && sid !== courseId) {
+          try { await copyChunksToCourse(materialId, courseId, sid); }
+          catch (e) { console.error('[reassign] shared copy failed', sid, e); }
+        }
+      }
     }
     return NextResponse.json({ success: true });
   } catch (e: any) {
