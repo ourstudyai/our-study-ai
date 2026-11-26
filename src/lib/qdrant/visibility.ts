@@ -15,3 +15,18 @@ export async function setMaterialVisible(materialId: string, visible: boolean): 
     return e?.message || 'Could not update AI search';
   }
 }
+
+// Updates the type stored on every AI-search chunk of a material. Returns null on success, or a short message.
+export async function setMaterialCategory(materialId: string, category: string): Promise<string | null> {
+  try {
+    await (qdrant as any).setPayload(COLLECTION_NAME, {
+      wait: true,
+      payload: { category },
+      filter: { must: [{ key: 'materialId', match: { value: materialId } }] },
+    });
+    return null;
+  } catch (e: any) {
+    console.error('[qdrant category]', e?.message || e);
+    return e?.message || 'Could not update AI search';
+  }
+}

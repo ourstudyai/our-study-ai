@@ -5,15 +5,20 @@ export type SuggestCourse = {
   id: string; name: string; code?: string; shortName?: string;
   department: string; year: number; semester: number;
 };
-export type Confidence = 'high' | 'medium' | 'none';
-export type CategoryFound = 'name' | 'contributor' | 'default';
+export type Confidence = 'high' | 'medium' | 'either' | 'none';
+export type CategoryState = 'sure' | 'unsure' | 'unknown';
 export type Suggestion = {
   courseId: string | null;
   confidence: Confidence;
   score: number;
   why: string;
-  category: string;
-  categoryFound: CategoryFound;
+  category: string | null;        // null = the title does not say, the admin must pick
+  categoryState: CategoryState;
+  categoryOptions: string[];      // the types it could be, most likely first
+  categoryWhy: string;
+  contributorCategory: string | null;
+  ambiguous: boolean;                                  // two or more courses match almost equally
+  alternatives: { courseId: string; score: number }[]; // the other courses it could be
 };
 
 const STOP = new Set(['of', 'the', 'and', 'in', 'to', 'a', 'an', 'for', 'on', 'at', 'de', 'et', 'with', 'by']);
@@ -102,20 +107,61 @@ function scoreCourse(file: Tokens, fileCompact: string, fileJoined: string, c: S
   return { score: Math.max(0, score), why: hits.length ? `matched "${hits.join(' ')}"` : '' };
 }
 
-export type CategoryHit = { category: string; found: CategoryFound };
+export type CategoryHit = { category: string | null; state: CategoryState; options: string[]; why: string };
 
-export function detectCategory(fileName: string, contributorCategory?: string | null): CategoryHit {
-  const t = ' ' + words(fileName).join(' ') + ' ';
-  const has = (re: RegExp) => re.test(t);
-  if (has(/ (aoc|areas? concentration|areas? of concentration) /)) return { category: 'aoc', found: 'name' };
-  if (has(/ (past questions?|past papers?|pqs?|exam questions?|exam papers?|question papers?|examination|exam|exams|questions) /)) return { category: 'past_questions', found: 'name' };
-  if (has(/ (syllabus|syllabi|course outline|course description) /)) return { category: 'syllabus', found: 'name' };
-  if (has(/ (students?|my|personal|class) notes? /) || has(/ notes? by /)) return { category: 'student_notes', found: 'name' };
-  if (has(/ (handouts?|lectures?|notes?|slides?|module|chapter) /)) return { category: 'lecture_notes', found: 'name' };
-  if (has(/ (textbook|book|ebook|reading|readings|article|journal) /)) return { category: 'other', found: 'name' };
-  const c = String(contributorCategory ?? '');
-  if (c && c !== 'other') return { category: c, found: 'contributor' };
-  return { category: 'lecture_notes', found: 'default' };
+// Only an explicit phrase in the title counts as "sure". Anything vaguer ("notes", "exam", a bare year, or a title that
+// mixes two types) is reported as unsure/unknown so the admin picks. The contributor's own choice is never trusted.
+export function detectCategory(fileName: string): CategoryHit {
+  const ws = words(fileName);
+  const t = ' ' + ws.join(' ') + ' ';
+  const find = (re: RegExp): string | null => { const m = t.match(re); return m ? m[1].trim() : null; };
+  const year = ws.find(isYear) ?? null;
+  const quote = (ps: string[]) => Array.from(new Set(ps)).map(p => `"${p}"`).join(' and ');
+
+  const strong: { cat: string; phrase: string }[] = [];
+  const weak: { cats: string[]; phrase: string }[] = [];
+  const add = (cat: string, phrase: string | null) => { if (phrase) strong.push({ cat, phrase }); };
+
+  add('aoc', find(/ (aoc|areas? concentration|areas? of concentration) /));
+  const pq = find(/ (past questions?|past papers?|pqs?|exam questions?|exam papers?|examination questions?|examination papers?|question papers?|previous questions?|old questions?|test questions?|final exams?|midterm exams?|mid semester exams?) /);
+  if (pq) strong.push({ cat: 'past_questions', phrase: pq });
+  else {
+    const ex = find(/ (exams?|examination|tests?|quiz|questions) /);
+    if (ex && year) strong.push({ cat: 'past_questions', phrase: `${ex} ${year}` });
+    else if (ex) weak.push({ cats: ['past_questions'], phrase: ex });
+  }
+  add('syllabus', find(/ (syllabus|syllabi|course outline|course description) /));
+  add('student_notes', find(/ ((?:students?|my|personal) notes?) /) ?? find(/ (notes? by) /));
+  add('lecture_notes', find(/ (handouts?|lecture notes?|lectures?|slides?|powerpoint|ppt) /));
+  add('other', find(/ (textbook|ebook|book|readings?|article|journal) /));
+  if (!strong.some(s => s.cat === 'lecture_notes' || s.cat === 'student_notes')) {
+    const n = find(/ (notes?|class notes?|modules?|chapters?|summary|summaries) /);
+    if (n) weak.push({ cats: ['lecture_notes', 'student_notes'], phrase: n });
+  }
+
+  const strongCats = Array.from(new Set(strong.map(s => s.cat)));
+  const weakCats = Array.from(new Set(weak.flatMap(w => w.cats)));
+
+  if (strongCats.length === 1) {
+    const only = strongCats[0];
+    if (!weak.some(w => !w.cats.includes(only))) {
+      return { category: only, state: 'sure', options: [only], why: `title has ${quote(strong.map(s => s.phrase))}` };
+    }
+    return { category: null, state: 'unsure', options: [only, ...weakCats.filter(c => c !== only)],
+             why: `title mixes ${quote([...strong.map(s => s.phrase), ...weak.map(w => w.phrase)])}` };
+  }
+  if (strongCats.length > 1) {
+    return { category: null, state: 'unsure', options: [...strongCats, ...weakCats.filter(c => !strongCats.includes(c))],
+             why: `title mentions both ${quote(strong.map(s => s.phrase))}` };
+  }
+  if (weak.length) {
+    return { category: null, state: 'unsure', options: weakCats,
+             why: `title only says ${quote(weak.map(w => w.phrase))}, which does not settle the type` };
+  }
+  if (year) {
+    return { category: null, state: 'unsure', options: ['past_questions', 'lecture_notes'], why: `title has a year (${year}) but no type word` };
+  }
+  return { category: null, state: 'unknown', options: [], why: 'no type words in the title' };
 }
 
 export type SuggestInput = {
@@ -127,7 +173,8 @@ export type SuggestInput = {
 // Suggests for one file. `scope` = courses of the department and year the file was uploaded to;
 // `all` = every live course (used only to spot a file uploaded to the wrong year).
 export function suggestOne(input: SuggestInput, scope: SuggestCourse[], all: SuggestCourse[]): Suggestion {
-  const cat = detectCategory(input.fileName, input.contributorCategory);
+  const cat = detectCategory(input.fileName);
+  const contrib = input.contributorCategory && input.contributorCategory !== 'other' ? input.contributorCategory : null;
   const file = tokenize(input.fileName);
   const fileJoined = words(input.fileName).join(' ');
   const fileCompact = compact(input.fileName);
@@ -141,7 +188,7 @@ export function suggestOne(input: SuggestInput, scope: SuggestCourse[], all: Sug
     .filter(x => x.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  const base = { category: cat.category, categoryFound: cat.found };
+  const base = { category: cat.category, categoryState: cat.state, categoryOptions: cat.options, categoryWhy: cat.why, contributorCategory: contrib, ambiguous: false, alternatives: [] as { courseId: string; score: number }[] };
   const inScope = rank(scope);
   const top = inScope[0];
   const second = inScope[1];
@@ -149,7 +196,22 @@ export function suggestOne(input: SuggestInput, scope: SuggestCourse[], all: Sug
   if (top) {
     const margin = top.score - (second?.score ?? 0);
     if (top.score >= 0.85 && margin >= 0.2) return { ...base, courseId: top.c.id, confidence: 'high', score: top.score, why: top.why };
-    if (top.score >= 0.5 && margin >= 0.1) return { ...base, courseId: top.c.id, confidence: 'medium', score: top.score, why: top.why + (margin < 0.2 ? ' (close call)' : '') };
+    // Courses that score almost as well as the best one: the file could belong to any of them.
+    const near = inScope.filter(x => x.score >= 0.5 && top.score - x.score < 0.2);
+    if (top.score >= 0.5 && near.length > 1) {
+      const nameKey = (c: SuggestCourse) => tokenize(String(c.name ?? '')).text.join(' ');
+      const twins = near.every(x => nameKey(x.c) === nameKey(top.c));
+      const semesters = Array.from(new Set(near.map(x => Number(x.c.semester)))).sort();
+      const reason = twins
+        ? (semesters.length > 1 ? `same course name in Semester ${semesters.join(' and ')}` : 'same course name listed twice')
+        : `${near.length} courses with almost the same name`;
+      const alternatives = near.map(x => ({ courseId: x.c.id, score: x.score }));
+      if (margin >= 0.1) {
+        return { ...base, courseId: top.c.id, confidence: 'medium', score: top.score, why: `${top.why}, but ${reason}`, ambiguous: true, alternatives: alternatives.filter(a => a.courseId !== top.c.id) };
+      }
+      return { ...base, courseId: null, confidence: 'either', score: top.score, why: reason, ambiguous: true, alternatives };
+    }
+    if (top.score >= 0.5) return { ...base, courseId: top.c.id, confidence: 'medium', score: top.score, why: top.why };
   }
 
   // Uploaded to the wrong year? Offer the better match as a suggestion, never as a confident one.

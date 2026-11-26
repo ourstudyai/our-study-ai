@@ -7,6 +7,7 @@ import RenameTool from '@/components/admin/RenameTool';
 import CourseShortNames from '@/components/admin/CourseShortNames';
 import HashBackfillTool from '@/components/admin/HashBackfillTool';
 import BackfillCourseFields from '@/components/admin/BackfillCourseFields';
+import CategoryCheck from '@/components/admin/CategoryCheck';
 import SmartSortPanel from '@/components/admin/SmartSortPanel';
 import AutoSortedReview from '@/components/admin/AutoSortedReview';
 import DuplicateHits from '@/components/admin/DuplicateHits';
@@ -315,6 +316,7 @@ export default function UploadsPanel({ uploads, courses, onRefresh, firebaseUser
       <CourseShortNames />
       <HashBackfillTool firebaseUser={firebaseUser} />
       <BackfillCourseFields firebaseUser={firebaseUser} />
+      <CategoryCheck firebaseUser={firebaseUser} />
     </div>
   );
 }
