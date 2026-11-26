@@ -2,7 +2,7 @@
 // Pure functions, no network, no AI. Anything it is not sure about is left for the admin.
 
 export type SuggestCourse = {
-  id: string; name: string; code?: string | null; shortName?: string | null;
+  id: string; name: string; code?: string; shortName?: string;
   department: string; year: number; semester: number;
 };
 export type Confidence = 'high' | 'medium' | 'none';
