@@ -8,6 +8,7 @@ import CourseShortNames from '@/components/admin/CourseShortNames';
 import HashBackfillTool from '@/components/admin/HashBackfillTool';
 import BackfillCourseFields from '@/components/admin/BackfillCourseFields';
 import SmartSortPanel from '@/components/admin/SmartSortPanel';
+import AutoSortedReview from '@/components/admin/AutoSortedReview';
 import DuplicateHits from '@/components/admin/DuplicateHits';
 import { db } from '@/lib/firebase/config';
 import { Material } from '@/lib/firestore/materials';
@@ -308,6 +309,7 @@ export default function UploadsPanel({ uploads, courses, onRefresh, firebaseUser
       {groups.map(g => (
         <GroupBlock key={g.key} group={g} courses={live} firebaseUser={firebaseUser} forceOpen={searching} onChanged={onRefresh} />
       ))}
+      <AutoSortedReview courses={live} firebaseUser={firebaseUser} refreshKey={uploads.length} onChanged={onRefresh} />
       <DuplicateHits courses={live} firebaseUser={firebaseUser} />
       <RenameTool firebaseUser={firebaseUser} />
       <CourseShortNames />

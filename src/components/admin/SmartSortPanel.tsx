@@ -5,7 +5,7 @@ import { writeBatch, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { buildNames } from '@/lib/materialNaming';
 import { CATEGORY_OPTIONS, normalizeCategory } from '@/lib/categories';
-import { suggestOne, type SuggestCourse } from '@/lib/keywordSuggest';
+import { suggestOne, type SuggestCourse, type Suggestion } from '@/lib/keywordSuggest';
 import { Material } from '@/lib/firestore/materials';
 import InfoTip from '@/components/admin/InfoTip';
 
@@ -59,7 +59,7 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
 
   const setRow = (id: string, patch: Override) => setOv(p => ({ ...p, [id]: { ...p[id], ...patch } }));
 
-  async function sortRows(list: { m: Material; courseId: string; category: string }[]) {
+  async function sortRows(list: { m: Material; courseId: string; category: string; s: Suggestion }[]) {
     if (!list.length) return;
     setBusy(true);
     try {
@@ -87,6 +87,25 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
             semester: c.semester,
             category: r.category,
             ...(names.get(r.m.id) ? { indexDisplayName: names.get(r.m.id) } : {}),
+            // How it was sorted, and what it looked like before, so it can be inspected, edited or undone.
+            autoSorted: {
+              method: 'keywords',
+              confidence: r.courseId === (r.s.courseId ?? '') ? r.s.confidence : 'none',
+              why: r.courseId === (r.s.courseId ?? '') ? r.s.why : 'chosen by you in review',
+              suggestedCourseId: r.s.courseId ?? null,
+              suggestedCategory: r.s.category,
+              changedByAdmin: r.courseId !== (r.s.courseId ?? '') || r.category !== r.s.category,
+              at: now,
+              by: firebaseUser?.email ?? '',
+            },
+            sortUndo: {
+              status: (r.m as any).status ?? 'upload_review',
+              category: (r.m as any).category ?? null,
+              indexDisplayName: (r.m as any).indexDisplayName ?? null,
+              department: (r.m as any).department ?? null,
+              year: (r.m as any).year ?? null,
+              semester: (r.m as any).semester ?? null,
+            },
             sortedBy: firebaseUser?.email ?? '',
             sortedAt: now,
             updatedAt: now,
