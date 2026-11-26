@@ -1,37 +1,52 @@
 'use client';
+// SmartSortPanel v2: suggestions grouped by course, every file inspectable and editable.
 
 import { useMemo, useState, type CSSProperties } from 'react';
 import { writeBatch, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { buildNames } from '@/lib/materialNaming';
-import { CATEGORY_OPTIONS, normalizeCategory } from '@/lib/categories';
+import { CATEGORY_OPTIONS, CATEGORY_LABEL, normalizeCategory } from '@/lib/categories';
 import { suggestOne, type SuggestCourse, type Suggestion } from '@/lib/keywordSuggest';
 import { Material } from '@/lib/firestore/materials';
 import InfoTip from '@/components/admin/InfoTip';
 
 type Override = { courseId?: string; category?: string; tick?: boolean };
 type Props = { items: Material[]; dept: string; year: number; courses: SuggestCourse[]; firebaseUser: any; onChanged: () => void };
+type Eff = { m: Material; s: Suggestion; courseId: string; category: string; tick: boolean };
 
-const ROW_LIMIT = 40;
+const NONE = '__none';
 const COLOR = { high: '#22c55e', medium: '#eab308', none: '#6b7280' } as const;
+const ORDER = { high: 0, medium: 1, none: 2 } as const;
 const selStyle: CSSProperties = {
   background: 'var(--navy)', border: '1px solid var(--border)', borderRadius: 8,
   padding: '6px 7px', color: 'var(--text-primary)', fontSize: '0.72rem', minWidth: 0,
 };
+const courseText = (c?: SuggestCourse) => (c ? `${c.code ? c.code + ' · ' : ''}${c.name}` : 'Needs a course');
 
-// Reads each waiting file's title, suggests its course (within the year it was uploaded to) and its category.
-// Sure matches can be sorted in one tap; the rest are reviewed row by row.
+function fmtBytes(b: any): string {
+  const n = Number(b);
+  return n ? (n / (1024 * 1024)).toFixed(1) + ' MB' : '';
+}
+function fmtDate(m: Material): string {
+  const c: any = (m as any).createdAt;
+  const d = typeof c === 'string' ? new Date(c) : c?.toDate?.() ?? null;
+  return d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+}
+
+// Reads each waiting file's title and files it under the course it most likely belongs to (within the year it was
+// uploaded to). Sure matches start ticked, unsure ones unticked. Open any file to inspect or change it.
 export default function SmartSortPanel({ items, dept, year, courses, firebaseUser, onChanged }: Props) {
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [ov, setOv] = useState<Record<string, Override>>({});
-  const [shown, setShown] = useState(ROW_LIMIT);
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const [openRows, setOpenRows] = useState<Set<string>>(new Set());
 
   const scope = useMemo(() => {
     const s = courses.filter(c =>
       (!dept || String(c.department).toLowerCase() === dept.toLowerCase()) && (!year || Number(c.year) === year));
     return s.length ? s : courses;
   }, [courses, dept, year]);
+  const byId = useMemo(() => new Map(courses.map(c => [c.id, c])), [courses]);
 
   const rows = useMemo(() => items.map(m => ({
     m,
@@ -40,7 +55,7 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
       scope, courses),
   })), [items, scope, courses]);
 
-  const eff = rows.map(r => {
+  const eff: Eff[] = rows.map(r => {
     const o = ov[r.m.id] ?? {};
     const courseId = o.courseId !== undefined ? o.courseId : (r.s.courseId ?? '');
     const category = o.category ?? r.s.category;
@@ -48,26 +63,41 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
     return { ...r, courseId, category, tick };
   });
 
-  const sure = eff.filter(r => r.s.confidence === 'high' && r.courseId && r.tick);
   const nHigh = rows.filter(r => r.s.confidence === 'high').length;
   const nMed = rows.filter(r => r.s.confidence === 'medium').length;
   const nNone = rows.length - nHigh - nMed;
   const ticked = eff.filter(r => r.tick && r.courseId);
 
-  const order = { high: 0, medium: 1, none: 2 } as const;
-  const sorted = [...eff].sort((a, b) => order[a.s.confidence] - order[b.s.confidence] || b.s.score - a.s.score);
+  const groupMap = new Map<string, Eff[]>();
+  eff.forEach(r => { const k = r.courseId || NONE; groupMap.set(k, [...(groupMap.get(k) ?? []), r]); });
+  const inScope = (id: string) => scope.some(c => c.id === id);
+  const blocks = Array.from(groupMap.entries())
+    .map(([id, list]) => ({
+      id, course: byId.get(id),
+      list: [...list].sort((a, b) => ORDER[a.s.confidence] - ORDER[b.s.confidence] || a.m.fileName.localeCompare(b.m.fileName)),
+    }))
+    .sort((a, b) => {
+      if ((a.id === NONE) !== (b.id === NONE)) return a.id === NONE ? 1 : -1;
+      const oa = inScope(a.id) ? 0 : 1, ob = inScope(b.id) ? 0 : 1;
+      return oa - ob
+        || Number(a.course?.semester ?? 0) - Number(b.course?.semester ?? 0)
+        || (a.course?.code ?? a.course?.name ?? '').localeCompare(b.course?.code ?? b.course?.name ?? '');
+    });
 
   const setRow = (id: string, patch: Override) => setOv(p => ({ ...p, [id]: { ...p[id], ...patch } }));
+  const resetRow = (id: string) => setOv(p => { const n = { ...p }; delete n[id]; return n; });
+  const toggleSet = (setter: (f: (p: Set<string>) => Set<string>) => void, id: string) =>
+    setter(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  async function sortRows(list: { m: Material; courseId: string; category: string; s: Suggestion }[]) {
+  async function sortRows(list: Eff[]) {
     if (!list.length) return;
     setBusy(true);
     try {
-      const byCourse = new Map<string, typeof list>();
+      const byCourse = new Map<string, Eff[]>();
       list.forEach(r => byCourse.set(r.courseId, [...(byCourse.get(r.courseId) ?? []), r]));
       const names = new Map<string, string>();
       for (const [cid, rs] of Array.from(byCourse.entries())) {
-        const c = courses.find(x => x.id === cid);
+        const c = byId.get(cid);
         if (!c) continue;
         (await buildNames(c, rs.map(r => ({ id: r.m.id, fileName: r.m.fileName, category: r.category }))))
           .forEach((v, k) => names.set(k, v));
@@ -76,7 +106,7 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
       for (let i = 0; i < list.length; i += 400) {
         const batch = writeBatch(db);
         list.slice(i, i + 400).forEach(r => {
-          const c = courses.find(x => x.id === r.courseId);
+          const c = byId.get(r.courseId);
           if (!c) return;
           batch.update(doc(db, 'materials', r.m.id), {
             status: 'sorted',
@@ -123,23 +153,74 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
   if (!rows.length) return null;
 
   const courseOptions = (extraId: string) => {
-    const pool = scope.some(c => c.id === extraId) || !extraId ? scope : [...scope, ...courses.filter(c => c.id === extraId)];
+    const pool = !extraId || inScope(extraId) ? scope : [...scope, ...courses.filter(c => c.id === extraId)];
     const sems = Array.from(new Set(pool.map(c => Number(c.semester)))).sort();
     return sems.map(sem => (
       <optgroup key={sem} label={`Semester ${sem}`}>
         {pool.filter(c => Number(c.semester) === sem)
           .sort((a, b) => (a.code ?? a.name).localeCompare(b.code ?? b.name))
-          .map(c => <option key={c.id} value={c.id}>{c.code ? c.code + ' · ' : ''}{c.name}{Number(c.year) !== year && year ? ` (Y${c.year})` : ''}</option>)}
+          .map(c => <option key={c.id} value={c.id}>{courseText(c)}{year && Number(c.year) !== year ? ` (Y${c.year})` : ''}</option>)}
       </optgroup>
     ));
   };
 
-  const goldBtn = (enabled: boolean): CSSProperties => ({
-    padding: '8px 14px', borderRadius: 9, border: 'none', fontWeight: 700, fontSize: '0.76rem',
-    background: enabled ? 'var(--gold)' : 'var(--border)', color: enabled ? '#0a1020' : 'var(--text-muted)',
-    cursor: enabled && !busy ? 'pointer' : 'not-allowed',
+  const btn = (kind: 'gold' | 'ghost', enabled: boolean): CSSProperties => ({
+    padding: '7px 12px', borderRadius: 9, fontWeight: 700, fontSize: '0.74rem',
+    border: kind === 'gold' ? 'none' : '1px solid rgba(196,160,80,0.4)',
+    background: kind === 'gold' ? (enabled ? 'var(--gold)' : 'var(--border)') : 'transparent',
+    color: kind === 'gold' ? (enabled ? '#0a1020' : 'var(--text-muted)') : 'var(--gold)',
+    cursor: enabled && !busy ? 'pointer' : 'not-allowed', opacity: kind === 'ghost' && !enabled ? 0.5 : 1,
   });
 
+  function renderRow(r: Eff) {
+    const isOpen = openRows.has(r.m.id);
+    const changed = ov[r.m.id] !== undefined;
+    return (
+      <div key={r.m.id} style={{ borderRadius: 10, background: r.tick ? 'rgba(196,160,80,0.1)' : 'var(--navy)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px' }}>
+          <input type="checkbox" checked={r.tick} disabled={!r.courseId} onChange={e => setRow(r.m.id, { tick: e.target.checked })} />
+          <button onClick={() => toggleSet(setOpenRows, r.m.id)}
+            style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: COLOR[r.s.confidence] }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.m.fileName}</span>
+              <span style={{ display: 'block', fontSize: '0.64rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {CATEGORY_LABEL[normalizeCategory(r.category)] ?? 'Handout'} · {changed && ov[r.m.id]?.courseId !== undefined ? 'your choice' : r.s.why}
+              </span>
+            </span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{isOpen ? '▲' : '▼'}</span>
+          </button>
+        </div>
+
+        {isOpen && (
+          <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            <p><b>Uploaded as:</b> {r.m.fileName}</p>
+            <p><b>Match:</b> {r.s.why} — {r.s.confidence === 'high' ? 'sure' : r.s.confidence === 'medium' ? 'unsure' : 'no clear match'}</p>
+            <p><b>Type:</b> {CATEGORY_LABEL[normalizeCategory(r.s.category)] ?? 'Handout'} ({r.s.categoryFound === 'name' ? 'from the file name' : r.s.categoryFound === 'contributor' ? 'chosen by the contributor' : 'guessed: no hint in the name'})</p>
+            {(r.m.suggestedCourseName || (r.m as any).uploaderEmail) && (
+              <p><b>Contributor:</b> {[r.m.suggestedCourseName ? 'picked class "' + r.m.suggestedCourseName + '"' : '', (r.m as any).uploaderEmail].filter(Boolean).join(' · ')}</p>
+            )}
+            <p><b>File:</b> {[fmtBytes((r.m as any).fileSize), fmtDate(r.m)].filter(Boolean).join(' · ') || '—'}{r.m.fileUrl && <> · <a href={r.m.fileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--gold)' }}>Open the file ↗</a></>}</p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0 8px' }}>
+              <select value={r.courseId} onChange={e => setRow(r.m.id, { courseId: e.target.value, tick: e.target.value ? true : false })} style={{ ...selStyle, flex: '1 1 170px' }}>
+                <option value="">— pick a course —</option>
+                {courseOptions(r.courseId)}
+              </select>
+              <select value={normalizeCategory(r.category)} onChange={e => setRow(r.m.id, { category: e.target.value })} style={{ ...selStyle, flex: '0 1 150px' }}>
+                {CATEGORY_OPTIONS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={() => sortRows([r])} disabled={busy || !r.courseId} style={btn('gold', !!r.courseId)}>Sort this file</button>
+              {changed && <button onClick={() => resetRow(r.m.id)} style={btn('ghost', true)}>Reset to suggestion</button>}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  let lastGroup = '';
   return (
     <div style={{ marginBottom: 14, borderRadius: 12, border: '1px solid rgba(196,160,80,0.35)', background: 'rgba(196,160,80,0.05)', padding: '10px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -148,58 +229,57 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
           <span style={{ color: COLOR.high }}>● {nHigh} sure</span> · <span style={{ color: COLOR.medium }}>● {nMed} unsure</span> · <span style={{ color: COLOR.none }}>● {nNone} no match</span>
         </span>
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-        <button disabled={busy || sure.length === 0} onClick={() => sortRows(sure)} style={goldBtn(sure.length > 0)}>
-          {busy ? 'Working…' : `Sort ${sure.length} sure file${sure.length !== 1 ? 's' : ''}`}
+      <InfoTip
+        todo="Files are listed under the course they most likely belong to. Green ones are ticked. Check the amber and grey ones, tap a file to change its course or type, then sort the ticked files."
+        means="The app only compares the file name with the course names and codes of this year (plus words like 'past questions' or 'syllabus' for the type). It never reads the file itself. Nothing moves until you tap a Sort button, and sorted files can be inspected, edited or undone from the green box lower down." />
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '10px 0 12px' }}>
+        <button disabled={busy || ticked.length === 0} onClick={() => sortRows(ticked)} style={btn('gold', ticked.length > 0)}>
+          {busy ? 'Working…' : `Sort all ticked (${ticked.length})`}
         </button>
-        <button onClick={() => setOpen(o => !o)}
-          style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid rgba(196,160,80,0.4)', background: 'transparent', color: 'var(--gold)', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}>
-          {open ? 'Hide review ▲' : 'Review all ▼'}
+        <button onClick={() => setClosed(closed.size ? new Set() : new Set(blocks.map(b => b.id)))} style={btn('ghost', true)}>
+          {closed.size ? 'Expand all' : 'Collapse all'}
         </button>
       </div>
 
-      {open && (
-        <div style={{ marginTop: 12 }}>
-          <InfoTip
-            todo="Green files are safe to sort in one tap. For amber and grey files, check the course and type, change them if wrong, tick the ones you want, then tap Sort ticked."
-            means="The app only compares the file name with the course names and codes of this year (plus words like 'past questions' or 'syllabus' for the type). It never reads the file itself. Nothing moves until you tap a Sort button, and a sorted file can be re-assigned later." />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {sorted.slice(0, shown).map(r => (
-              <div key={r.m.id} style={{ padding: '8px 10px', borderRadius: 10, background: r.tick ? 'rgba(196,160,80,0.1)' : 'var(--navy)', border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" checked={r.tick} disabled={!r.courseId} onChange={e => setRow(r.m.id, { tick: e.target.checked })} />
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: COLOR[r.s.confidence], flexShrink: 0 }} />
-                  <span style={{ flex: 1, minWidth: 0, fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.m.fileName}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {blocks.map(b => {
+          const group = b.id === NONE ? 'none' : inScope(b.id) ? `s${b.course?.semester}` : 'other';
+          const heading = group !== lastGroup
+            ? (group === 'none' ? '' : group === 'other' ? 'Courses from other years' : `Semester ${b.course?.semester}`)
+            : '';
+          lastGroup = group;
+          const isClosed = closed.has(b.id);
+          const blockTicked = b.list.filter(r => r.tick && r.courseId);
+          const sure = b.list.filter(r => r.s.confidence === 'high').length;
+          return (
+            <div key={b.id}>
+              {heading && <p style={{ fontSize: '0.66rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '4px 0 6px' }}>{heading}</p>}
+              <div style={{ borderRadius: 12, border: '1px solid var(--border)', background: 'var(--navy-card)', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px' }}>
+                  <button onClick={() => toggleSet(setClosed, b.id)}
+                    style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{isClosed ? '▶' : '▼'}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontFamily: 'Playfair Display, serif', fontSize: '0.84rem', fontWeight: 700, color: b.id === NONE ? 'var(--text-secondary)' : 'var(--gold)' }}>
+                        {b.id === NONE ? 'Needs a course' : courseText(b.course)}{b.course && !inScope(b.id) ? ` (Year ${b.course.year})` : ''}
+                      </span>
+                      <span style={{ display: 'block', fontSize: '0.64rem', color: 'var(--text-muted)' }}>
+                        {b.list.length} file{b.list.length !== 1 ? 's' : ''}{b.id !== NONE ? ` · ${sure} sure` : ''}
+                      </span>
+                    </span>
+                  </button>
+                  {b.id !== NONE && (
+                    <button onClick={() => sortRows(blockTicked)} disabled={busy || blockTicked.length === 0} style={btn('ghost', blockTicked.length > 0)}>
+                      Sort {blockTicked.length}
+                    </button>
+                  )}
                 </div>
-                <p style={{ margin: '3px 0 6px 40px', fontSize: '0.64rem', color: 'var(--text-muted)' }}>
-                  {ov[r.m.id]?.courseId !== undefined ? 'Your choice' : r.s.why}
-                  {r.s.categoryFound === 'name' ? ' · type from name' : r.s.categoryFound === 'default' ? ' · type guessed (Handout)' : ''}
-                </p>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginLeft: 24 }}>
-                  <select value={r.courseId} onChange={e => setRow(r.m.id, { courseId: e.target.value, tick: e.target.value ? true : false })} style={{ ...selStyle, flex: '1 1 160px' }}>
-                    <option value="">— pick a course —</option>
-                    {courseOptions(r.courseId)}
-                  </select>
-                  <select value={normalizeCategory(r.category)} onChange={e => setRow(r.m.id, { category: e.target.value })} style={{ ...selStyle, flex: '0 1 150px' }}>
-                    {CATEGORY_OPTIONS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-                  </select>
-                </div>
+                {!isClosed && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 10px 10px' }}>{b.list.map(renderRow)}</div>}
               </div>
-            ))}
-          </div>
-          {sorted.length > shown && (
-            <button onClick={() => setShown(s => s + ROW_LIMIT)}
-              style={{ marginTop: 8, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', cursor: 'pointer' }}>
-              Show {Math.min(ROW_LIMIT, sorted.length - shown)} more
-            </button>
-          )}
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button disabled={busy || ticked.length === 0} onClick={() => sortRows(ticked)} style={goldBtn(ticked.length > 0)}>
-              {busy ? 'Working…' : `Sort ticked (${ticked.length})`}
-            </button>
-          </div>
-        </div>
-      )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
