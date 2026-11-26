@@ -7,6 +7,7 @@ import RenameTool from '@/components/admin/RenameTool';
 import CourseShortNames from '@/components/admin/CourseShortNames';
 import HashBackfillTool from '@/components/admin/HashBackfillTool';
 import BackfillCourseFields from '@/components/admin/BackfillCourseFields';
+import SmartSortPanel from '@/components/admin/SmartSortPanel';
 import DuplicateHits from '@/components/admin/DuplicateHits';
 import { db } from '@/lib/firebase/config';
 import { Material } from '@/lib/firestore/materials';
@@ -193,6 +194,7 @@ function GroupBlock({ group, courses, firebaseUser, forceOpen, onChanged }: {
 
       {isOpen && (
         <div style={{ borderTop: '1px solid var(--border)', padding: '12px 14px' }}>
+          <SmartSortPanel items={group.items} dept={group.dept} year={group.year} courses={courses} firebaseUser={firebaseUser} onChanged={onChanged} />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             <select value={dept} onChange={e => { setDept(e.target.value); setCourseId(''); }} style={selStyle}>
               <option value="">Dept</option>
