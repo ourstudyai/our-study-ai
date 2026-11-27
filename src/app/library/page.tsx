@@ -10,6 +10,7 @@ import FullscreenButton from '@/components/FullscreenToggle';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import AppNav from '@/components/AppNav';
+import ExternalLibraryButton from '@/components/ExternalLibraryButton';
 import { db } from '@/lib/firebase/config';
 import LuxLoader from '@/components/LuxLoader';
 import UnsortedBrowser, { LibraryTabs } from '@/components/library/UnsortedBrowser';
@@ -855,15 +856,16 @@ async function fetchBody(materialId: string): Promise<string> {
       <div style={{ minHeight: '100dvh', background: 'var(--navy)', color: 'var(--text-primary)', paddingTop: '80px' }}>
         <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 16px 60px' }}>
 
-          <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-            <div>
+          <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '4px' }}>Lux Studiorum</p>
-              <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)', marginBottom: '2px' }}>Materials Library</h1>
+              <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: 'clamp(1.2rem, 5vw, 1.6rem)', fontWeight: 700, color: 'var(--gold)', marginBottom: '2px' }}>Materials Library</h1>
               <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{filtered.length} material{filtered.length !== 1 ? 's' : ''} indexed{materials.length !== filtered.length ? ` · ${materials.length} total` : ''}</p>
+              {isChiefOrSupreme && (
+                <button onClick={() => exportList(filtered)} style={{ marginTop: '8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '9px', padding: '7px 14px', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem' }}>↓ Export list</button>
+              )}
             </div>
-            {isChiefOrSupreme && (
-              <button onClick={() => exportList(filtered)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '9px', padding: '7px 14px', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem' }}>↓ Export list</button>
-            )}
+            <ExternalLibraryButton />
           </div>
 
           <div style={{ borderLeft: '3px solid var(--gold)', background: 'rgba(196,160,80,0.06)', borderRadius: '0 10px 10px 0', padding: '12px 16px', marginBottom: '20px' }}>

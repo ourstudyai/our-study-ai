@@ -6,6 +6,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase/config';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, writeBatch, where } from 'firebase/firestore';
 import SettingsPanel from '@/components/SettingsPanel';
+import HamburgerButton from '@/components/HamburgerButton';
 import { useSessionTracker } from '@/hooks/useSessionTracker';
 
 const FAQ_CONTENT: Record<string, { title: string; content: string }> = {
@@ -317,26 +318,7 @@ export default function AppNav({ children }: AppNavProps) {
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {isAdmin && <BellButton size="sm" />}
           <button onClick={() => setFaqOpen(true)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 10px', color: 'var(--text-secondary)', cursor: 'pointer' }}>❓</button>
-          <button
-  onClick={() => setMobileNavOpen(true)}
-  style={{
-    background: 'var(--navy-card)',
-    border: '1px solid var(--border)',
-    borderRadius: '8px',
-    padding: '7px 10px',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  }}
->
-  <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
-    <rect width="18" height="2" rx="1" fill="currentColor"/>
-    <rect y="6" width="12" height="2" rx="1" fill="currentColor" opacity="0.7"/>
-    <rect y="12" width="18" height="2" rx="1" fill="currentColor"/>
-  </svg>
-</button>
+          <HamburgerButton onClick={() => setMobileNavOpen(true)} />
         </div>
       </div>
 

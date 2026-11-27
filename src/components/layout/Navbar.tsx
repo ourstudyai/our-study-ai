@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { signOut } from '@/lib/firebase/auth';
 import MobileMenu from './MobileMenu';
+import HamburgerButton from '@/components/HamburgerButton';
 
 export default function Navbar() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -41,13 +42,9 @@ export default function Navbar() {
       >
         {/* Left — Mobile hamburger + Logo */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowMobileMenu(true)}
-            className="md:hidden btn-ghost text-lg"
-            id="mobile-menu-button"
-          >
-            ☰
-          </button>
+          <span className="md:hidden">
+            <HamburgerButton id="mobile-menu-button" onClick={() => setShowMobileMenu(true)} />
+          </span>
           <div className="md:hidden flex items-center gap-2">
             <img src="/icons/icon-192.png" alt="Onus Meum Leve" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
             <span className="text-sm font-bold font-display">Lux Studiorum</span>
