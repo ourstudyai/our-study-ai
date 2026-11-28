@@ -6,9 +6,11 @@ import { writeBatch, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { buildNames } from '@/lib/materialNaming';
 import { CATEGORY_OPTIONS, CATEGORY_LABEL, normalizeCategory } from '@/lib/categories';
-import { suggestOne, type SuggestCourse, type Suggestion } from '@/lib/keywordSuggest';
+import { suggestOne, scopeFor, type SuggestCourse, type Suggestion } from '@/lib/keywordSuggest';
 import { Material } from '@/lib/firestore/materials';
 import InfoTip from '@/components/admin/InfoTip';
+import WrongYearBlock from '@/components/admin/WrongYearBlock';
+import { undoMoves, movedFromLabel } from '@/lib/moveUpload';
 
 type Override = { courseId?: string; category?: string; tick?: boolean };
 type Props = { items: Material[]; dept: string; year: number; courses: SuggestCourse[]; firebaseUser: any; onChanged: () => void };
@@ -42,20 +44,21 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
 
-  const scope = useMemo(() => {
-    const s = courses.filter(c =>
-      (!dept || String(c.department).toLowerCase() === dept.toLowerCase()) && (!year || Number(c.year) === year));
-    return s.length ? s : courses;
-  }, [courses, dept, year]);
+  const scope = useMemo(() => scopeFor(courses, dept, year), [courses, dept, year]);
   const byId = useMemo(() => new Map(courses.map(c => [c.id, c])), [courses]);
   const semOf = (id: string) => { const c = byId.get(id); return c ? `Sem ${c.semester}` : ''; };
 
-  const rows = useMemo(() => items.map(m => ({
+  const allRows = useMemo(() => items.map(m => ({
     m,
     s: suggestOne(
       { fileName: m.fileName, contributorCategory: normalizeCategory(m.category), contributorCourseId: m.suggestedCourseId },
       scope, courses),
   })), [items, scope, courses]);
+
+  // Files whose name matches a course in another year are listed in their own block and kept out of the sort list.
+  const isFlagged = (r: { m: Material; s: Suggestion }) => r.s.elsewhere.length > 0 && !(r.m as any).keepInYear;
+  const flagged = allRows.filter(isFlagged);
+  const rows = allRows.filter(r => !isFlagged(r));
 
   const eff: Eff[] = rows.map(r => {
     const o = ov[r.m.id] ?? {};
@@ -158,7 +161,14 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
     } finally { setBusy(false); }
   }
 
-  if (!rows.length) return null;
+  async function undoMoveRow(m: Material) {
+    setBusy(true);
+    try { await undoMoves([m]); onChanged(); }
+    catch (e: any) { alert('Could not undo the move: ' + (e?.message ?? e)); }
+    finally { setBusy(false); }
+  }
+
+  if (!rows.length && !flagged.length) return null;
 
   const courseOptions = (extraId: string) => {
     const pool = !extraId || inScope(extraId) ? scope : [...scope, ...courses.filter(c => c.id === extraId)];
@@ -199,6 +209,16 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
             <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{isOpen ? '▲' : '▼'}</span>
           </button>
         </div>
+
+        {movedFromLabel(r.m) && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '0 10px 8px 36px' }}>
+            <span style={{ fontSize: '0.64rem', color: '#60a5fa' }}>↪ Moved from {movedFromLabel(r.m)}</span>
+            <button onClick={() => undoMoveRow(r.m)} disabled={busy}
+              style={{ padding: '3px 9px', borderRadius: 99, border: '1px solid rgba(96,165,250,0.5)', background: 'transparent', color: '#60a5fa', fontSize: '0.66rem', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer' }}>
+              Undo move
+            </button>
+          </div>
+        )}
 
         {r.s.ambiguous && ov[r.m.id]?.courseId === undefined && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '0 10px 8px 36px' }}>
@@ -259,12 +279,13 @@ export default function SmartSortPanel({ items, dept, year, courses, firebaseUse
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.88rem', fontWeight: 700, color: 'var(--gold)' }}>✨ Smart sort from file names</span>
         <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-          <span style={{ color: COLOR.high }}>● {nHigh} sure</span> · <span style={{ color: COLOR.medium }}>● {nMed} unsure</span> · <span style={{ color: COLOR.either }}>● {nEither} could be either</span> · <span style={{ color: COLOR.none }}>● {nNone} no match</span> · <span style={{ color: '#60a5fa' }}>◆ {nType} need a type</span>
+          <span style={{ color: COLOR.high }}>● {nHigh} sure</span> · <span style={{ color: COLOR.medium }}>● {nMed} unsure</span> · <span style={{ color: COLOR.either }}>● {nEither} could be either</span> · <span style={{ color: COLOR.none }}>● {nNone} no match</span> · <span style={{ color: '#60a5fa' }}>◆ {nType} need a type</span>{flagged.length > 0 && <> · <span style={{ color: '#f87171' }}>⚠ {flagged.length} in the wrong year</span></>}
         </span>
       </div>
       <InfoTip
         todo="Files are listed under the course they most likely belong to. Green ones are ticked. Orange ones could belong to more than one course (such as the same course in both semesters): tap the right one. A blue ◆ means the title does not clearly say the type (Handout, Past Questions…): pick it before sorting. Check the amber and grey ones, tap a file to change its course or type, then sort the ticked files."
         means="The app only compares the file name with the course names and codes of this year (plus words like 'past questions' or 'syllabus' for the type). It never reads the file itself. Nothing moves until you tap a Sort button, and sorted files can be inspected, edited or undone from the green box lower down." />
+      <WrongYearBlock rows={flagged} courses={courses} from={{ dept, year }} firebaseUser={firebaseUser} onChanged={onChanged} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '10px 0 12px' }}>
         <button disabled={busy || ticked.length === 0} onClick={() => sortRows(ticked)} style={btn('gold', ticked.length > 0)}>
           {busy ? 'Working…' : `Sort all ticked (${ticked.length})`}

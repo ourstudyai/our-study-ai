@@ -9,6 +9,8 @@ import HashBackfillTool from '@/components/admin/HashBackfillTool';
 import BackfillCourseFields from '@/components/admin/BackfillCourseFields';
 import CategoryCheck from '@/components/admin/CategoryCheck';
 import SmartSortPanel from '@/components/admin/SmartSortPanel';
+import { countWrongYear } from '@/lib/keywordSuggest';
+import { movedFromLabel } from '@/lib/moveUpload';
 import AutoSortedReview from '@/components/admin/AutoSortedReview';
 import DuplicateHits from '@/components/admin/DuplicateHits';
 import { db } from '@/lib/firebase/config';
@@ -65,6 +67,7 @@ function GroupBlock({ group, courses, firebaseUser, forceOpen, onChanged }: {
   const [busy, setBusy] = useState(false);
 
   const isOpen = open || forceOpen;
+  const wrongN = useMemo(() => countWrongYear(group.items as any, group.dept, group.year, courses), [group.items, group.dept, group.year, courses]);
   const depts = useMemo(() => Array.from(new Set(courses.map(c => String(c.department)))), [courses]);
   const options = useMemo(
     () => courses
@@ -189,6 +192,7 @@ function GroupBlock({ group, courses, firebaseUser, forceOpen, onChanged }: {
         style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer' }}>
         <span style={{ fontFamily: 'Playfair Display, serif', fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>{label}</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {wrongN > 0 && <span style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171', border: '1px solid rgba(248,113,113,0.4)', borderRadius: 99, padding: '2px 9px', fontSize: '0.68rem', fontWeight: 700 }}>⚠ {wrongN} wrong year</span>}
           <span style={{ background: 'var(--gold)', color: '#0a1020', borderRadius: 99, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700 }}>{group.items.length}</span>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{isOpen ? '▲' : '▼'}</span>
         </span>
@@ -248,6 +252,7 @@ function GroupBlock({ group, courses, firebaseUser, forceOpen, onChanged }: {
                     <p style={{ fontSize: '0.66rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {[formatBytes(m.fileSize), dateOf(m), m.uploaderEmail].filter(Boolean).join(' · ')}
                     </p>
+                    {movedFromLabel(m) && <p style={{ fontSize: '0.66rem', color: '#60a5fa' }}>↪ Moved from {movedFromLabel(m)}</p>}
                     {(m.suggestedCourseName || m.category) && (
                       <p style={{ fontSize: '0.66rem', color: suggestionLive ? 'var(--gold)' : '#eab308', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         🏷 {[m.suggestedCourseName, m.category ? String(m.category).replace(/_/g, ' ') : ''].filter(Boolean).join(' · ')}

@@ -6,10 +6,11 @@
 // Plain text → raw text
 
 import mammoth from "mammoth";
+import JSZip from "jszip";
 
 export type ExtractionResult = {
     text: string;
-    method: "pdf-parse" | "mammoth" | "plain-text" | "mistral-ocr" | "ocr_pending";
+    method: "pdf-parse" | "mammoth" | "plain-text" | "mistral-ocr" | "pptx" | "ocr_pending";
     pageCount?: number;
     wordCount: number;
     isScanned: boolean;
@@ -105,6 +106,123 @@ async function runMistralOCR(buffer: Buffer, mimeType: string, fileName: string)
     }
 }
 
+// ── PowerPoint (.pptx) ───────────────────────────────────────────────────────
+// A .pptx is a zip of XML files. We read the text of every slide in presentation order, plus speaker notes.
+// Text inside pictures is not read (an image-only deck is reported, so the contributor can send a PDF).
+function codePoint(n: number): string {
+    try { return String.fromCodePoint(n); } catch { return ""; }
+}
+function xmlText(s: string): string {
+    return s
+        .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+        .replace(/&#x([0-9a-f]+);/gi, (_m, h: string) => codePoint(parseInt(h, 16)))
+        .replace(/&#(\d+);/g, (_m, n: string) => codePoint(Number(n)))
+        .replace(/&amp;/g, "&");
+}
+
+type PptxLine = { text: string; lvl: number };
+function pptxParagraphs(xml: string): PptxLine[] {
+    const out: PptxLine[] = [];
+    const paraRe = /<a:p(?:\s[^>]*)?>([\s\S]*?)<\/a:p>/g;
+    let pm: RegExpExecArray | null;
+    while ((pm = paraRe.exec(xml)) !== null) {
+        const inner = pm[1];
+        let text = "";
+        const tokRe = /<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>|<a:br\s*\/?>/g;
+        let tm: RegExpExecArray | null;
+        while ((tm = tokRe.exec(inner)) !== null) text += tm[1] !== undefined ? xmlText(tm[1]) : "\n";
+        text = text.replace(/[ \t]+/g, " ").trim();
+        if (!text) continue;
+        const lvl = Number((inner.match(/<a:pPr[^>]*\blvl="(\d)"/) ?? [])[1] ?? 0);
+        out.push({ text, lvl });
+    }
+    return out;
+}
+
+type PptxShape = { title: boolean; body: boolean; skip: boolean; xml: string };
+function pptxShapes(xml: string): PptxShape[] {
+    const out: PptxShape[] = [];
+    const re = /<p:sp(?:\s[^>]*)?>[\s\S]*?<\/p:sp>|<p:graphicFrame(?:\s[^>]*)?>[\s\S]*?<\/p:graphicFrame>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(xml)) !== null) {
+        const block = m[0];
+        out.push({
+            title: /<p:ph[^>]*\btype="(?:title|ctrTitle)"/.test(block),
+            body: /<p:ph[^>]*\btype="body"/.test(block),
+            skip: /<p:ph[^>]*\btype="(?:sldNum|ftr|dt|hdr)"/.test(block),
+            xml: block,
+        });
+    }
+    return out;
+}
+
+async function extractPptx(buffer: Buffer): Promise<{ text: string; words: number; slides: number }> {
+    const zip = await JSZip.loadAsync(buffer);
+    const read = async (p: string): Promise<string> => {
+        const f = zip.file(p);
+        return f ? await f.async("string") : "";
+    };
+    const slideNum = (p: string) => Number((p.match(/slide(\d+)\.xml$/) ?? [])[1] ?? 0);
+    let slides = Object.keys(zip.files)
+        .filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+        .sort((a, b) => slideNum(a) - slideNum(b));
+
+    // Real presentation order (slides can be reordered without being renamed).
+    try {
+        const pres = await read("ppt/presentation.xml");
+        const rels = await read("ppt/_rels/presentation.xml.rels");
+        const target = new Map<string, string>();
+        const relRe = /<Relationship\b[^>]*>/g;
+        let rm: RegExpExecArray | null;
+        while ((rm = relRe.exec(rels)) !== null) {
+            const id = rm[0].match(/\bId="([^"]+)"/);
+            const t = rm[0].match(/\bTarget="([^"]+)"/);
+            if (id && t) target.set(id[1], t[1]);
+        }
+        const ordered: string[] = [];
+        const idRe = /<p:sldId\b[^>]*>/g;
+        let im: RegExpExecArray | null;
+        while ((im = idRe.exec(pres)) !== null) {
+            const rid = im[0].match(/\br:id="([^"]+)"/);
+            const t = rid ? target.get(rid[1]) : undefined;
+            if (!t) continue;
+            const path = t.startsWith("/") ? t.slice(1) : "ppt/" + t.replace(/^\.\//, "");
+            if (zip.file(path)) ordered.push(path);
+        }
+        if (ordered.length) slides = ordered;
+    } catch { /* keep numeric order */ }
+
+    const parts: string[] = [];
+    const plain: string[] = [];
+    for (let i = 0; i < slides.length; i++) {
+        const xml = await read(slides[i]);
+        let title = "";
+        const lines: string[] = [];
+        for (const s of pptxShapes(xml)) {
+            if (s.skip) continue;
+            const paras = pptxParagraphs(s.xml);
+            if (s.title && !title) { title = paras.map(p => p.text).join(" "); continue; }
+            paras.forEach(p => { lines.push("  ".repeat(Math.min(p.lvl, 3)) + "- " + p.text); plain.push(p.text); });
+        }
+        if (title) plain.push(title);
+
+        const notes: string[] = [];
+        const rel = await read(slides[i].replace("ppt/slides/", "ppt/slides/_rels/") + ".rels");
+        const nm = rel.match(/Target="[^"]*notesSlides\/(notesSlide\d+\.xml)"/);
+        if (nm) {
+            const nx = await read("ppt/notesSlides/" + nm[1]);
+            pptxShapes(nx).filter(s => s.body).forEach(s => pptxParagraphs(s.xml).forEach(p => notes.push(p.text)));
+        }
+        if (notes.length) plain.push(notes.join(" "));
+
+        parts.push("## Slide " + (i + 1) + (title ? ": " + title : ""));
+        lines.forEach(l => parts.push(l));
+        if (notes.length) parts.push("", "Notes: " + notes.join(" "));
+        parts.push("");
+    }
+    return { text: parts.join("\n").trim(), words: countWords(plain.join(" ")), slides: slides.length };
+}
+
 export async function extractText(
     buffer: Buffer,
     mimeType: string,
@@ -187,6 +305,28 @@ export async function extractText(
             console.error("[extractor] Mistral OCR failed for image:", err);
             return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: errMsg(err) };
         }
+    }
+
+    // PowerPoint (.pptx)
+    if (
+        fileName.toLowerCase().endsWith(".pptx") ||
+        mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ) {
+        try {
+            const r = await extractPptx(buffer);
+            if (r.words >= 10) {
+                return { text: r.text, method: "pptx", wordCount: r.words, pageCount: r.slides, isScanned: false };
+            }
+            return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: "This presentation has almost no readable text (the slides are probably pictures). Export it as PDF and upload that instead." };
+        } catch (err) {
+            console.error("[extractor] PPTX read failed:", err);
+            return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: "Could not read this presentation: " + errMsg(err) };
+        }
+    }
+
+    // Old binary Word / PowerPoint formats cannot be read.
+    if (/\.(doc|ppt)$/i.test(fileName) || mimeType === "application/msword" || mimeType === "application/vnd.ms-powerpoint") {
+        return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: "Old-format files (.doc / .ppt) cannot be read. Open the file, choose Save As .docx / .pptx (or PDF), and upload that instead." };
     }
 
     return { text: "", method: "ocr_pending", wordCount: 0, isScanned: true, error: "Unsupported file type: " + (mimeType || fileName) };

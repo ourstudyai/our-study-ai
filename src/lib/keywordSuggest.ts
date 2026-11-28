@@ -7,6 +7,7 @@ export type SuggestCourse = {
 };
 export type Confidence = 'high' | 'medium' | 'either' | 'none';
 export type CategoryState = 'sure' | 'unsure' | 'unknown';
+export type ElsewhereHit = { courseId: string; score: number; why: string };
 export type Suggestion = {
   courseId: string | null;
   confidence: Confidence;
@@ -19,6 +20,7 @@ export type Suggestion = {
   contributorCategory: string | null;
   ambiguous: boolean;                                  // two or more courses match almost equally
   alternatives: { courseId: string; score: number }[]; // the other courses it could be
+  elsewhere: ElsewhereHit[];                           // strong matches in OTHER years (file probably uploaded to the wrong year)
 };
 
 const STOP = new Set(['of', 'the', 'and', 'in', 'to', 'a', 'an', 'for', 'on', 'at', 'de', 'et', 'with', 'by']);
@@ -179,19 +181,38 @@ export function suggestOne(input: SuggestInput, scope: SuggestCourse[], all: Sug
   const fileJoined = words(input.fileName).join(' ');
   const fileCompact = compact(input.fileName);
 
-  const rank = (pool: SuggestCourse[]) => pool
+  const rank = (pool: SuggestCourse[], useHint = true) => pool
     .map(c => {
       const r = scoreCourse(file, fileCompact, fileJoined, c);
-      const hint = input.contributorCourseId && c.id === input.contributorCourseId && r.score > 0 ? 0.25 : 0;
+      const hint = useHint && input.contributorCourseId && c.id === input.contributorCourseId && r.score > 0 ? 0.25 : 0;
       return { c, score: r.score + hint, why: r.why };
     })
     .filter(x => x.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  const base = { category: cat.category, categoryState: cat.state, categoryOptions: cat.options, categoryWhy: cat.why, contributorCategory: contrib, ambiguous: false, alternatives: [] as { courseId: string; score: number }[] };
   const inScope = rank(scope);
   const top = inScope[0];
   const second = inScope[1];
+
+  // A course in ANOTHER year that matches strongly while nothing usable matches in this year: probably the wrong year.
+  // (Strong = score 0.85+, and clearly ahead of the next course. Several near-equal courses are all listed.)
+  const wide = rank(all.filter(c => !scope.some(s => s.id === c.id)), false);
+  const wTop = wide[0];
+  let elsewhere: ElsewhereHit[] = [];
+  if (wTop && wTop.score >= 0.85) {
+    const near = wide.filter(x => x.score >= 0.85 && wTop.score - x.score < 0.2);
+    const rest = wide[near.length];
+    const separated = wTop.score - (rest?.score ?? 0) >= 0.2;
+    // The contributor's own class pick must not hide a wrong-year file, so judge this year's match without that hint.
+    const here = rank(scope, false)[0];
+    const hereCode = !!here && here.why.startsWith('course code');
+    const nothingHere = !here || here.score < 0.5;
+    const muchStronger = !!here && !hereCode &&
+      ((here.score < 0.85 && wTop.score - here.score >= 0.4) || wTop.why.startsWith('course code'));
+    if (separated && (nothingHere || muchStronger)) elsewhere = near.map(x => ({ courseId: x.c.id, score: x.score, why: x.why }));
+  }
+
+  const base = { category: cat.category, categoryState: cat.state, categoryOptions: cat.options, categoryWhy: cat.why, contributorCategory: contrib, ambiguous: false, alternatives: [] as { courseId: string; score: number }[], elsewhere };
 
   if (top) {
     const margin = top.score - (second?.score ?? 0);
@@ -214,11 +235,27 @@ export function suggestOne(input: SuggestInput, scope: SuggestCourse[], all: Sug
     if (top.score >= 0.5) return { ...base, courseId: top.c.id, confidence: 'medium', score: top.score, why: top.why };
   }
 
-  // Uploaded to the wrong year? Offer the better match as a suggestion, never as a confident one.
-  const wide = rank(all);
-  const wTop = wide[0];
-  if (wTop && wTop.score >= 0.85 && wTop.score - (wide[1]?.score ?? 0) >= 0.2 && !scope.some(c => c.id === wTop.c.id)) {
-    return { ...base, courseId: wTop.c.id, confidence: 'medium', score: wTop.score, why: `${wTop.why}, but it is a Year ${wTop.c.year} course` };
-  }
-  return { ...base, courseId: null, confidence: 'none', score: top?.score ?? 0, why: 'no clear match' };
+  return { ...base, courseId: null, confidence: 'none', score: top?.score ?? 0, why: elsewhere.length ? 'no course of this year matches' : 'no clear match' };
+}
+
+// The courses of the department and year a file was uploaded to (all courses if that year has none).
+export function scopeFor(courses: SuggestCourse[], dept: string, year: number): SuggestCourse[] {
+  const s = courses.filter(c =>
+    (!dept || String(c.department).toLowerCase() === dept.toLowerCase()) && (!year || Number(c.year) === year));
+  return s.length ? s : courses;
+}
+
+// How many waiting files look like they were uploaded to the wrong year (skips the ones the admin said to keep).
+export function countWrongYear(
+  items: { fileName: string; suggestedCourseId?: string | null; keepInYear?: boolean }[],
+  dept: string, year: number, courses: SuggestCourse[],
+): number {
+  const scope = scopeFor(courses, dept, year);
+  let n = 0;
+  items.forEach(m => {
+    if (m.keepInYear) return;
+    const s = suggestOne({ fileName: m.fileName, contributorCourseId: m.suggestedCourseId ?? null }, scope, courses);
+    if (s.elsewhere.length > 0) n++;
+  });
+  return n;
 }

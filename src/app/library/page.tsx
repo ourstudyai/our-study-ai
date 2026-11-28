@@ -868,11 +868,23 @@ async function fetchBody(materialId: string): Promise<string> {
             <ExternalLibraryButton />
           </div>
 
+          <button
+            onClick={() => document.getElementById('lux-materials')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', cursor: 'pointer', marginBottom: '16px',
+              background: 'linear-gradient(135deg, rgba(196,160,80,0.16), rgba(196,160,80,0.05))', border: '1px solid rgba(196,160,80,0.45)', borderRadius: '12px', padding: '11px 14px' }}>
+            <span className="lux-down-arrow" style={{ fontSize: '1.3rem', color: 'var(--gold)', lineHeight: 1 }}>↓</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontFamily: 'Playfair Display, serif', fontSize: '0.88rem', fontWeight: 700, color: 'var(--gold)' }}>Our class materials are right below</span>
+              <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Notes, handouts and past questions for your course. Tap to jump there.</span>
+            </span>
+            <style>{`.lux-down-arrow{animation:luxDown 1.4s ease-in-out infinite}@keyframes luxDown{0%,100%{transform:translateY(-2px)}50%{transform:translateY(4px)}}@media (prefers-reduced-motion:reduce){.lux-down-arrow{animation:none}}`}</style>
+          </button>
+
           <div style={{ borderLeft: '3px solid var(--gold)', background: 'rgba(196,160,80,0.06)', borderRadius: '0 10px 10px 0', padding: '12px 16px', marginBottom: '20px' }}>
             <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>This library is intended exclusively for Catholic seminarians. All materials contained here are freely distributed lecture notes and student study aids. No commercial or restricted materials are indexed here. Unauthorised access or redistribution is not permitted.</p>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          <div id="lux-materials" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', scrollMarginTop: '72px' }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search materials, topics, courses..."
               style={{ flex: '2 1 200px', background: 'var(--navy-card)', border: '1px solid var(--border)', borderRadius: '9px', padding: '9px 13px', color: 'var(--text-primary)', fontSize: '0.82rem' }} />
             <select value={sort} onChange={e => setSort(e.target.value as SortKey)}

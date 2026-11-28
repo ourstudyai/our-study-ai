@@ -85,7 +85,7 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
     return '#ef4444';
   };
 
-  const navBtn = (href: string, icon: string, label: string, tag?: string) => {
+  const navBtn = (href: string, icon: string, label: string, highlight?: boolean) => {
     const active = pathname === href || pathname.startsWith(href + '/');
     return (
       <button
@@ -93,16 +93,13 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
         onClick={() => handleNav(href)}
         className="w-full text-left p-3 rounded-xl mb-1 flex items-center gap-3 transition-all"
         style={{
-          background: active ? 'var(--gold-dim)' : tag ? 'linear-gradient(135deg, rgba(201,150,58,0.18), rgba(201,150,58,0.06))' : 'rgba(255,255,255,0.02)',
-          border: `1px solid ${active ? 'rgba(201,150,58,0.3)' : tag ? 'rgba(201,150,58,0.6)' : 'var(--border)'}`,
+          background: active ? 'var(--gold-dim)' : highlight ? 'linear-gradient(135deg, rgba(201,150,58,0.18), rgba(201,150,58,0.06))' : 'rgba(255,255,255,0.02)',
+          border: `1px solid ${active ? 'rgba(201,150,58,0.3)' : highlight ? 'rgba(201,150,58,0.6)' : 'var(--border)'}`,
           color: active ? 'var(--gold-light)' : 'var(--text-primary)',
         }}
       >
         <span>{icon}</span>
         <span className="text-sm font-medium">{label}</span>
-        {tag && (
-          <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'var(--gold)', color: '#0a1020', fontSize: '0.62rem', letterSpacing: '0.04em' }}>{tag}</span>
-        )}
       </button>
     );
   };
@@ -249,7 +246,7 @@ export default function MobileMenu({ onClose }: MobileMenuProps) {
         <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>Navigate</p>
         {navBtn('/dashboard', '🏠', 'Dashboard')}
         {navBtn('/library', '📚', 'Library')}
-        {navBtn('/contribute', '📤', 'Contribute', 'Share material')}
+        {navBtn('/contribute', '📤', 'Contribute', true)}
         {isAdmin && navBtn('/admin', '🛡️', 'Admin Panel')}
         <button
           onClick={() => setShowSettings(true)}

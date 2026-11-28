@@ -8,6 +8,7 @@ import { collection, query, orderBy, onSnapshot, updateDoc, doc, writeBatch, whe
 import SettingsPanel from '@/components/SettingsPanel';
 import HamburgerButton from '@/components/HamburgerButton';
 import { useSessionTracker } from '@/hooks/useSessionTracker';
+import { blockedByUpload } from '@/lib/uploadGuard';
 
 const FAQ_CONTENT: Record<string, { title: string; content: string }> = {
   '/dashboard': { title: 'Dashboard Guide', content: `**Your Dashboard**\n\nBrowse all courses available to your year and department.\n\n**Opening a course**\nTap any course card to enter the AI study chat.\n\n**Navigation**\n- **Library** — Browse indexed study materials\n- **Contribute** — Upload lecture notes and past questions\n- **Admin** — Manage materials (admins only)` },
@@ -161,11 +162,8 @@ export default function AppNav({ children }: AppNavProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 0' }}>
       <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', padding: '0 12px', marginBottom: '4px', marginTop: '8px' }}>Navigation</p>
       {navLinks.filter(l => l.show).map(link => (
-        <button key={link.href} onClick={() => { router.push(link.href); onNav?.(); }} style={linkStyle(link.href)}>
+        <button key={link.href} onClick={() => { if (blockedByUpload()) return; router.push(link.href); onNav?.(); }} style={linkStyle(link.href)}>
           <span>{link.icon}</span>{link.label}
-          {link.href === '/contribute' && (
-            <span style={{ marginLeft: 'auto', background: 'var(--gold)', color: '#0a1020', fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.04em', padding: '2px 8px', borderRadius: '99px', whiteSpace: 'nowrap' }}>Share material</span>
-          )}
         </button>
       ))}
       <button onClick={() => { setFaqOpen(true); onNav?.(); }}
@@ -259,7 +257,7 @@ export default function AppNav({ children }: AppNavProps) {
                         {isAttended && <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '6px' }}>✓ Attended to</p>}
                         {/* Actions */}
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                          <button onClick={() => { markAttended(n.id); router.push(actionUrl); setNotifOpen(false); }}
+                          <button onClick={() => { if (blockedByUpload()) return; markAttended(n.id); router.push(actionUrl); setNotifOpen(false); }}
                             style={{ fontSize: '0.7rem', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', border: 'none', background: typeColor, color: '#fff', cursor: 'pointer' }}>
                             {n.type === 'new_upload' ? 'Review' : n.type === 'role_change' ? 'View Users' : 'View'}
                           </button>
@@ -289,7 +287,7 @@ export default function AppNav({ children }: AppNavProps) {
   };
 
   const Logo = () => (
-    <button onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', background: 'transparent', border: 'none', padding: '0' }}>
+    <button onClick={() => { if (blockedByUpload()) return; router.push('/dashboard'); }} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', background: 'transparent', border: 'none', padding: '0' }}>
       <img src="/icons/icon-192.png" alt="Onus Meum Leve" style={{ width: '32px', height: '32px', objectFit: 'contain', flexShrink: 0 }} />
       <div style={{ textAlign: 'left' }}>
         <div style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', lineHeight: 1.2, whiteSpace: 'nowrap' }}>Lux Studiorum</div>
