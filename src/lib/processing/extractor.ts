@@ -84,7 +84,7 @@ async function runMistralOCR(buffer: Buffer, mimeType: string, fileName: string)
                 "Authorization": "Bearer " + apiKey,
             },
             body: JSON.stringify({
-                model: "mistral-ocr-latest",
+                model: process.env.MISTRAL_OCR_MODEL || "mistral-ocr-latest",
                 document: {
                     type: "document_url",
                     document_url: signedUrl,

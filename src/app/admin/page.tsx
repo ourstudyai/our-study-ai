@@ -26,6 +26,7 @@ import CoverageTab from '@/components/admin/CoverageTab';
 import LuxLoader from '@/components/LuxLoader';
 import { logAdminAction } from '@/lib/analytics/tracker';
 import { MATERIAL_STATUS, tabForStatus } from '@/lib/materialStatus';
+import ReviewQueue from '@/components/admin/ReviewQueue';
 const SUPREME = 'ourstudyai@gmail.com';
 
 type Tab = 'uploads' | 'ocrqueue' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
@@ -34,7 +35,7 @@ type Tab = 'uploads' | 'ocrqueue' | 'pending' | 'approved' | 'quarantined' | 're
 const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] = [
   { key: 'uploads',      label: 'Uploads',     icon: '📥' },
   { key: 'ocrqueue',     label: 'OCR Queue',   icon: '🔍' },
-  { key: 'pending',      label: 'Pending',     icon: '⏳' },
+  { key: 'pending',      label: 'To review',   icon: '⏳' },
   { key: 'approved',     label: 'Approved',    icon: '✓' },
   { key: 'quarantined',  label: 'Quarantined', icon: '⚠' },
   { key: 'resurrection', label: 'Resurrection',icon: '↺' },
@@ -49,7 +50,7 @@ const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] =
 
 // Tabs that share one menu entry. The inner tabs stay as they were; they show as chips.
 const GROUPS: { key: string; label: string; icon: string; tabs: Tab[] }[] = [
-  { key: 'review',  label: 'Review',  icon: '📥', tabs: ['uploads', 'ocrqueue'] },
+  { key: 'review',  label: 'Review',  icon: '📥', tabs: ['pending', 'uploads', 'ocrqueue'] },
   { key: 'library', label: 'Library', icon: '🗂', tabs: ['approved', 'quarantined', 'resurrection'] },
 ];
 
@@ -1095,7 +1096,16 @@ useEffect(() => {
         )}
 
         {/* Material list */}
-        {['pending','approved','quarantined','resurrection'].includes(tab) && (
+        {tab === 'pending' && (
+          <ReviewQueue
+            materials={currentList}
+            courses={liveCourses}
+            onEdit={openDetail}
+            onChanged={load}
+          />
+        )}
+
+        {['approved','quarantined','resurrection'].includes(tab) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {currentList.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 20px' }}>

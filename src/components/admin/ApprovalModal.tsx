@@ -116,7 +116,7 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
       const course = courses.find(c => c.id === selectedCourseId);
       // Auto-generated names follow the final course and category chosen here.
       let finalName = displayName;
-      if (course && AUTO_NAME_RE.test(displayName)) {
+      if (course && (AUTO_NAME_RE.test(displayName) || displayName === material.fileName)) {
         const expected = `${course.code || course.name} · ${nameLabel(category)} `;
         if (!displayName.startsWith(expected)) {
           const names = await buildNames(course, [{ id: material.id, fileName: material.fileName, category }]);
