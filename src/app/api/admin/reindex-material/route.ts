@@ -5,6 +5,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { MaterialCategory } from '@/lib/processing/classifier';
 import { FieldValue } from 'firebase-admin/firestore';
 import { deleteChunksByMaterial } from '@/lib/qdrant/upsert';
+import { setMaterialVisible } from '@/lib/qdrant/visibility';
 import {
   upsertPQVectorWithMaterial,
   deletePQVectorsByMaterial,
@@ -275,7 +276,8 @@ export async function POST(req: NextRequest) {
     } = await req.json();
 
     if (quarantine) {
-      await adminDb.collection('materials').doc(materialId).update({ status: 'quarantined', updatedAt: new Date().toISOString() });
+      await adminDb.collection('materials').doc(materialId).update({ status: 'quarantined', indexed: false, updatedAt: new Date().toISOString() });
+      await setMaterialVisible(materialId, false);
       return NextResponse.json({ ok: true });
     }
 

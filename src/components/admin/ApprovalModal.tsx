@@ -160,7 +160,7 @@ export default function ApprovalModal({ material, courses, onClose, onDone }: Pr
     } catch {}
     const { updateDoc, doc } = await import('firebase/firestore');
     const { db } = await import('@/lib/firebase/config');
-    await updateDoc(doc(db, 'materials', material.id), { status: 'quarantined' });
+    await updateDoc(doc(db, 'materials', material.id), { status: 'quarantined', indexed: false });
     setStatus('Quarantined.');
     setTimeout(onDone, 600);
     setLoading(false);

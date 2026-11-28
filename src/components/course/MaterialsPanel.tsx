@@ -177,22 +177,23 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
     if (!courseId) return;
     setLoading(true);
 
-    // Fetch both own + shared materials. We intentionally do NOT filter by
-    // status here — the admin may have approved via Firestore directly with
-    // a different field value. We show everything that's indexed.
+    // Own + shared materials. Same rule as the Library page: approved AND indexed only.
+    // Quarantined or removed files never show here.
     Promise.all([
       getDocs(
         query(
           collection(db, 'materials'),
           where('confirmedCourseId', '==', courseId),
-          where('indexed', '==', true)
+          where('indexed', '==', true),
+          where('status', '==', 'approved')
         )
       ),
       getDocs(
         query(
           collection(db, 'materials'),
           where('sharedCourseIds', 'array-contains', courseId),
-          where('indexed', '==', true)
+          where('indexed', '==', true),
+          where('status', '==', 'approved')
         )
       ),
     ])

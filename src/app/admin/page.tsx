@@ -964,7 +964,8 @@ useEffect(() => {
   async function handleQuarantine(m: Material) {
     setActionLoading(true);
     try {
-      await updateDoc(doc(db, 'materials', m.id), { status: 'quarantined' });
+      try { await authFetch('/api/admin/reindex-material', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materialId: m.id, quarantine: true }) }); } catch { /* the update below still applies */ }
+      await updateDoc(doc(db, 'materials', m.id), { status: 'quarantined', indexed: false });
       logAdminAction({ adminId: firebaseUser?.uid ?? '', email: firebaseUser?.email ?? '', action: 'material_quarantined', targetId: m.id, targetName: m.fileName }).catch(() => {});
       await load();
       setDrawerOpen(false); setSelected(null);

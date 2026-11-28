@@ -37,6 +37,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing materialId or fileUrl." }, { status: 400 });
     }
 
+    const stillThere = await adminDb.collection("materials").doc(materialId).get();
+    if (!stillThere.exists) {
+      console.log(`[process-background] Material ${materialId} was removed; skipping.`);
+      return NextResponse.json({ success: true, skipped: "removed" });
+    }
     console.log(`[process-background] Starting for material ${materialId}`);
 
     // Always read the file from R2 (Redis is no longer used).

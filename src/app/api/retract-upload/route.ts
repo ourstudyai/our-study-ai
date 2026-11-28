@@ -6,7 +6,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { r2Client, R2_BUCKET } from "@/lib/r2";
 
 // Lets a contributor take back a file they just uploaded (wrong file, or something private).
-// Only the person who uploaded it, and only while it is still waiting for admins (not yet sorted).
+// Only the person who uploaded it, and only until an admin has acted on it (not sorted, approved or quarantined).
 export async function POST(req: NextRequest) {
   try {
     const decoded = await getRequestUser(req);
@@ -25,8 +25,9 @@ export async function POST(req: NextRequest) {
     if (mat.uploadedBy !== decoded.uid) {
       return NextResponse.json({ error: "Only the person who uploaded this file can remove it." }, { status: 403 });
     }
-    if (mat.status !== "upload_review") {
-      return NextResponse.json({ error: "An admin has already started sorting this file. Please ask an admin to remove it." }, { status: 409 });
+    const REMOVABLE = ["upload_review", "processing", "pending_review", "ocr_pending"];
+    if (!REMOVABLE.includes(String(mat.status))) {
+      return NextResponse.json({ error: "An admin has already started handling this file. Please ask an admin to remove it." }, { status: 409 });
     }
     if (mat.hasDuplicateHits) {
       return NextResponse.json({ error: "Someone else also uploaded this exact file, so it cannot be removed here. Please ask an admin." }, { status: 409 });

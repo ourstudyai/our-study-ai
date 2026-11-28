@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser, isAdminUser } from "@/lib/auth/requestUser";
 import { adminDb } from "@/lib/firebase/admin";
 import { R2_PUBLIC_URL } from "@/lib/r2";
+import { queueMaterialForOcr } from "@/lib/ocrQueue";
 
 const CATEGORIES = ["lecture_notes", "past_questions", "aoc", "syllabus", "student_notes", "other"];
 
-// Registers an uploaded file as an unsorted material. No OCR, no extraction:
-// admins sort first, then send to OCR.
+// Registers an uploaded file and queues it for background OCR straight away (no admin step).
+// If the queue is unavailable the file stays in upload_review for the manual route.
 export async function POST(req: NextRequest) {
   try {
     const decoded = await getRequestUser(req);
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               type: "new_upload",
               title: "📤 New Uploads",
-              body: `${count} file${count !== 1 ? "s" : ""} uploaded for ${String(body.label ?? "review")}, awaiting sorting.`,
+              body: `${count} file${count !== 1 ? "s" : ""} uploaded for ${String(body.label ?? "review")}, queued for automatic reading.`,
               data: { status: "upload_review" },
             }),
           });
@@ -64,13 +65,18 @@ export async function POST(req: NextRequest) {
       suggestedCourseId: suggestedCourseId || null,
       suggestedCourseName: suggestedCourseName ? String(suggestedCourseName).slice(0, 200) : null,
       category: CATEGORIES.includes(category) ? category : null,
+      // The uploader's own guesses are kept as hints; OCR decides what the file really is.
+      uploaderHintCourseId: suggestedCourseId || null,
+      uploaderHintCourseName: suggestedCourseName ? String(suggestedCourseName).slice(0, 200) : null,
+      uploaderHintCategory: CATEGORIES.includes(category) ? category : null,
       status: "upload_review",
       indexed: false,
       createdAt: now,
       updatedAt: now,
     });
 
-    return NextResponse.json({ success: true, materialId: matRef.id, status: "upload_review" });
+    const queued = await queueMaterialForOcr(matRef.id);
+    return NextResponse.json({ success: true, materialId: matRef.id, status: queued ? "processing" : "upload_review", autoOcr: queued });
   } catch (err) {
     console.error("[process-upload]", err);
     return NextResponse.json({ error: "Failed to register upload." }, { status: 500 });
