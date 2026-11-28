@@ -34,19 +34,19 @@ export default function ExternalLibraryButton() {
         <span className="lux-ext-clip" aria-hidden="true"><span className="lux-ext-shine" /></span>
       </a>
       <style>{`
-        .lux-ext{position:relative;flex-shrink:0;display:inline-flex;align-items:center;gap:9px;padding:6px 14px 6px 6px;
+        .lux-ext{position:relative;flex-shrink:0;display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 5px;
           border-radius:999px;text-decoration:none;color:#fbf6ea;border:2px solid #d9b25f;
           background:linear-gradient(135deg,#6b2437 0%,#4a1626 100%);
           box-shadow:0 4px 16px rgba(107,36,55,.55),inset 0 1px 0 rgba(255,255,255,.18);
           animation:luxExtPulse 3s ease-in-out infinite;-webkit-tap-highlight-color:transparent;transition:transform .15s}
         .lux-ext:hover{transform:translateY(-1px)}
         .lux-ext:active{transform:scale(.96)}
-        .lux-ext-logo{width:36px;height:36px;border-radius:50%;overflow:hidden;background:#fff;border:2px solid #d9b25f;
+        .lux-ext-logo{width:32px;height:32px;border-radius:50%;overflow:hidden;background:#fff;border:2px solid #d9b25f;
           display:flex;align-items:center;justify-content:center;flex-shrink:0}
         .lux-ext-logo img{width:100%;height:100%;object-fit:cover;display:block}
         .lux-ext-text{display:flex;flex-direction:column;line-height:1.15;text-align:left}
-        .lux-ext-top{font-size:.54rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#e8c878}
-        .lux-ext-main{font-family:'Playfair Display',serif;font-size:.8rem;font-weight:800;white-space:nowrap}
+        .lux-ext-top{font-size:.5rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#e8c878}
+        .lux-ext-main{font-family:'Playfair Display',serif;font-size:.74rem;font-weight:800;white-space:nowrap}
         .lux-ext-clip{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none}
         .lux-ext-shine{position:absolute;top:0;bottom:0;width:35%;left:-60%;transform:skewX(-20deg);
           background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);animation:luxExtShine 4.5s ease-in-out infinite}

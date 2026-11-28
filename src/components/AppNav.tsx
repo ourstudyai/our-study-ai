@@ -142,9 +142,9 @@ export default function AppNav({ children }: AppNavProps) {
     padding: '9px 12px', borderRadius: '10px', width: '100%',
     textAlign: 'left', cursor: 'pointer', fontSize: '0.85rem',
     fontWeight: pathname === href || pathname.startsWith(href + '/') ? 700 : 500,
-    background: pathname === href || pathname.startsWith(href + '/') ? 'rgba(196,160,80,0.15)' : 'transparent',
+    background: pathname === href || pathname.startsWith(href + '/') ? 'rgba(196,160,80,0.15)' : href === '/contribute' ? 'linear-gradient(135deg, rgba(196,160,80,0.18), rgba(196,160,80,0.05))' : 'transparent',
     color: pathname === href || pathname.startsWith(href + '/') ? 'var(--gold)' : 'var(--text-secondary)',
-    border: pathname === href || pathname.startsWith(href + '/') ? '1px solid rgba(196,160,80,0.3)' : '1px solid transparent',
+    border: pathname === href || pathname.startsWith(href + '/') ? '1px solid rgba(196,160,80,0.3)' : href === '/contribute' ? '1px solid rgba(196,160,80,0.55)' : '1px solid transparent',
     transition: 'all 0.15s',
   });
 
@@ -163,6 +163,9 @@ export default function AppNav({ children }: AppNavProps) {
       {navLinks.filter(l => l.show).map(link => (
         <button key={link.href} onClick={() => { router.push(link.href); onNav?.(); }} style={linkStyle(link.href)}>
           <span>{link.icon}</span>{link.label}
+          {link.href === '/contribute' && (
+            <span style={{ marginLeft: 'auto', background: 'var(--gold)', color: '#0a1020', fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.04em', padding: '2px 8px', borderRadius: '99px', whiteSpace: 'nowrap' }}>Share material</span>
+          )}
         </button>
       ))}
       <button onClick={() => { setFaqOpen(true); onNav?.(); }}
@@ -289,8 +292,8 @@ export default function AppNav({ children }: AppNavProps) {
     <button onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', background: 'transparent', border: 'none', padding: '0' }}>
       <img src="/icons/icon-192.png" alt="Onus Meum Leve" style={{ width: '32px', height: '32px', objectFit: 'contain', flexShrink: 0 }} />
       <div style={{ textAlign: 'left' }}>
-        <div style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', lineHeight: 1.2 }}>Lux Studiorum</div>
-        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>Lux in Tenebris</div>
+        <div style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', lineHeight: 1.2, whiteSpace: 'nowrap' }}>Lux Studiorum</div>
+        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2, whiteSpace: 'nowrap' }}>Lux in Tenebris</div>
       </div>
     </button>
   );
@@ -317,7 +320,7 @@ export default function AppNav({ children }: AppNavProps) {
         <Logo />
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {isAdmin && <BellButton size="sm" />}
-          <button onClick={() => setFaqOpen(true)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 10px', color: 'var(--text-secondary)', cursor: 'pointer' }}>❓</button>
+          <button onClick={() => setFaqOpen(true)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 8px', color: 'var(--text-secondary)', cursor: 'pointer' }}>❓</button>
           <HamburgerButton onClick={() => setMobileNavOpen(true)} />
         </div>
       </div>

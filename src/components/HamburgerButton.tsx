@@ -13,9 +13,9 @@ export default function HamburgerButton({ onClick, id }: { onClick: () => void; 
         <span className="lux-burger-clip" aria-hidden="true"><span className="lux-burger-shine" /></span>
       </button>
       <style>{`
-        .lux-burger{position:relative;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 12px 0 10px;
+        .lux-burger{position:relative;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 10px 0 9px;
           border:none;border-radius:999px;cursor:pointer;color:#0a1020;white-space:nowrap;
-          font-family:'Playfair Display',serif;font-weight:800;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;
+          font-family:'Playfair Display',serif;font-weight:800;font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;
           background:linear-gradient(135deg,var(--gold-light) 0%,var(--gold) 100%);
           box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 0 rgba(0,0,0,.18);
           animation:luxBreath 2.4s ease-in-out infinite;-webkit-tap-highlight-color:transparent;transition:transform .15s}
@@ -24,7 +24,7 @@ export default function HamburgerButton({ onClick, id }: { onClick: () => void; 
           opacity:.45;z-index:-1;animation:luxGlow 2.4s ease-in-out infinite;pointer-events:none}
         .lux-burger-ring{position:absolute;inset:0;border-radius:inherit;border:2px solid var(--gold-light);
           animation:luxPing 2.4s ease-out infinite;pointer-events:none}
-        .lux-burger-bars{display:flex;flex-direction:column;gap:3.5px;width:16px}
+        .lux-burger-bars{display:flex;flex-direction:column;gap:3.5px;width:15px}
         .lux-burger-bars i{display:block;height:2.5px;border-radius:2px;background:#0a1020;transform-origin:left center;
           animation:luxBar 1.8s ease-in-out infinite}
         .lux-burger-bars i:nth-child(2){animation-delay:.2s}
@@ -34,7 +34,7 @@ export default function HamburgerButton({ onClick, id }: { onClick: () => void; 
           background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);animation:luxShine 3.4s ease-in-out infinite}
         @keyframes luxBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
         @keyframes luxGlow{0%,100%{opacity:.3}50%{opacity:.75}}
-        @keyframes luxPing{0%{transform:scale(1);opacity:.85}100%{transform:scale(1.4,1.8);opacity:0}}
+        @keyframes luxPing{0%{transform:scale(1);opacity:.85}100%{transform:scale(1.25,1.3);opacity:0}}
         @keyframes luxBar{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.55)}}
         @keyframes luxShine{0%,55%{left:-60%}100%{left:130%}}
         @media (max-width:370px){.lux-burger-text{display:none}.lux-burger{padding:0 10px}}

@@ -858,11 +858,11 @@ async function fetchBody(materialId: string): Promise<string> {
 
           <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '4px' }}>Lux Studiorum</p>
+              <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', opacity: 0.6, marginBottom: '4px', whiteSpace: 'nowrap' }}>Lux Studiorum</p>
               <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: 'clamp(1.2rem, 5vw, 1.6rem)', fontWeight: 700, color: 'var(--gold)', marginBottom: '2px' }}>Materials Library</h1>
               <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{filtered.length} material{filtered.length !== 1 ? 's' : ''} indexed{materials.length !== filtered.length ? ` · ${materials.length} total` : ''}</p>
               {isChiefOrSupreme && (
-                <button onClick={() => exportList(filtered)} style={{ marginTop: '8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '9px', padding: '7px 14px', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem' }}>↓ Export list</button>
+                <button onClick={() => exportList(filtered)} style={{ marginTop: '8px', whiteSpace: 'nowrap', background: 'transparent', border: '1px solid var(--border)', borderRadius: '9px', padding: '7px 14px', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem' }}>↓ Export list</button>
               )}
             </div>
             <ExternalLibraryButton />
