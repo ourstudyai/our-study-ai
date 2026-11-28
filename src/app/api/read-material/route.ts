@@ -3,6 +3,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { readMaterial } from "@/lib/processing/reader";
+import { queueArrangeStart } from "@/lib/arrangeQueue";
 
 // Runs the AI reading pass for one material. Called by QStash only.
 export async function POST(req: NextRequest) {
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
       await adminDb.collection("materials").doc(String(materialId))
         .update({ readStatus: "failed", readError: out.reason ?? "unknown", updatedAt: new Date().toISOString() })
         .catch(() => {});
+    }
+    if (out.ok) {
+      // Next job: clean the whole text (separate from sorting). A queue problem here must not fail the reading job.
+      await queueArrangeStart(String(materialId));
     }
     return NextResponse.json({ success: out.ok, reason: out.reason ?? null });
   } catch (err) {
