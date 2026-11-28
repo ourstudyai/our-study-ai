@@ -14,6 +14,7 @@ export type MaterialStatus =
     | "quarantined"
     | "awaiting_course"
     | "ocr_pending"
+    | "ocr_failed"
     | "approved"
     | "rejected"
     | "approved_hidden";

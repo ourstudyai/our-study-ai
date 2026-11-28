@@ -25,6 +25,7 @@ import OcrQueuePanel from '@/components/admin/OcrQueuePanel';
 import CoverageTab from '@/components/admin/CoverageTab';
 import LuxLoader from '@/components/LuxLoader';
 import { logAdminAction } from '@/lib/analytics/tracker';
+import { MATERIAL_STATUS, tabForStatus } from '@/lib/materialStatus';
 const SUPREME = 'ourstudyai@gmail.com';
 
 type Tab = 'uploads' | 'ocrqueue' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
@@ -795,11 +796,11 @@ export default function AdminPage() {
     setLoading(true);
     try {
       const [u, p, a, q, r] = await Promise.all([
-        getMaterialsByStatus('upload_review'),
-        getMaterialsByStatus('pending_review'),
-        getMaterialsByStatus('approved'),
-        getMaterialsByStatus('quarantined'),
-        getMaterialsByStatus('ocr_pending'),
+        getMaterialsByStatus(MATERIAL_STATUS.UPLOAD_REVIEW),
+        getMaterialsByStatus(MATERIAL_STATUS.PENDING_REVIEW),
+        getMaterialsByStatus(MATERIAL_STATUS.APPROVED),
+        getMaterialsByStatus(MATERIAL_STATUS.QUARANTINED),
+        getMaterialsByStatus(MATERIAL_STATUS.OCR_PENDING),
       ]);
       setUploads(u); setPending(p); setApproved(a); setQuarantined(q); setResurrection(r);
       const cSnap = await getDocs(query(collection(db, 'courses'), orderBy('name')));
@@ -942,7 +943,34 @@ useEffect(() => {
     } finally { setActionLoading(false); }
   }
 
-  function openDetail(m: Material) { setSelected(m); if (m.status === 'pending_review' || m.status === 'ocr_pending') { setApprovalOpen(true); } else { setDrawerOpen(true); } }
+  // Deep links from notifications: /admin?tab=users and /admin?material=ID
+  const [deepLink, setDeepLink] = useState<{ tab: string | null; material: string | null } | null>(null);
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const t = p.get('tab');
+      const mid = p.get('material');
+      if (t || mid) setDeepLink({ tab: t, material: mid });
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    if (!deepLink || loading || authLoading) return;
+    const wanted = deepLink.tab ? TABS.find(t => t.key === deepLink.tab && (!t.supremeOnly || isSupreme)) : undefined;
+    if (wanted) setTab(wanted.key);
+    if (deepLink.material) {
+      const all = [...uploads, ...pending, ...approved, ...quarantined, ...resurrection];
+      const found = all.find(x => x.id === deepLink.material);
+      if (found) {
+        const target = tabForStatus(found.status) as Tab | null;
+        if (target && !wanted) setTab(target);
+        openDetail(found);
+      }
+    }
+    setDeepLink(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLink, loading, authLoading]);
+
+  function openDetail(m: Material) { setSelected(m); if (m.status === MATERIAL_STATUS.PENDING_REVIEW || m.status === MATERIAL_STATUS.OCR_PENDING) { setApprovalOpen(true); } else { setDrawerOpen(true); } }
 
   if (authLoading || loading) return <LuxLoader label="Admin Panel" />;
 
