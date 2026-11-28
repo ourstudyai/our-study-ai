@@ -6,6 +6,7 @@ import { MaterialCategory } from '@/lib/processing/classifier';
 import { FieldValue } from 'firebase-admin/firestore';
 import { deleteChunksByMaterial } from '@/lib/qdrant/upsert';
 import { setMaterialVisible } from '@/lib/qdrant/visibility';
+import { getArrangedText } from '@/lib/processing/arrangedText';
 import {
   upsertPQVectorWithMaterial,
   deletePQVectorsByMaterial,
@@ -285,6 +286,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
 
     const finalStatus = shouldIndex ? 'approved' : 'approved_hidden';
+
+    // Cleaned text is indexed only when the admin did not edit the text and the kind is not past questions or AOC
+    // (those are parsed line by line). The raw text in body/extracted is never replaced by cleaned text.
+    let indexText: string = extractedText;
+    let keepRaw = false;
+    if (shouldIndex && category !== 'past_questions' && category !== 'aoc') {
+      const rawSnap = await adminDb.collection('materials').doc(materialId).collection('body').doc('extracted').get();
+      const storedRaw = String((rawSnap.data() as any)?.extractedText ?? '');
+      if (storedRaw && storedRaw.trim() === String(extractedText).trim()) {
+        const cleaned = await getArrangedText(materialId);
+        if (cleaned) { indexText = cleaned; keepRaw = true; }
+      }
+    }
     let parsePreview = '';
 
     if (shouldIndex) {
@@ -312,7 +326,7 @@ export async function POST(req: NextRequest) {
         await fetch(`${QSTASH_URL}/${APP_URL}/api/index-chunks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.QSTASH_TOKEN}` },
-          body: JSON.stringify({ materialId, courseId, category, extractedText }),
+          body: JSON.stringify({ materialId, courseId, category, extractedText: indexText }),
         });
         console.log(`[reindex] chunks enqueued for ${materialId}`);
       }
@@ -332,12 +346,13 @@ export async function POST(req: NextRequest) {
       department: department || null,
       year: year || null,
       semester: semester || null,
-      wordCount: extractedText.split(/\s+/).filter(Boolean).length,
+      wordCount: indexText.split(/\s+/).filter(Boolean).length,
       updatedAt: new Date().toISOString(),
       metaStatus: shouldIndex ? 'pending' : null,
+      indexedFromCleaned: keepRaw,
     });
     // Heavy text → sub-document
-    await adminDb
+    if (!keepRaw) await adminDb
       .collection('materials').doc(materialId)
       .collection('body').doc('extracted')
       .set({ extractedText, updatedAt: new Date().toISOString() });

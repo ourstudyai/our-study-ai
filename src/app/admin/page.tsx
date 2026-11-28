@@ -833,7 +833,7 @@ export default function AdminPage() {
 useEffect(() => {
     if (!selected) { setPreviewText(null); return; }
     setPreviewLoading(true);
-    fetch('/api/material-body?materialId=' + encodeURIComponent(selected.id))
+    fetch('/api/material-body?materialId=' + encodeURIComponent(selected.id) + '&v=cleaned')
       .then(r => r.json())
       .then(d => setPreviewText(d.extractedText ?? null))
       .catch(() => setPreviewText(null))

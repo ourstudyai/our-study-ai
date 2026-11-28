@@ -497,7 +497,7 @@ export default function MaterialsPanel({ courseId, onOpenViewer }: Props) {
                   onClick={async () => {
                   setViewerLoading(m.id);
                     try {
-                      const res = await fetch('/api/material-body?materialId=' + encodeURIComponent(m.id));
+                      const res = await fetch('/api/material-body?materialId=' + encodeURIComponent(m.id) + '&v=cleaned');
                       const { extractedText } = await res.json();
                       if (extractedText) onOpenViewer('material-text', { fileName: displayName, extractedText });
                     } finally {

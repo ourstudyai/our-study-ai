@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/lib/firebase/admin';
 import { cookies } from 'next/headers';
+import { getArrangedText } from '@/lib/processing/arrangedText';
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,6 +14,12 @@ export async function GET(req: NextRequest) {
 
     const materialId = req.nextUrl.searchParams.get('materialId');
     if (!materialId) return NextResponse.json({ error: 'Missing materialId' }, { status: 400 });
+
+    // ?v=cleaned: the cleaned text when the cleaning pass has finished. Without it (or when not finished) the raw text is returned.
+    if (req.nextUrl.searchParams.get('v') === 'cleaned') {
+      const cleaned = await getArrangedText(materialId);
+      if (cleaned) return NextResponse.json({ extractedText: cleaned, cleaned: true });
+    }
 
     // Try sub-document first (new path)
     const subSnap = await adminDb

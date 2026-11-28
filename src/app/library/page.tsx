@@ -336,7 +336,7 @@ async function fetchBody(materialId: string): Promise<string> {
     if (bodyCache[materialId]) return bodyCache[materialId];
     setBodyFetching(materialId);
     try {
-      const res = await fetch('/api/material-body?materialId=' + encodeURIComponent(materialId));
+      const res = await fetch('/api/material-body?materialId=' + encodeURIComponent(materialId) + '&v=cleaned');
       const { extractedText } = await res.json();
       const text = extractedText ?? '';
       setBodyCache(c => ({ ...c, [materialId]: text }));

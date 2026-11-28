@@ -9,6 +9,13 @@ export type CourseLite = { id: string; name: string; code?: string; department: 
 export function acceptBlockReason(m: any, courses: CourseLite[]): string | null {
   if (!m.suggestedCourseId || !courses.some(c => c.id === m.suggestedCourseId)) return 'No course chosen yet. Use Edit.';
   if (normalizeCategory(m.category) === 'aoc') return 'Areas of Concentration need the exam year. Use Edit.';
+  const cat = normalizeCategory(m.category);
+  const started = Date.parse(m.arrangeStartedAt || '');
+  const stale = !!started && Date.now() - started > 15 * 60 * 1000;   // a stuck job must not block Accept forever
+  if (m.arrangeStatus === 'running' && !stale && cat !== 'past_questions' && cat !== 'aoc') {
+    const c = m.arrangeChunks || {};
+    return 'Still cleaning the text (' + (c.done ?? 0) + ' of ' + (c.total ?? '?') + ' parts). Wait a minute.';
+  }
   return null;
 }
 
