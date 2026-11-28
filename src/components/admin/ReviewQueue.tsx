@@ -15,6 +15,15 @@ const KIND_LABEL: Record<string, string> = {
 };
 const CONF_COLOR: Record<string, string> = { high: '#22c55e', medium: '#eab308', low: '#ef4444' };
 
+function arrangeLine(a: any): string {
+  const st = a.arrangeStatus;
+  const c = a.arrangeChunks || {};
+  if (st === 'running') return 'Cleaning text… ' + (c.done ?? 0) + ' of ' + (c.total ?? '?') + ' parts';
+  if (st === 'done') return c.kept > 0 ? 'Text cleaned · ' + c.kept + ' of ' + c.total + ' parts kept as original' : 'Text cleaned';
+  if (st === 'failed') return 'Cleaning failed' + (a.arrangeError ? ': ' + a.arrangeError : '');
+  return '';
+}
+
 type Props = {
   materials: Material[];
   courses: CourseLite[];
@@ -38,6 +47,8 @@ export default function ReviewQueue({ materials, courses, onEdit, onChanged }: P
   const [bulk, setBulk] = useState<'idle' | 'confirm' | 'running'>('idle');
   const [bulkMsg, setBulkMsg] = useState('');
   const [reading, setReading] = useState(false);
+  const [cleaned, setCleaned] = useState<Record<string, string>>({});
+  const [showClean, setShowClean] = useState<Record<string, boolean>>({});
 
   function info(m: Material) {
     const a = m as any;
@@ -64,6 +75,21 @@ export default function ReviewQueue({ materials, courses, onEdit, onChanged }: P
         setFirstPage(p => ({ ...p, [m.id]: t || 'No cleaned preview yet.' }));
       } catch {
         setFirstPage(p => ({ ...p, [m.id]: 'Could not load the preview.' }));
+      }
+    }
+  }
+
+  async function toggleCleaned(m: Material) {
+    const on = !showClean[m.id];
+    setShowClean(p => ({ ...p, [m.id]: on }));
+    if (on && cleaned[m.id] === undefined) {
+      try {
+        const d = await fetch('/api/material-body?materialId=' + encodeURIComponent(m.id) + '&v=cleaned').then(r => r.json());
+        const t = String(d.extractedText ?? '');
+        const cut = t.length > 6000 ? t.slice(0, 6000) + '\n\n… (first 6,000 characters shown)' : t;
+        setCleaned(p => ({ ...p, [m.id]: cut || 'No text.' }));
+      } catch {
+        setCleaned(p => ({ ...p, [m.id]: 'Could not load the cleaned text.' }));
       }
     }
   }
@@ -170,6 +196,7 @@ export default function ReviewQueue({ materials, courses, onEdit, onChanged }: P
               {kind && <span style={{ fontSize: '0.64rem', background: 'rgba(196,160,80,0.1)', color: 'var(--gold)', borderRadius: 99, padding: '2px 8px' }}>{kind}</span>}
               {!r && <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>{a.readStatus === 'queued' ? 'AI is reading…' : a.readStatus === 'failed' ? 'AI could not read it' : 'Not read by AI yet'}</span>}
               {a.wordCount ? <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>{Number(a.wordCount).toLocaleString()} words</span> : null}
+              {arrangeLine(a) && <span style={{ fontSize: '0.64rem', color: a.arrangeStatus === 'failed' ? '#ef4444' : 'var(--text-muted)' }}>{arrangeLine(a)}</span>}
             </div>
 
             {r?.summary && (
@@ -228,6 +255,17 @@ export default function ReviewQueue({ materials, courses, onEdit, onChanged }: P
                   maxHeight: 260, overflowY: 'auto', background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: 10 }}>
                   {firstPage[m.id] === undefined ? 'Loading…' : firstPage[m.id]}
                 </div>
+                {a.arrangeStatus === 'done' && (
+                  <div style={{ marginTop: 8 }}>
+                    <button onClick={() => toggleCleaned(m)} style={btn(false)}>{showClean[m.id] ? 'Hide cleaned text' : 'Show cleaned text'}</button>
+                    {showClean[m.id] && (
+                      <div style={{ marginTop: 8, fontSize: '0.74rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.55,
+                        maxHeight: 320, overflowY: 'auto', background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: 10 }}>
+                        {cleaned[m.id] === undefined ? 'Loading…' : cleaned[m.id]}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <p style={{ fontSize: '0.64rem', color: 'var(--text-muted)', marginTop: 6 }}>
                   {a.fileName} · {a.uploaderEmail || 'unknown uploader'}
                 </p>
