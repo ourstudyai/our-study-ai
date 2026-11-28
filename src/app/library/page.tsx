@@ -869,6 +869,7 @@ async function fetchBody(materialId: string): Promise<string> {
           </div>
 
           <button
+            className="lux-cue"
             onClick={() => document.getElementById('lux-materials')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', cursor: 'pointer', marginBottom: '16px',
               background: 'linear-gradient(135deg, rgba(196,160,80,0.16), rgba(196,160,80,0.05))', border: '1px solid rgba(196,160,80,0.45)', borderRadius: '12px', padding: '11px 14px' }}>
@@ -877,7 +878,7 @@ async function fetchBody(materialId: string): Promise<string> {
               <span style={{ display: 'block', fontFamily: 'Playfair Display, serif', fontSize: '0.88rem', fontWeight: 700, color: 'var(--gold)' }}>Our class materials are right below</span>
               <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Notes, handouts and past questions for your course. Tap to jump there.</span>
             </span>
-            <style>{`.lux-down-arrow{animation:luxDown 1.4s ease-in-out infinite}@keyframes luxDown{0%,100%{transform:translateY(-2px)}50%{transform:translateY(4px)}}@media (prefers-reduced-motion:reduce){.lux-down-arrow{animation:none}}`}</style>
+            <style>{`.lux-down-arrow{animation:luxDown 1.4s ease-in-out infinite}@keyframes luxDown{0%,100%{transform:translateY(-2px)}50%{transform:translateY(4px)}}@media (prefers-reduced-motion:reduce){.lux-down-arrow{animation:none}}@media (min-width:768px){.lux-cue{display:none !important}}`}</style>
           </button>
 
           <div style={{ borderLeft: '3px solid var(--gold)', background: 'rgba(196,160,80,0.06)', borderRadius: '0 10px 10px 0', padding: '12px 16px', marginBottom: '20px' }}>
