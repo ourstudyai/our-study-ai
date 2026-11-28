@@ -47,6 +47,28 @@ const TABS: { key: Tab; label: string; icon: string; supremeOnly?: boolean }[] =
   { key: 'analytics',    label: 'Analytics',   icon: '📈', supremeOnly: true },
 ];
 
+// Tabs that share one menu entry. The inner tabs stay as they were; they show as chips.
+const GROUPS: { key: string; label: string; icon: string; tabs: Tab[] }[] = [
+  { key: 'review',  label: 'Review',  icon: '📥', tabs: ['uploads', 'ocrqueue'] },
+  { key: 'library', label: 'Library', icon: '🗂', tabs: ['approved', 'quarantined', 'resurrection'] },
+];
+
+type NavEntry = { key: string; label: string; icon: string; members: Tab[]; supremeOnly?: boolean };
+
+function buildNav(): NavEntry[] {
+  const out: NavEntry[] = [];
+  const seen: Record<string, boolean> = {};
+  TABS.forEach(t => {
+    const g = GROUPS.find(x => x.tabs.indexOf(t.key) >= 0);
+    if (!g) { out.push({ key: t.key, label: t.label, icon: t.icon, members: [t.key], supremeOnly: t.supremeOnly }); return; }
+    if (seen[g.key]) return;
+    seen[g.key] = true;
+    out.push({ key: g.key, label: g.label, icon: g.icon, members: g.tabs });
+  });
+  return out;
+}
+const NAV = buildNav();
+
 type Course = { id: string; name: string; code?: string; department: string; year: number; semester: number; description?: string; published?: boolean };
 
 // ============================================================
@@ -886,6 +908,12 @@ useEffect(() => {
     courses: courses.length,
   };
 
+  // Library shows only what needs attention (quarantined + resurrection), not the big approved total.
+  function navBadge(n: NavEntry): number {
+    if (n.key === 'library') return (counts.quarantined || 0) + (counts.resurrection || 0);
+    return n.members.reduce((sum, k) => sum + (counts[k] || 0), 0);
+  }
+
   async function handleApprove(m: Material, courseId?: string, courseName?: string) {
     const nameDuplicate = approved.find(
       a => a.id !== m.id && a.fileName.toLowerCase() === m.fileName.toLowerCase()
@@ -992,6 +1020,29 @@ useEffect(() => {
           </div>
         </div>
 
+        {(() => {
+          const grp = GROUPS.find(g => g.tabs.indexOf(tab) >= 0);
+          if (!grp) return null;
+          return (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '0 16px', marginBottom: 12 }}>
+              {grp.tabs.map(k => {
+                const on = k === tab;
+                const num = counts[k] || 0;
+                return (
+                  <button key={k} onClick={() => setTab(k)} style={{
+                    padding: '6px 12px', borderRadius: 99, cursor: 'pointer',
+                    fontSize: '0.74rem', fontWeight: on ? 700 : 500,
+                    background: on ? 'rgba(196,160,80,0.14)' : 'transparent',
+                    border: on ? '1px solid var(--gold)' : '1px solid var(--border)',
+                    color: on ? 'var(--gold)' : 'var(--text-muted)',
+                  }}>
+                    {TABS.find(t => t.key === k)?.label}{num ? ' · ' + num : ''}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
         <TabHelp tab={tab} />
         {tab === 'uploads' && (
           <UploadsPanel
@@ -1165,27 +1216,28 @@ useEffect(() => {
         display: 'flex', overflowX: 'auto', padding: '8px 0 12px',
         justifyContent: isDesktop ? 'center' : 'flex-start',
       }}>
-        {TABS.filter(t => !t.supremeOnly || isSupreme).map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-            padding: '4px 14px', background: 'transparent', border: 'none',
-            color: tab === t.key ? 'var(--gold)' : 'var(--text-muted)',
-            fontSize: '0.6rem', fontWeight: tab === t.key ? 700 : 400,
-            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-            borderTop: tab === t.key ? '2px solid var(--gold)' : '2px solid transparent',
-            transition: 'all 0.15s',
-          }}>
-            <span style={{ fontSize: '1rem' }}>{t.icon}</span>
-            {t.label}
-            {counts[t.key] ? (
-              <span style={{ fontSize: '0.58rem', fontWeight: 700,
-                color: t.key === 'quarantined' ? '#ef4444' : '#eab308' }}>
-                {counts[t.key]}
-              </span>
-            ) : null}
-            {t.key === 'approved' && removedCount > 0 ? <span title="Removed from Library" style={{ fontSize: '0.58rem', fontWeight: 700, color: '#ef4444' }}>{removedCount}↩</span> : null}
-          </button>
-        ))}
+        {NAV.filter(n => !n.supremeOnly || isSupreme).map(n => {
+          const active = n.members.indexOf(tab) >= 0;
+          const badge = navBadge(n);
+          return (
+            <button key={n.key} onClick={() => setTab(active ? tab : n.members[0])} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+              padding: '4px 14px', background: 'transparent', border: 'none',
+              color: active ? 'var(--gold)' : 'var(--text-muted)',
+              fontSize: '0.6rem', fontWeight: active ? 700 : 400,
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              borderTop: active ? '2px solid var(--gold)' : '2px solid transparent',
+              transition: 'all 0.15s',
+            }}>
+              <span style={{ fontSize: '1rem' }}>{n.icon}</span>
+              {n.label}
+              {badge ? (
+                <span style={{ fontSize: '0.58rem', fontWeight: 700, color: n.key === 'library' ? '#ef4444' : '#eab308' }}>{badge}</span>
+              ) : null}
+              {n.key === 'library' && removedCount > 0 ? <span title="Removed from Library" style={{ fontSize: '0.58rem', fontWeight: 700, color: '#ef4444' }}>{removedCount}↩</span> : null}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Desktop layout wrapper ── */}
@@ -1209,27 +1261,31 @@ useEffect(() => {
               </div>
             ) : null)}
           </div>
-          {TABS.filter(t => !t.supremeOnly || isSupreme).map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px',
-              background: tab === t.key ? 'rgba(196,160,80,0.1)' : 'transparent',
-              border: 'none', borderLeft: tab === t.key ? '3px solid var(--gold)' : '3px solid transparent',
-              color: tab === t.key ? 'var(--gold)' : 'var(--text-muted)',
-              fontSize: '0.8rem', fontWeight: tab === t.key ? 700 : 400,
-              cursor: 'pointer', width: '100%', textAlign: 'left', transition: 'all 0.15s',
-            }}>
-              <span style={{ fontSize: '0.85rem' }}>{t.icon}</span>
-              {t.label}
-              {counts[t.key] ? (
-                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', fontWeight: 700,
-                  color: t.key === 'quarantined' ? '#ef4444' : t.key === 'pending' ? '#eab308' : 'var(--gold)',
-                  background: 'rgba(196,160,80,0.1)', borderRadius: 99, padding: '1px 6px' }}>
-                  {counts[t.key]}
-                </span>
-              ) : null}
-              {t.key === 'approved' && removedCount > 0 ? <span title="Removed from Library" style={{ fontSize: '0.62rem', fontWeight: 700, color: '#ef4444' }}>{removedCount} removed</span> : null}
-            </button>
-          ))}
+          {NAV.filter(n => !n.supremeOnly || isSupreme).map(n => {
+            const active = n.members.indexOf(tab) >= 0;
+            const badge = navBadge(n);
+            return (
+              <button key={n.key} onClick={() => setTab(active ? tab : n.members[0])} style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px',
+                background: active ? 'rgba(196,160,80,0.1)' : 'transparent',
+                border: 'none', borderLeft: active ? '3px solid var(--gold)' : '3px solid transparent',
+                color: active ? 'var(--gold)' : 'var(--text-muted)',
+                fontSize: '0.8rem', fontWeight: active ? 700 : 400,
+                cursor: 'pointer', width: '100%', textAlign: 'left', transition: 'all 0.15s',
+              }}>
+                <span style={{ fontSize: '0.85rem' }}>{n.icon}</span>
+                {n.label}
+                {badge ? (
+                  <span style={{ marginLeft: 'auto', fontSize: '0.65rem', fontWeight: 700,
+                    color: n.key === 'library' ? '#ef4444' : n.key === 'pending' ? '#eab308' : 'var(--gold)',
+                    background: 'rgba(196,160,80,0.1)', borderRadius: 99, padding: '1px 6px' }}>
+                    {badge}
+                  </span>
+                ) : null}
+                {n.key === 'library' && removedCount > 0 ? <span title="Removed from Library" style={{ fontSize: '0.62rem', fontWeight: 700, color: '#ef4444' }}>{removedCount} removed</span> : null}
+              </button>
+            );
+          })}
         </div>
 
         {/* Desktop main content */}
