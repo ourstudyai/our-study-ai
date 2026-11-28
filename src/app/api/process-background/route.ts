@@ -5,6 +5,7 @@ import { extractText, ExtractionResult } from "@/lib/processing/extractor";
 import { classifyMaterial, MaterialCategory } from "@/lib/processing/classifier";
 import { adminDb } from "@/lib/firebase/admin";
 import { normalizeCategory } from "@/lib/categories";
+import { queueMaterialRead } from "@/lib/readQueue";
 
 export async function POST(req: NextRequest) {
   try {
@@ -107,6 +108,11 @@ export async function POST(req: NextRequest) {
         .collection("materials").doc(materialId)
         .collection("body").doc("extracted")
         .set({ extractedText: extraction.text, updatedAt: new Date().toISOString() });
+    }
+
+    // Hand the extracted text to the AI reading pass (what is it, which course, summary, first page).
+    if (extraction.text && extraction.method !== "ocr_pending") {
+      await queueMaterialRead(materialId);
     }
 
     try {
