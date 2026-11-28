@@ -16,6 +16,7 @@ import LuxLoader from '@/components/LuxLoader';
 import UnsortedBrowser, { LibraryTabs } from '@/components/library/UnsortedBrowser';
 import { Chevron, ShelfRail, groupByCategory } from '@/components/library/shelfUi';
 import { courseLabel as courseShortLabel, courseAliases, displayName, downloadBase } from '@/lib/courseLabel';
+import { buildFolioHtml } from '@/lib/folio';
 import MiniLoader from '@/components/MiniLoader';
 import { authFetch } from '@/lib/auth/authFetch';
 import {
@@ -142,98 +143,7 @@ function MarkdownBody({ text }: { text: string }) {
 
 // ── Downloads ────────────────────────────────────────────────────────────────
 function buildHtmlDoc(title: string, course: string, text: string, asPdf: boolean): string {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // Convert markdown to basic HTML for the print window
-  const lines = text.split('\n');
-  const htmlLines: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const l = lines[i];
-    if (l.trim() === '') { htmlLines.push('<br/>'); i++; continue; }
-    if (l.startsWith('# ')) { htmlLines.push(`<h1>${esc(l.slice(2))}</h1>`); i++; continue; }
-    if (l.startsWith('## ')) { htmlLines.push(`<h2>${esc(l.slice(3))}</h2>`); i++; continue; }
-    if (l.startsWith('### ')) { htmlLines.push(`<h3>${esc(l.slice(4))}</h3>`); i++; continue; }
-    if (l.startsWith('#### ')) { htmlLines.push(`<h4>${esc(l.slice(5))}</h4>`); i++; continue; }
-    if (/^[-*_]{3,}$/.test(l.trim())) { htmlLines.push('<hr/>'); i++; continue; }
-    if (l.trimStart().startsWith('- ') || l.trimStart().startsWith('* ')) {
-      htmlLines.push('<ul>');
-      while (i < lines.length && (lines[i].trimStart().startsWith('- ') || lines[i].trimStart().startsWith('* '))) {
-        htmlLines.push(`<li>${esc(lines[i].trimStart().slice(2))}</li>`); i++;
-      }
-      htmlLines.push('</ul>'); continue;
-    }
-    if (/^\d+\.\s/.test(l.trimStart())) {
-      htmlLines.push('<ol>');
-      while (i < lines.length && /^\d+\.\s/.test(lines[i].trimStart())) {
-        htmlLines.push(`<li>${esc(lines[i].trimStart().replace(/^\d+\.\s/, ''))}</li>`); i++;
-      }
-      htmlLines.push('</ol>'); continue;
-    }
-    // table — detect | ... | rows
-    if (l.trimStart().startsWith('|')) {
-      htmlLines.push('<table>');
-      let isHeader = true;
-      while (i < lines.length && lines[i].trimStart().startsWith('|')) {
-        const row = lines[i];
-        // skip separator rows like |---|---|
-        if (/^\|[\s\-:|]+\|/.test(row)) { isHeader = false; i++; continue; }
-        const cells = row.split('|').slice(1, -1).map(c => c.trim());
-        if (isHeader) {
-          htmlLines.push('<thead><tr>' + cells.map(c => `<th>${esc(c)}</th>`).join('') + '</tr></thead><tbody>');
-          isHeader = false;
-        } else {
-          htmlLines.push('<tr>' + cells.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>');
-        }
-        i++;
-      }
-      htmlLines.push('</tbody></table>'); continue;
-    }
-    // inline bold/italic
-    const inline = esc(l)
-      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>');
-    htmlLines.push(`<p>${inline}</p>`); i++;
-  }
-  const body = htmlLines.join('\n');
-  const printScript = asPdf ? '<script>window.onload=()=>{window.print();}<\/script>' : '';
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8"/>
-  <title>${esc(title)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;1,400&family=Noto+Serif+Hebrew&display=swap" rel="stylesheet"/>
-  <style>
-    body{font-family:'Noto Serif','Noto Serif Hebrew',Georgia,serif;font-size:11pt;line-height:1.85;color:#1a1a1a;margin:40px;max-width:700px;}
-    h1{font-size:16pt;font-weight:700;margin:24px 0 8px;color:#1a1a1a;border-bottom:1px solid #c4a050;padding-bottom:6px;}
-    h2{font-size:13pt;font-weight:700;margin:20px 0 6px;color:#2a2a2a;}
-    h3{font-size:11.5pt;font-weight:700;margin:16px 0 4px;}
-    h4{font-size:10.5pt;font-weight:700;font-style:italic;margin:12px 0 4px;color:#444;}
-    p{margin:0 0 8px;}
-    ul,ol{padding-left:24px;margin:6px 0 10px;}
-    li{margin-bottom:3px;}
-    hr{border:none;border-top:1px solid #c4a050;margin:16px 0;}
-    table{border-collapse:collapse;width:100%;margin:12px 0 16px;font-size:10.5pt;}
-    th{padding:7px 12px;text-align:left;font-weight:700;color:#7a6020;border-bottom:2px solid #c4a050;background:#fdf8ee;white-space:nowrap;}
-    td{padding:6px 12px;border-bottom:1px solid #e8dfc8;vertical-align:top;}
-    tr:nth-child(even) td{background:#fdfaf4;}
-    .title-block{margin-bottom:20px;}
-    .course{font-size:10pt;color:#666;font-style:italic;margin-bottom:4px;}
-    .divider{border:none;border-top:1px solid #c4a050;margin:16px 0 24px;}
-    @media print{body{margin:20mm;}}
-  </style>
-</head>
-<body>
-  <div class="title-block">
-    <h1 style="border:none;margin-bottom:4px;">${esc(title)}</h1>
-    ${course ? `<p class="course">${esc(course)}</p>` : ''}
-  </div>
-  <hr class="divider"/>
-  ${body}
-  ${printScript}
-</body>
-</html>`;
+  return buildFolioHtml({ title, course, text, asPdf, dateLabel: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) });
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
