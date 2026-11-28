@@ -79,6 +79,15 @@ export default function ReviewQueue({ materials, courses, onEdit, onChanged }: P
     }
   }
 
+  async function restartClean(m: Material) {
+    try {
+      await authFetch('/api/admin/rearrange', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materialIds: [m.id] }),
+      });
+    } catch { /* the line keeps showing the old state */ }
+    onChanged();
+  }
+
   async function toggleCleaned(m: Material) {
     const on = !showClean[m.id];
     setShowClean(p => ({ ...p, [m.id]: on }));
@@ -196,6 +205,9 @@ export default function ReviewQueue({ materials, courses, onEdit, onChanged }: P
               {kind && <span style={{ fontSize: '0.64rem', background: 'rgba(196,160,80,0.1)', color: 'var(--gold)', borderRadius: 99, padding: '2px 8px' }}>{kind}</span>}
               {!r && <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>{a.readStatus === 'queued' ? 'AI is reading…' : a.readStatus === 'failed' ? 'AI could not read it' : 'Not read by AI yet'}</span>}
               {a.wordCount ? <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>{Number(a.wordCount).toLocaleString()} words</span> : null}
+              {(a.arrangeStatus === 'failed' || (a.arrangeStatus === 'running' && Date.now() - Date.parse(a.arrangeStartedAt || '') > 15 * 60 * 1000)) && (
+                <button onClick={() => restartClean(m)} style={{ fontSize: '0.64rem', padding: '2px 8px', borderRadius: 99, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>Restart cleaning</button>
+              )}
               {arrangeLine(a) && <span style={{ fontSize: '0.64rem', color: a.arrangeStatus === 'failed' ? '#ef4444' : 'var(--text-muted)' }}>{arrangeLine(a)}</span>}
             </div>
 

@@ -4,6 +4,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { getMistralClient } from '@/lib/mistral/client';
+import { getArrangedText } from '@/lib/processing/arrangedText';
 
 const QSTASH_URL = 'https://qstash.upstash.io/v2/publish';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://our-study-ai.vercel.app';
@@ -244,6 +245,10 @@ export async function POST(req: NextRequest) {
         // Fallback for old materials
         const matSnap = await adminDb.collection('materials').doc(materialId).get();
         extractedText = matSnap.data()?.extractedText ?? '';
+      }
+      if (extractedText && cat !== 'past_questions' && cat !== 'aoc') {
+        const cleanedText = await getArrangedText(materialId);
+        if (cleanedText) extractedText = cleanedText;
       }
       if (!extractedText) {
         await matRef.update({ metaStatus: 'failed' });

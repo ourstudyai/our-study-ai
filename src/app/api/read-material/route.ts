@@ -34,7 +34,9 @@ export async function POST(req: NextRequest) {
     }
     if (out.ok) {
       // Next job: clean the whole text (separate from sorting). A queue problem here must not fail the reading job.
-      await queueArrangeStart(String(materialId));
+      // Past questions and AOC are indexed from the raw text (parsed line by line), so cleaning them would only cost Mistral calls.
+      const kind = String((out as any).reading?.kind ?? "");
+      if (kind !== "past_questions" && kind !== "aoc") await queueArrangeStart(String(materialId));
     }
     return NextResponse.json({ success: out.ok, reason: out.reason ?? null });
   } catch (err) {

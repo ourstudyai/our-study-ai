@@ -27,6 +27,7 @@ import LuxLoader from '@/components/LuxLoader';
 import { logAdminAction } from '@/lib/analytics/tracker';
 import { MATERIAL_STATUS, tabForStatus } from '@/lib/materialStatus';
 import ReviewQueue from '@/components/admin/ReviewQueue';
+import SendOldToReview from '@/components/admin/SendOldToReview';
 const SUPREME = 'ourstudyai@gmail.com';
 
 type Tab = 'uploads' | 'ocrqueue' | 'pending' | 'approved' | 'quarantined' | 'resurrection' |
@@ -1046,6 +1047,7 @@ useEffect(() => {
           );
         })()}
         <TabHelp tab={tab} />
+        {(tab === 'uploads' || tab === 'ocrqueue') && <SendOldToReview onDone={load} />}
         {tab === 'uploads' && (
           <UploadsPanel
             uploads={filterAndSort(uploads)}
